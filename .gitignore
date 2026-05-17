@@ -2,6 +2,9 @@ node_modules/
 dist/
 .vite/
 *.tsbuildinfo
+.codex_*
+vite_stdout.log
+vite_stderr.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
