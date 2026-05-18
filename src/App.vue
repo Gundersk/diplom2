@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 
 type AuthMode = 'guest' | 'profile'
 type ViewMode = 'landing' | 'home'
-type EventTab = 'current' | 'upcoming' | 'past' | 'hosting'
+type EventTab = 'current' | 'upcoming' | 'past'
 
 type EventTheme = {
   id: string
@@ -19,9 +19,16 @@ type EventTheme = {
 
 type GalleryPhoto = {
   id: string
-  title: string
   tone: string
   likes: number
+}
+
+type EventAchievement = {
+  id: string
+  title: string
+  description: string
+  icon: string
+  tone: string
 }
 
 type GalleryEvent = {
@@ -29,17 +36,18 @@ type GalleryEvent = {
   title: string
   date: string
   status: EventTab
-  role: 'Гость' | 'Организатор'
+  sortOrder: number
+  role: 'Участник' | 'Организатор'
+  organizerName: string
+  organizerInitials: string
+  organizerTone: string
   location: string
   savedCount: number
   totalCount: number
   coverStart: string
   coverEnd: string
   accent: string
-  invitePolicy: string
-  payment?: string
-  groupMedals: string[]
-  personalMedals: string[]
+  achievements: EventAchievement[]
   photos: GalleryPhoto[]
 }
 
@@ -90,24 +98,123 @@ const homeEvents: GalleryEvent[] = [
   {
     id: 'campus-night',
     title: 'Фото-вечер у кампуса',
-    date: 'Сегодня, 18:30',
+    date: '18 мая, 18:30',
     status: 'current',
+    sortOrder: 1,
     role: 'Организатор',
-    location: 'Учебный корпус, аудитория 214',
+    organizerName: 'Юрий',
+    organizerInitials: 'Ю',
+    organizerTone: '#ffd166,#41d3bd',
+    location: 'Учебный корпус',
     savedCount: 18,
     totalCount: 126,
     coverStart: '#ff7a59',
     coverEnd: '#41d3bd',
     accent: '#ff4d6d',
-    invitePolicy: 'Гости могут приглашать',
-    payment: '300 ₽ на организацию, отметка вручную',
-    groupMedals: ['50 фото собрано', 'Групповой кадр'],
-    personalMedals: ['Папарацци', 'Фото вечера', 'Первый кадр'],
+    achievements: [
+      {
+        id: 'paparazzi',
+        title: 'Папарацци',
+        description: 'Выдается участнику, который добавил больше всех фото в общий альбом.',
+        icon: '◉',
+        tone: '#ff4d6d,#ffd166',
+      },
+      {
+        id: 'first-frame',
+        title: 'Первый кадр',
+        description: 'Получает участник, который первым загрузил фото после открытия альбома.',
+        icon: '◇',
+        tone: '#41d3bd,#5b8def',
+      },
+      {
+        id: 'group-shot',
+        title: 'Общий кадр',
+        description: 'Групповое достижение события: в альбоме появился снимок всей компании.',
+        icon: '△',
+        tone: '#8a5cf6,#ffb703',
+      },
+    ],
     photos: [
-      { id: 'campus-1', title: 'Фото вечера', tone: '#ff7a59,#ffd166,#41d3bd', likes: 48 },
-      { id: 'campus-2', title: 'Сохранено', tone: '#41d3bd,#5b8def,#ffffff', likes: 21 },
-      { id: 'campus-3', title: 'Групповой кадр', tone: '#ff4d6d,#ffd166,#111111', likes: 36 },
-      { id: 'campus-4', title: 'Папарацци', tone: '#151515,#8a5cf6,#ffb703', likes: 17 },
+      { id: 'campus-1', tone: '#ff7a59,#ffd166,#41d3bd', likes: 48 },
+      { id: 'campus-2', tone: '#41d3bd,#5b8def,#ffffff', likes: 21 },
+      { id: 'campus-3', tone: '#ff4d6d,#ffd166,#111111', likes: 36 },
+      { id: 'campus-4', tone: '#151515,#8a5cf6,#ffb703', likes: 17 },
+      { id: 'campus-5', tone: '#ffffff,#41d3bd,#ff7a59', likes: 12 },
+      { id: 'campus-6', tone: '#5b8def,#ffffff,#ffd166', likes: 31 },
+      { id: 'campus-7', tone: '#ffb703,#ff4d6d,#151515', likes: 26 },
+      { id: 'campus-8', tone: '#41d3bd,#151515,#8a5cf6', likes: 19 },
+    ],
+  },
+  {
+    id: 'design-review',
+    title: 'Разбор макетов',
+    date: '19 мая, 15:00',
+    status: 'current',
+    sortOrder: 2,
+    role: 'Участник',
+    organizerName: 'Алина',
+    organizerInitials: 'А',
+    organizerTone: '#5b8def,#f7f06d',
+    location: 'Коворкинг',
+    savedCount: 7,
+    totalCount: 42,
+    coverStart: '#5b8def',
+    coverEnd: '#f7f06d',
+    accent: '#008f7a',
+    achievements: [
+      {
+        id: 'album-favorite',
+        title: 'Любимец альбома',
+        description: 'Выдается автору фото, которое собрало больше всего лайков.',
+        icon: '◎',
+        tone: '#5b8def,#f7f06d',
+      },
+      {
+        id: 'collector',
+        title: 'Коллекционер',
+        description: 'Получает участник, который сохранил фото из разных частей события.',
+        icon: '□',
+        tone: '#00c2a8,#ffffff',
+      },
+    ],
+    photos: [
+      { id: 'design-1', tone: '#5b8def,#f7f06d,#00c2a8', likes: 15 },
+      { id: 'design-2', tone: '#ffffff,#5b8def,#ff4d6d', likes: 29 },
+      { id: 'design-3', tone: '#00c2a8,#f7f06d,#151515', likes: 33 },
+      { id: 'design-4', tone: '#f7f06d,#ffffff,#5b8def', likes: 11 },
+      { id: 'design-5', tone: '#ff4d6d,#5b8def,#ffffff', likes: 24 },
+    ],
+  },
+  {
+    id: 'coffee-meet',
+    title: 'Кофе после пар',
+    date: '20 мая, 13:20',
+    status: 'current',
+    sortOrder: 3,
+    role: 'Участник',
+    organizerName: 'Марк',
+    organizerInitials: 'М',
+    organizerTone: '#ffd166,#ff7a59',
+    location: 'Кафе у корпуса',
+    savedCount: 11,
+    totalCount: 38,
+    coverStart: '#ffd166',
+    coverEnd: '#ff7a59',
+    accent: '#8a5cf6',
+    achievements: [
+      {
+        id: 'warm-frame',
+        title: 'Теплый кадр',
+        description: 'Автоматическая медаль за фото, которое добавили в избранное несколько гостей.',
+        icon: '○',
+        tone: '#ffd166,#ff7a59',
+      },
+    ],
+    photos: [
+      { id: 'coffee-1', tone: '#ffd166,#ff7a59,#ffffff', likes: 18 },
+      { id: 'coffee-2', tone: '#ff7a59,#151515,#ffd166', likes: 22 },
+      { id: 'coffee-3', tone: '#ffffff,#ffd166,#41d3bd', likes: 10 },
+      { id: 'coffee-4', tone: '#8a5cf6,#ff7a59,#ffffff', likes: 16 },
     ],
   },
   {
@@ -115,41 +222,215 @@ const homeEvents: GalleryEvent[] = [
     title: 'Выпускной проектный вечер',
     date: '24 мая, 19:00',
     status: 'upcoming',
-    role: 'Гость',
+    sortOrder: 1,
+    role: 'Участник',
+    organizerName: 'Даша',
+    organizerInitials: 'Д',
+    organizerTone: '#5b8def,#ff4d6d',
     location: 'Лофт на набережной',
     savedCount: 9,
     totalCount: 74,
     coverStart: '#5b8def',
+    coverEnd: '#ff4d6d',
+    accent: '#ffd166',
+    achievements: [
+      {
+        id: 'after-defense',
+        title: 'После защиты',
+        description: 'Групповое достижение для события, где собрались участники после защиты проекта.',
+        icon: '△',
+        tone: '#5b8def,#ff4d6d',
+      },
+      {
+        id: 'top-like',
+        title: 'Топ лайков',
+        description: 'Выдается за фотографию, которая стала самой популярной в альбоме.',
+        icon: '◎',
+        tone: '#ffb703,#ffffff',
+      },
+    ],
+    photos: [
+      { id: 'grad-1', tone: '#5b8def,#f7f06d,#00c2a8', likes: 15 },
+      { id: 'grad-2', tone: '#ffffff,#5b8def,#ff4d6d', likes: 29 },
+      { id: 'grad-3', tone: '#00c2a8,#f7f06d,#151515', likes: 33 },
+      { id: 'grad-4', tone: '#ff4d6d,#ffd166,#5b8def', likes: 27 },
+      { id: 'grad-5', tone: '#151515,#5b8def,#ffffff', likes: 20 },
+      { id: 'grad-6', tone: '#f7f06d,#00c2a8,#ffffff', likes: 14 },
+    ],
+  },
+  {
+    id: 'summer-picnic',
+    title: 'Пикник у озера',
+    date: '31 мая, 14:00',
+    status: 'upcoming',
+    sortOrder: 2,
+    role: 'Организатор',
+    organizerName: 'Юрий',
+    organizerInitials: 'Ю',
+    organizerTone: '#41d3bd,#f7f06d',
+    location: 'Городской парк',
+    savedCount: 0,
+    totalCount: 0,
+    coverStart: '#41d3bd',
     coverEnd: '#f7f06d',
     accent: '#008f7a',
-    invitePolicy: 'Только организатор приглашает',
-    groupMedals: ['Все отметились'],
-    personalMedals: ['Коллекционер моментов'],
+    achievements: [
+      {
+        id: 'nature-story',
+        title: 'История дня',
+        description: 'Достижение события за серию фотографий, которая показывает весь день.',
+        icon: '◇',
+        tone: '#41d3bd,#f7f06d',
+      },
+    ],
     photos: [
-      { id: 'grad-1', title: 'Сцена', tone: '#5b8def,#f7f06d,#00c2a8', likes: 15 },
-      { id: 'grad-2', title: 'Друзья', tone: '#ffffff,#5b8def,#ff4d6d', likes: 29 },
-      { id: 'grad-3', title: 'После защиты', tone: '#00c2a8,#f7f06d,#151515', likes: 33 },
+      { id: 'picnic-1', tone: '#41d3bd,#f7f06d,#ffffff', likes: 0 },
+      { id: 'picnic-2', tone: '#f7f06d,#5b8def,#41d3bd', likes: 0 },
+      { id: 'picnic-3', tone: '#ffffff,#41d3bd,#ff7a59', likes: 0 },
+    ],
+  },
+  {
+    id: 'cinema-night',
+    title: 'Киновечер',
+    date: '8 июня, 20:00',
+    status: 'upcoming',
+    sortOrder: 3,
+    role: 'Участник',
+    organizerName: 'Ника',
+    organizerInitials: 'Н',
+    organizerTone: '#151515,#8a5cf6',
+    location: 'Антикафе',
+    savedCount: 0,
+    totalCount: 0,
+    coverStart: '#151515',
+    coverEnd: '#8a5cf6',
+    accent: '#ffb703',
+    achievements: [
+      {
+        id: 'night-light',
+        title: 'Ночной свет',
+        description: 'Медаль за лучший кадр вечернего события по лайкам гостей.',
+        icon: '◉',
+        tone: '#151515,#8a5cf6',
+      },
+    ],
+    photos: [
+      { id: 'cinema-1', tone: '#151515,#8a5cf6,#ffb703', likes: 0 },
+      { id: 'cinema-2', tone: '#8a5cf6,#ffffff,#151515', likes: 0 },
+      { id: 'cinema-3', tone: '#ffb703,#151515,#8a5cf6', likes: 0 },
     ],
   },
   {
     id: 'quest',
     title: 'Ночной квест',
-    date: '12 апреля, завершено',
+    date: '12 апреля',
     status: 'past',
-    role: 'Гость',
+    sortOrder: 1,
+    role: 'Участник',
+    organizerName: 'Саша',
+    organizerInitials: 'С',
+    organizerTone: '#8a5cf6,#ffb703',
     location: 'Парк Гагарина',
     savedCount: 14,
     totalCount: 93,
     coverStart: '#151515',
     coverEnd: '#8a5cf6',
     accent: '#ffb703',
-    invitePolicy: 'Архив события',
-    groupMedals: ['Маршрут пройден'],
-    personalMedals: ['Активный гость', 'Любимец альбома'],
+    achievements: [
+      {
+        id: 'route-done',
+        title: 'Маршрут пройден',
+        description: 'Групповое достижение события: команда дошла до финальной точки.',
+        icon: '△',
+        tone: '#8a5cf6,#ffb703',
+      },
+      {
+        id: 'active-guest',
+        title: 'Активный гость',
+        description: 'Выдается гостю, который чаще других реагировал на фото и сообщения.',
+        icon: '○',
+        tone: '#41d3bd,#8a5cf6',
+      },
+    ],
     photos: [
-      { id: 'quest-1', title: 'Старт', tone: '#151515,#8a5cf6,#ffb703', likes: 18 },
-      { id: 'quest-2', title: 'Команда', tone: '#8a5cf6,#ffb703,#ffffff', likes: 41 },
-      { id: 'quest-3', title: 'Финиш', tone: '#111111,#41d3bd,#8a5cf6', likes: 26 },
+      { id: 'quest-1', tone: '#151515,#8a5cf6,#ffb703', likes: 18 },
+      { id: 'quest-2', tone: '#8a5cf6,#ffb703,#ffffff', likes: 41 },
+      { id: 'quest-3', tone: '#111111,#41d3bd,#8a5cf6', likes: 26 },
+      { id: 'quest-4', tone: '#ffb703,#151515,#41d3bd', likes: 13 },
+      { id: 'quest-5', tone: '#ffffff,#8a5cf6,#151515', likes: 22 },
+    ],
+  },
+  {
+    id: 'winter-meet',
+    title: 'Зимняя встреча',
+    date: '3 февраля',
+    status: 'past',
+    sortOrder: 2,
+    role: 'Организатор',
+    organizerName: 'Юрий',
+    organizerInitials: 'Ю',
+    organizerTone: '#5b8def,#ffffff',
+    location: 'Каток',
+    savedCount: 21,
+    totalCount: 118,
+    coverStart: '#5b8def',
+    coverEnd: '#ffffff',
+    accent: '#41d3bd',
+    achievements: [
+      {
+        id: 'photo-wave',
+        title: 'Фото-волна',
+        description: 'Событие получило медаль за большое количество загруженных снимков.',
+        icon: '◇',
+        tone: '#5b8def,#ffffff',
+      },
+      {
+        id: 'memory-keeper',
+        title: 'Хранитель',
+        description: 'Личная медаль за сохранение большого числа фотографий из события.',
+        icon: '□',
+        tone: '#41d3bd,#5b8def',
+      },
+    ],
+    photos: [
+      { id: 'winter-1', tone: '#5b8def,#ffffff,#41d3bd', likes: 32 },
+      { id: 'winter-2', tone: '#ffffff,#5b8def,#151515', likes: 19 },
+      { id: 'winter-3', tone: '#41d3bd,#ffffff,#5b8def', likes: 28 },
+      { id: 'winter-4', tone: '#151515,#5b8def,#ffffff', likes: 15 },
+      { id: 'winter-5', tone: '#ffffff,#41d3bd,#ff4d6d', likes: 24 },
+      { id: 'winter-6', tone: '#5b8def,#f7f06d,#ffffff', likes: 17 },
+    ],
+  },
+  {
+    id: 'library-day',
+    title: 'День в библиотеке',
+    date: '18 января',
+    status: 'past',
+    sortOrder: 3,
+    role: 'Участник',
+    organizerName: 'Оля',
+    organizerInitials: 'О',
+    organizerTone: '#ffd166,#ffffff',
+    location: 'Университетская библиотека',
+    savedCount: 6,
+    totalCount: 27,
+    coverStart: '#ffd166',
+    coverEnd: '#ffffff',
+    accent: '#ff7a59',
+    achievements: [
+      {
+        id: 'quiet-story',
+        title: 'Тихая история',
+        description: 'Достижение за камерное событие, где фотографии собраны в одну аккуратную историю.',
+        icon: '◎',
+        tone: '#ffd166,#ffffff',
+      },
+    ],
+    photos: [
+      { id: 'library-1', tone: '#ffd166,#ffffff,#151515', likes: 9 },
+      { id: 'library-2', tone: '#ffffff,#ff7a59,#ffd166', likes: 14 },
+      { id: 'library-3', tone: '#151515,#ffd166,#ffffff', likes: 7 },
+      { id: 'library-4', tone: '#ff7a59,#ffffff,#41d3bd', likes: 11 },
     ],
   },
 ]
@@ -182,9 +463,9 @@ const currentView = ref<ViewMode>('landing')
 const activeTab = ref<EventTab>('current')
 const profileMenuOpen = ref(false)
 const notificationsOpen = ref(false)
-const allPhotosMode = ref(false)
-const expandedEvents = ref<Set<string>>(new Set(['campus-night']))
+const expandedEvents = ref<Set<string>>(new Set())
 const selectedPhoto = ref<{ eventId: string; photoId: string } | null>(null)
+const activeAchievement = ref<string | null>(null)
 
 const eventStyle = computed(() => ({
   '--theme-start': selectedTheme.value.start,
@@ -194,21 +475,25 @@ const eventStyle = computed(() => ({
   '--theme-ink': selectedTheme.value.ink,
 }))
 
-const filteredEvents = computed(() => homeEvents.filter((event) => event.status === activeTab.value))
-
 const visibleEvents = computed(() =>
-  activeTab.value === 'hosting'
-    ? homeEvents.filter((event) => event.role === 'Организатор')
-    : filteredEvents.value,
+  [...homeEvents]
+    .filter((event) => event.status === activeTab.value)
+    .sort((first, second) => first.sortOrder - second.sortOrder),
 )
 
 const totalSavedPhotos = computed(() => homeEvents.reduce((sum, event) => sum + event.savedCount, 0))
 const totalMedals = computed(() =>
-  homeEvents.reduce((sum, event) => sum + event.groupMedals.length + event.personalMedals.length, 0),
+  homeEvents.reduce((sum, event) => sum + event.achievements.length, 0),
 )
 
 const flatPhotos = computed(() =>
   homeEvents.flatMap((event) => event.photos.map((photo) => ({ event, photo }))),
+)
+
+const allVisibleExpanded = computed(
+  () =>
+    visibleEvents.value.length > 0 &&
+    visibleEvents.value.every((event) => expandedEvents.value.has(event.id)),
 )
 
 const activePhotoEntry = computed(() => {
@@ -254,22 +539,35 @@ function toggleProfileMenu() {
   }
 }
 
+function setActiveTab(tab: EventTab) {
+  activeTab.value = tab
+  activeAchievement.value = null
+}
+
 function isEventExpanded(id: string) {
-  return allPhotosMode.value || expandedEvents.value.has(id)
+  return expandedEvents.value.has(id)
 }
 
 function toggleEvent(id: string) {
   const next = new Set(expandedEvents.value)
   if (next.has(id)) {
     next.delete(id)
+    activeAchievement.value = null
   } else {
     next.add(id)
   }
   expandedEvents.value = next
 }
 
-function toggleAllPhotos() {
-  allPhotosMode.value = !allPhotosMode.value
+function toggleAllEvents() {
+  const next = new Set(expandedEvents.value)
+  if (allVisibleExpanded.value) {
+    visibleEvents.value.forEach((event) => next.delete(event.id))
+    activeAchievement.value = null
+  } else {
+    visibleEvents.value.forEach((event) => next.add(event.id))
+  }
+  expandedEvents.value = next
 }
 
 function openPhoto(event: GalleryEvent, photo: GalleryPhoto) {
@@ -291,6 +589,15 @@ function stepPhoto(direction: number) {
   const nextIndex = (currentIndex + direction + flatPhotos.value.length) % flatPhotos.value.length
   const next = flatPhotos.value[nextIndex]
   selectedPhoto.value = { eventId: next.event.id, photoId: next.photo.id }
+}
+
+function getAchievementKey(event: GalleryEvent, achievement: EventAchievement) {
+  return `${event.id}-${achievement.id}`
+}
+
+function toggleAchievement(event: GalleryEvent, achievement: EventAchievement) {
+  const key = getAchievementKey(event, achievement)
+  activeAchievement.value = activeAchievement.value === key ? null : key
 }
 </script>
 
@@ -504,40 +811,14 @@ function stepPhoto(direction: number) {
       </section>
     </header>
 
-    <section class="home-hero" aria-labelledby="home-title">
-      <div class="home-hero-copy">
-        <p class="hero-label">Личный кабинет</p>
-        <h1 id="home-title">Мои события и сохраненные фото</h1>
-        <p>
-          Здесь события идут карточками, а сохраненные снимки раскрываются внутри своей
-          визуальной истории: с фоном мероприятия, медальками и быстрым переходом в альбом.
-        </p>
-      </div>
-
-      <div class="home-summary">
-        <article>
-          <strong>{{ homeEvents.length }}</strong>
-          <span>события</span>
-        </article>
-        <article>
-          <strong>{{ totalSavedPhotos }}</strong>
-          <span>сохранено фото</span>
-        </article>
-        <article>
-          <strong>{{ totalMedals }}</strong>
-          <span>медалей</span>
-        </article>
-      </div>
-    </section>
-
     <section class="home-workspace" aria-labelledby="events-title">
       <div class="home-section-head">
         <div>
-          <p class="eyebrow">Гибридная галерея</p>
-          <h2 id="events-title">События</h2>
+          <p class="eyebrow">Личная галерея</p>
+          <h1 id="events-title">Мои события</h1>
         </div>
-        <button class="secondary-button" type="button" @click="toggleAllPhotos">
-          {{ allPhotosMode ? 'Свернуть фотоленту' : 'Раскрыть все фото' }}
+        <button class="secondary-button" type="button" @click="toggleAllEvents">
+          {{ allVisibleExpanded ? 'Свернуть все события' : 'Раскрыть все события' }}
         </button>
       </div>
 
@@ -546,7 +827,7 @@ function stepPhoto(direction: number) {
           type="button"
           class="event-tab"
           :class="{ active: activeTab === 'current' }"
-          @click="activeTab = 'current'"
+          @click="setActiveTab('current')"
         >
           Текущие
         </button>
@@ -554,7 +835,7 @@ function stepPhoto(direction: number) {
           type="button"
           class="event-tab"
           :class="{ active: activeTab === 'upcoming' }"
-          @click="activeTab = 'upcoming'"
+          @click="setActiveTab('upcoming')"
         >
           Будущие
         </button>
@@ -562,118 +843,90 @@ function stepPhoto(direction: number) {
           type="button"
           class="event-tab"
           :class="{ active: activeTab === 'past' }"
-          @click="activeTab = 'past'"
+          @click="setActiveTab('past')"
         >
           Прошедшие
         </button>
-        <button
-          type="button"
-          class="event-tab"
-          :class="{ active: activeTab === 'hosting' }"
-          @click="activeTab = 'hosting'"
+      </div>
+
+      <section class="event-mosaic" aria-label="События в личной галерее">
+        <article
+          v-for="event in visibleEvents"
+          :key="event.id"
+          class="home-event-card"
+          :class="{ expanded: isEventExpanded(event.id) }"
+          :style="{
+            '--event-start': event.coverStart,
+            '--event-end': event.coverEnd,
+            '--event-accent': event.accent,
+            '--organizer-tone': event.organizerTone,
+          }"
         >
-          Организую
-        </button>
-      </div>
-
-      <div class="home-grid">
-        <section class="event-feed" aria-label="Карточки событий">
-          <article
-            v-for="event in visibleEvents"
-            :key="event.id"
-            class="home-event-card"
-            :class="{ expanded: isEventExpanded(event.id) }"
-            :style="{
-              '--event-start': event.coverStart,
-              '--event-end': event.coverEnd,
-              '--event-accent': event.accent,
-            }"
+          <button
+            v-if="!isEventExpanded(event.id)"
+            class="event-compact"
+            type="button"
+            @click="toggleEvent(event.id)"
           >
-            <div class="event-cover-block">
-              <div class="event-cover-content">
-                <div>
-                  <span class="event-role">{{ event.role }}</span>
-                  <h3>{{ event.title }}</h3>
-                  <p>{{ event.date }} · {{ event.location }}</p>
-                </div>
-                <div class="event-metrics">
-                  <span>{{ event.savedCount }} сохранено</span>
-                  <span>{{ event.totalCount }} в общем альбоме</span>
-                </div>
-              </div>
+            <span class="event-role">{{ event.role }}</span>
+            <span class="event-date">{{ event.date }}</span>
+            <span class="event-sun" aria-hidden="true"></span>
+            <span class="event-compact-title">{{ event.title }}</span>
+            <span class="event-organizer">
+              <span class="organizer-avatar">{{ event.organizerInitials }}</span>
+              {{ event.organizerName }}
+            </span>
+          </button>
 
-              <div class="medal-area">
-                <div v-if="event.groupMedals.length" class="group-medals">
-                  <span v-for="medal in event.groupMedals" :key="medal">◇ {{ medal }}</span>
-                </div>
-                <div class="personal-medals">
-                  <span v-for="medal in event.personalMedals" :key="medal">● {{ medal }}</span>
-                </div>
-              </div>
-            </div>
-
-            <div class="home-event-body">
-              <div class="event-card-toolbar">
-                <div>
-                  <strong>{{ event.invitePolicy }}</strong>
-                  <span v-if="event.payment">{{ event.payment }}</span>
-                  <span v-else>Без отметки сбора средств</span>
-                </div>
-                <div class="event-card-actions">
-                  <button class="secondary-button compact-action" type="button">Открыть событие</button>
-                  <button class="primary-button compact-action" type="button" @click="toggleEvent(event.id)">
-                    {{ isEventExpanded(event.id) ? 'Скрыть фото' : 'Раскрыть фото' }}
-                  </button>
-                </div>
-              </div>
-
-              <div v-if="isEventExpanded(event.id)" class="saved-photo-grid">
-                <button
-                  v-for="photo in event.photos"
-                  :key="photo.id"
-                  class="saved-photo"
-                  type="button"
-                  :style="{ '--photo-tone': photo.tone }"
-                  @click="openPhoto(event, photo)"
-                >
-                  <span>{{ photo.title }}</span>
-                  <small>{{ photo.likes }} лайков</small>
-                </button>
-              </div>
-              <div v-else class="collapsed-preview" aria-label="Превью сохраненных фото">
+          <div v-else class="event-expanded">
+            <div class="expanded-achievements" aria-label="Достижения события">
+              <button
+                v-for="achievement in event.achievements"
+                :key="achievement.id"
+                class="achievement-medal"
+                :class="{ active: activeAchievement === getAchievementKey(event, achievement) }"
+                :style="{ '--achievement-tone': achievement.tone }"
+                type="button"
+                @click="toggleAchievement(event, achievement)"
+              >
+                <span class="achievement-mark">{{ achievement.icon }}</span>
+                <span>{{ achievement.title }}</span>
                 <span
-                  v-for="photo in event.photos.slice(0, 3)"
-                  :key="photo.id"
-                  class="mini-photo"
-                  :style="{ '--photo-tone': photo.tone }"
-                ></span>
-                <strong>+{{ Math.max(event.photos.length - 3, 0) }}</strong>
+                  v-if="activeAchievement === getAchievementKey(event, achievement)"
+                  class="achievement-popover"
+                >
+                  {{ achievement.description }}
+                </span>
+              </button>
+            </div>
+
+            <div class="expanded-event-head">
+              <div>
+                <span class="event-role">{{ event.role }}</span>
+                <h2>{{ event.title }}</h2>
+                <p>
+                  {{ event.date }} · {{ event.location }} · организует {{ event.organizerName }}
+                </p>
               </div>
+              <button class="collapse-event-button" type="button" @click="toggleEvent(event.id)">
+                Скрыть
+              </button>
             </div>
-          </article>
-        </section>
 
-        <aside class="home-sidebar" aria-label="Сводка личной галереи">
-          <article class="home-panel">
-            <h3>Автоматические медали</h3>
-            <p>В демо они работают как личные достижения и выдаются системой по простым правилам.</p>
-            <div class="achievement-list">
-              <span>Первый кадр</span>
-              <span>Папарацци</span>
-              <span>Любимец альбома</span>
-              <span>Коллекционер моментов</span>
+            <div class="event-photo-gallery">
+              <button
+                v-for="photo in event.photos"
+                :key="photo.id"
+                class="gallery-photo"
+                type="button"
+                :style="{ '--photo-tone': photo.tone }"
+                :aria-label="`Открыть фото события ${event.title}`"
+                @click="openPhoto(event, photo)"
+              ></button>
             </div>
-          </article>
-
-          <article class="home-panel">
-            <h3>Событийный контекст</h3>
-            <p>
-              Фото из личной галереи не теряют связь с мероприятием: фон, медали и подписи
-              подсказывают, откуда сохранен снимок.
-            </p>
-          </article>
-        </aside>
-      </div>
+          </div>
+        </article>
+      </section>
     </section>
   </main>
 
@@ -754,7 +1007,7 @@ function stepPhoto(direction: number) {
       <div class="viewer-photo"></div>
       <div class="viewer-info">
         <span>{{ activePhotoEntry.event.title }}</span>
-        <h3>{{ activePhotoEntry.photo.title }}</h3>
+        <h3>Фото из события</h3>
         <p>{{ activePhotoEntry.photo.likes }} лайков · фон меняется вместе с событием</p>
       </div>
       <div class="viewer-actions">
