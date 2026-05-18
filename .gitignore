@@ -9,3 +9,8 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+
+# Local downloaded UX references. Keep conclusions in docs instead of committing heavy saved pages.
+приеры страниц partiful/authorixed_versions/
+приеры страниц partiful/create_event/
+приеры страниц partiful/create_event.zip
