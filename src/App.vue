@@ -3,11 +3,11 @@ import 'emoji-picker-element'
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { buildEventStatus } from './data/mockEvents'
 import { authService } from './services/authService'
+import { achievementService } from './services/achievementService'
 import { eventService } from './services/eventService'
 import { participantService } from './services/participantService'
 import { photoService } from './services/photoService'
 import type {
-  AchievementMode,
   AchievementScope,
   AchievementTemplate,
   EventAchievement,
@@ -98,74 +98,7 @@ const notifications = ref<HomeNotification[]>([
   },
 ])
 
-const systemAchievementTemplates: AchievementTemplate[] = [
-  {
-    id: 'first-frame',
-    title: 'Первый кадр',
-    description: 'Выдается участнику, который первым загрузил фото в общий альбом события.',
-    scope: 'personal',
-    mode: 'automatic',
-    conditionType: 'first_photo',
-    icon: '📸',
-    tone: '#41d3bd,#5b8def',
-    isSystem: true,
-  },
-  {
-    id: 'paparazzi',
-    title: 'Папарацци',
-    description: 'Выдается участнику, который добавил больше всех фото в общий альбом.',
-    scope: 'personal',
-    mode: 'automatic',
-    conditionType: 'most_photos',
-    icon: '📷',
-    tone: '#ff7a59,#ffd166',
-    isSystem: true,
-  },
-  {
-    id: 'king-of-likes',
-    title: 'Король лайков',
-    description: 'Выдается участнику, чьи фотографии собрали больше всех лайков.',
-    scope: 'personal',
-    mode: 'automatic',
-    conditionType: 'most_likes',
-    icon: '⭐',
-    tone: '#ffb703,#ffffff',
-    isSystem: true,
-  },
-]
-
-const customAchievementTemplates = ref<AchievementTemplate[]>([
-  {
-    id: 'template-best-look',
-    title: 'Лучший образ',
-    description: 'Организатор вручает участнику за самый выразительный образ события.',
-    scope: 'personal',
-    mode: 'manual',
-    icon: '💎',
-    tone: '#ff4d6d,#ffffff',
-    isSystem: false,
-  },
-  {
-    id: 'template-soul',
-    title: 'Душа компании',
-    description: 'Организатор вручает участнику, который лучше всех поддерживал атмосферу.',
-    scope: 'personal',
-    mode: 'manual',
-    icon: '✨',
-    tone: '#ffd166,#41d3bd',
-    isSystem: false,
-  },
-  {
-    id: 'template-everyone',
-    title: 'Все отметились',
-    description: 'Групповая медаль события: все гости подтвердили участие и появились на фото.',
-    scope: 'group',
-    mode: 'manual',
-    icon: '👥',
-    tone: '#5b8def,#f7f06d',
-    isSystem: false,
-  },
-])
+const achievementTemplates = ref<AchievementTemplate[]>([])
 
 const infoBlockTypeOptions: Array<{ emoji: string; label: string; value: EventInfoBlockType }> = [
   { value: 'dress-code', label: 'Дресс-код', emoji: '👔' },
@@ -355,6 +288,10 @@ async function initializeCurrentUser() {
   const storedUser = await authService.getCurrentUser()
   const nextUser = storedUser ?? (await authService.createDemoUser('Юрий'))
   applyCurrentUser(nextUser)
+}
+
+async function loadAchievementTemplates() {
+  achievementTemplates.value = await achievementService.getAchievementTemplates()
 }
 
 function getThemeById(themeId: string) {
@@ -673,12 +610,17 @@ function getEventSurfaceStyle(start: string, end: string) {
 function buildAchievementFromTemplate(template: AchievementTemplate): EventAchievement {
   return {
     id: createId(template.id),
+    templateId: template.id,
     title: template.title,
     description: template.description,
     icon: template.icon,
     tone: template.tone,
     scope: template.scope,
     mode: template.mode,
+    points: template.points,
+    selected: true,
+    createdBy: currentUser.id,
+    createdAt: new Date().toISOString(),
     conditionType: template.conditionType,
   }
 }
@@ -718,6 +660,7 @@ const profileEditorAvatarUrl = ref<string | null>(null)
 const profileEditorError = ref('')
 
 void initializeCurrentUser()
+void loadAchievementTemplates()
 void syncAllEventPhotosFromService()
 
 const rsvpStatusLabels: Record<RsvpStatus, string> = {
@@ -991,11 +934,15 @@ watch(
 )
 
 const selectedAutomaticTemplates = computed(() =>
-  systemAchievementTemplates.filter((template) => createEventForm.value.automaticTemplateIds.includes(template.id)),
+  achievementTemplates.value.filter(
+    (template) =>
+      template.scope === 'automatic' &&
+      createEventForm.value.automaticTemplateIds.includes(template.id),
+  ),
 )
 
 const selectedPersonalTemplates = computed(() =>
-  customAchievementTemplates.value.filter(
+  achievementTemplates.value.filter(
     (template) =>
       template.scope === 'personal' &&
       createEventForm.value.selectedPersonalTemplateIds.includes(template.id),
@@ -1003,7 +950,7 @@ const selectedPersonalTemplates = computed(() =>
 )
 
 const selectedGroupTemplates = computed(() =>
-  customAchievementTemplates.value.filter(
+  achievementTemplates.value.filter(
     (template) =>
       template.scope === 'group' &&
       createEventForm.value.selectedGroupTemplateIds.includes(template.id),
@@ -1011,11 +958,15 @@ const selectedGroupTemplates = computed(() =>
 )
 
 const availableAutomaticTemplates = computed(() =>
-  systemAchievementTemplates.filter((template) => !createEventForm.value.automaticTemplateIds.includes(template.id)),
+  achievementTemplates.value.filter(
+    (template) =>
+      template.scope === 'automatic' &&
+      !createEventForm.value.automaticTemplateIds.includes(template.id),
+  ),
 )
 
 const availablePersonalTemplates = computed(() =>
-  customAchievementTemplates.value.filter(
+  achievementTemplates.value.filter(
     (template) =>
       template.scope === 'personal' &&
       !createEventForm.value.selectedPersonalTemplateIds.includes(template.id),
@@ -1023,7 +974,7 @@ const availablePersonalTemplates = computed(() =>
 )
 
 const availableGroupTemplates = computed(() =>
-  customAchievementTemplates.value.filter(
+  achievementTemplates.value.filter(
     (template) =>
       template.scope === 'group' &&
       !createEventForm.value.selectedGroupTemplateIds.includes(template.id),
@@ -1373,7 +1324,7 @@ function removeInfoBlock(blockId: string) {
   )
 }
 
-function openMedalBuilder(scope: AchievementScope) {
+function openMedalBuilder(scope: Extract<AchievementScope, 'personal' | 'group'>) {
   medalForm.value = createEmptyMedalForm()
   medalForm.value.scope = scope
   emojiPickerOpen.value = false
@@ -1405,23 +1356,21 @@ watch(
   { immediate: true },
 )
 
-function saveCustomMedal() {
+async function saveCustomMedal() {
   const trimmedTitle = medalForm.value.title.trim()
   const trimmedDescription = medalForm.value.description.trim()
   if (!trimmedTitle || !trimmedDescription) return
 
-  const newTemplate: AchievementTemplate = {
-    id: createId('template'),
+  const newTemplate = await achievementService.createAchievementTemplate({
+    scope: medalForm.value.scope,
     title: trimmedTitle,
     description: trimmedDescription,
-    scope: medalForm.value.scope,
-    mode: 'manual',
     icon: medalForm.value.icon.trim() || '🏅',
     tone: medalForm.value.tone,
-    isSystem: false,
-  }
+    createdBy: currentUser.id,
+  })
 
-  customAchievementTemplates.value = [newTemplate, ...customAchievementTemplates.value]
+  await loadAchievementTemplates()
   if (newTemplate.scope === 'group') {
     createEventForm.value.selectedGroupTemplateIds = [
       ...createEventForm.value.selectedGroupTemplateIds,
@@ -1494,6 +1443,57 @@ async function syncAllEventPhotosFromService() {
   for (const event of homeEvents.value) {
     await syncEventPhotosFromService(event.id)
   }
+}
+
+async function syncEventAchievementsFromService(eventId: string) {
+  const event = getEventById(eventId)
+  if (!event) return null
+
+  const achievements = await achievementService.getEventAchievements(eventId)
+  const nextEvent = {
+    ...event,
+    achievements,
+  }
+  eventService.updateEvent(nextEvent)
+  homeEvents.value = eventService.getHomeEvents()
+  return nextEvent
+}
+
+async function persistEventAchievementsSelection(eventId: string) {
+  const existingAchievements = await achievementService.getEventAchievements(eventId)
+  for (const achievement of existingAchievements) {
+    await achievementService.unselectAchievement(achievement.id)
+  }
+
+  for (const template of selectedAutomaticTemplates.value) {
+    await achievementService.selectAchievement({
+      eventId,
+      templateId: template.id,
+      scope: 'automatic',
+      title: template.title,
+      description: template.description,
+      icon: template.icon,
+      tone: template.tone,
+      points: template.points,
+      createdBy: currentUser.id,
+    })
+  }
+
+  for (const template of [...selectedPersonalTemplates.value, ...selectedGroupTemplates.value]) {
+    await achievementService.selectAchievement({
+      eventId,
+      templateId: template.id,
+      scope: template.scope,
+      title: template.title,
+      description: template.description,
+      icon: template.icon,
+      tone: template.tone,
+      points: template.points,
+      createdBy: currentUser.id,
+    })
+  }
+
+  return syncEventAchievementsFromService(eventId)
 }
 
 function updateEventInList(eventId: string, updater: (event: GalleryEvent) => GalleryEvent) {
@@ -1699,14 +1699,13 @@ function getCreateAchievementKey(scope: string, templateId: string) {
   return `${scope}-${templateId}`
 }
 
-function deleteTemplate(templateId: string) {
-  const template = customAchievementTemplates.value.find((item) => item.id === templateId)
+async function deleteTemplate(templateId: string) {
+  const template = achievementTemplates.value.find((item) => item.id === templateId)
   if (!template) return
   if (!window.confirm(`Удалить шаблон достижения "${template.title}"?`)) return
 
-  customAchievementTemplates.value = customAchievementTemplates.value.filter(
-    (item) => item.id !== templateId,
-  )
+  await achievementService.deleteAchievementTemplate(templateId)
+  await loadAchievementTemplates()
   createEventForm.value.selectedPersonalTemplateIds = createEventForm.value.selectedPersonalTemplateIds.filter(
     (id) => id !== templateId,
   )
@@ -1987,17 +1986,18 @@ function populateFormFromEvent(event: GalleryEvent) {
     paymentComment: event.payment?.comment ?? '',
     allowGuestInvites: Boolean(event.allowGuestInvites),
     rsvpStyle: event.rsvpStyle ?? 'icons',
-    automaticTemplateIds: systemAchievementTemplates
+    automaticTemplateIds: achievementTemplates.value
       .filter((template) => event.achievements.some((achievement) => achievement.title === template.title))
+      .filter((template) => template.scope === 'automatic')
       .map((template) => template.id),
-    selectedPersonalTemplateIds: customAchievementTemplates.value
+    selectedPersonalTemplateIds: achievementTemplates.value
       .filter(
         (template) =>
           template.scope === 'personal' &&
           event.achievements.some((achievement) => achievement.title === template.title),
       )
       .map((template) => template.id),
-    selectedGroupTemplateIds: customAchievementTemplates.value
+    selectedGroupTemplateIds: achievementTemplates.value
       .filter(
         (template) =>
           template.scope === 'group' &&
@@ -2007,12 +2007,13 @@ function populateFormFromEvent(event: GalleryEvent) {
   }
 }
 
-function openEditEvent(eventId: string) {
+async function openEditEvent(eventId: string) {
   const event = getEventById(eventId)
   if (!event || event.role !== 'Организатор') return
 
+  await syncEventAchievementsFromService(eventId)
   editingEventId.value = eventId
-  populateFormFromEvent(event)
+  populateFormFromEvent(getEventById(eventId) ?? event)
   enforceCreateDateTimeRules()
   currentView.value = 'create'
   medalBuilderOpen.value = false
@@ -2145,6 +2146,7 @@ async function saveEvent() {
     syncEventSavedCount(updated)
 
     eventService.updateEvent(updated)
+    await persistEventAchievementsSelection(updated.id)
     homeEvents.value = eventService.getHomeEvents()
     await participantService.joinEventAsParticipant(updated.id, updated.organizerName, 'organizer')
     activeTab.value = updated.status
@@ -2168,6 +2170,7 @@ async function saveEvent() {
 
   const nextEvent = createEventFromForm()
   eventService.createEvent(nextEvent)
+  await persistEventAchievementsSelection(nextEvent.id)
   homeEvents.value = eventService.getHomeEvents()
   await participantService.joinEventAsParticipant(nextEvent.id, nextEvent.organizerName, 'organizer')
   expandedEvents.value = new Set()

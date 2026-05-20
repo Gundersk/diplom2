@@ -465,9 +465,15 @@ function buildSeedChatMessages(seed: {
 export function normalizeSeedAchievement(seedAchievement: SeedAchievement): EventAchievement {
   return {
     ...seedAchievement,
-    scope: groupIds.has(seedAchievement.id) ? 'group' : 'personal',
+    scope: automaticById[seedAchievement.id]
+      ? 'automatic'
+      : groupIds.has(seedAchievement.id)
+        ? 'group'
+        : 'personal',
     mode: automaticById[seedAchievement.id]?.mode ?? 'manual',
     conditionType: automaticById[seedAchievement.id]?.conditionType,
+    selected: true,
+    createdAt: new Date().toISOString(),
   }
 }
 
@@ -505,9 +511,17 @@ export function normalizeGalleryEvent(event: GalleryEvent): GalleryEvent {
     timezoneLabel: event.timezoneLabel ?? 'Екатеринбург (UTC+5)',
     achievements: (event.achievements ?? []).map((achievement) => ({
       ...achievement,
-      scope: achievement.scope ?? (groupIds.has(achievement.id) ? 'group' : 'personal'),
+      scope:
+        achievement.scope ??
+        (achievement.mode === 'automatic' || automaticById[achievement.id]
+          ? 'automatic'
+          : groupIds.has(achievement.id)
+            ? 'group'
+            : 'personal'),
       mode: achievement.mode ?? automaticById[achievement.id]?.mode ?? 'manual',
       conditionType: achievement.conditionType ?? automaticById[achievement.id]?.conditionType,
+      selected: achievement.selected ?? true,
+      createdAt: achievement.createdAt ?? event.startsAt,
     })),
     photos,
     chatMessages: event.chatMessages ?? buildSeedChatMessages({

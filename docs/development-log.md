@@ -919,3 +919,58 @@ npm run build
 ### Next step
 
 Either extract `achievementService`, or prepare an Appwrite adapter for `photoService` so uploaded images can move from `localStorage` to Storage + Database metadata.
+
+## Step 16 - 2026-05-20
+
+### Goal
+
+Extract achievements into a dedicated `achievementService` while keeping the current create-event and home UI visually unchanged.
+
+### What was added
+
+1. Created `src/services/achievementService.ts`.
+2. Added a separate localStorage-based data layer for:
+   - achievement templates;
+   - event-selected achievements.
+3. Added a clearer model with two levels:
+   - `AchievementTemplate` for reusable templates;
+   - `EventAchievement` for achievements selected inside a specific event.
+4. Split achievements by scope:
+   - `automatic`;
+   - `personal`;
+   - `group`.
+5. Preserved compatibility with old mock data:
+   - old event achievements are normalized and migrated on first access;
+   - existing event achievements still render in the current UI.
+6. Personal and group custom templates are now persisted through the service:
+   - creation goes through `achievementService.createAchievementTemplate()`;
+   - deletion goes through `achievementService.deleteAchievementTemplate()`;
+   - deletion is blocked for automatic templates and for templates still selected in any event.
+7. Event achievement selection is now prepared for backend storage:
+   - selected achievements are tied to `eventId`;
+   - selection persistence is synced after event create/update;
+   - assignment fields for `userId` and `participantId` are ready for future UI work.
+
+### Files changed
+
+- `src/types/achievement.ts`
+- `src/services/achievementService.ts`
+- `src/data/mockEvents.ts`
+- `src/App.vue`
+- `docs/development-log.md`
+
+### Architecture notes
+
+- Appwrite is still not connected.
+- The UI keeps the same achievement behavior: selected pills on top, available cards below, custom medal builder, remove via cross, and description popovers.
+- The data model is now much closer to a future Appwrite Database structure.
+
+### Verification
+
+```bash
+npm run build
+```
+
+### Next step
+
+Either extract RSVP/chat into dedicated services too, or start preparing Appwrite adapters for `achievementService` and `photoService` one layer at a time.
