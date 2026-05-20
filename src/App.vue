@@ -1,8 +1,9 @@
 ﻿<script setup lang="ts">
-import { computed, ref } from 'vue'
+import 'emoji-picker-element'
+import { computed, ref, watch } from 'vue'
 
 type AuthMode = 'guest' | 'profile'
-type ViewMode = 'landing' | 'home' | 'create'
+type ViewMode = 'landing' | 'home' | 'create' | 'preview' | 'event'
 type EventTab = 'current' | 'upcoming' | 'past'
 
 type EventTheme = {
@@ -21,6 +22,34 @@ type GalleryPhoto = {
   id: string
   tone: string
   likes: number
+  src?: string
+  saved: boolean
+}
+
+type EventChatMessage = {
+  id: string
+  authorName: string
+  authorInitials: string
+  text: string
+  createdAt: string
+  photoId?: string
+}
+
+type RsvpStatus = 'going' | 'maybe' | 'cant_go'
+
+type EventRsvpEntry = {
+  id: string
+  userName: string
+  userInitials: string
+  status: RsvpStatus
+  message?: string
+  createdAt: string
+}
+
+type RsvpChoice = {
+  id: RsvpStatus
+  label: string
+  symbol: string
 }
 
 type EventInfoBlockType =
@@ -86,8 +115,12 @@ type GalleryEvent = {
   infoBlocks?: EventInfoBlock[]
   payment?: EventPaymentInfo | null
   timezoneLabel?: string
+  titleStyle?: string
+  rsvpStyle?: string
   achievements: EventAchievement[]
   photos: GalleryPhoto[]
+  chatMessages: EventChatMessage[]
+  guestRsvps: EventRsvpEntry[]
 }
 
 type HomeNotification = {
@@ -822,6 +855,80 @@ function formatTimezoneLabel(timezoneId: string) {
   )
 }
 
+function hslToHex(hue: number, saturation: number, lightness: number) {
+  const sat = saturation / 100
+  const light = lightness / 100
+  const chroma = sat * Math.min(light, 1 - light)
+  const channel = (offset: number) => {
+    const segment = (offset + hue / 30) % 12
+    const color = light - chroma * Math.max(Math.min(segment - 3, 9 - segment, 1), -1)
+    return Math.round(255 * color)
+      .toString(16)
+      .padStart(2, '0')
+  }
+
+  return `#${channel(0)}${channel(8)}${channel(4)}`
+}
+
+function hexToHsl(hex: string) {
+  const normalized = hex.replace('#', '')
+  const source =
+    normalized.length === 3
+      ? normalized
+          .split('')
+          .map((item) => item + item)
+          .join('')
+      : normalized
+  const red = Number.parseInt(source.slice(0, 2), 16) / 255
+  const green = Number.parseInt(source.slice(2, 4), 16) / 255
+  const blue = Number.parseInt(source.slice(4, 6), 16) / 255
+  const max = Math.max(red, green, blue)
+  const min = Math.min(red, green, blue)
+  const delta = max - min
+  let hue = 0
+  const lightness = (max + min) / 2
+  const saturation =
+    delta === 0 ? 0 : delta / (1 - Math.abs(2 * lightness - 1))
+
+  if (delta !== 0) {
+    switch (max) {
+      case red:
+        hue = ((green - blue) / delta) % 6
+        break
+      case green:
+        hue = (blue - red) / delta + 2
+        break
+      default:
+        hue = (red - green) / delta + 4
+        break
+    }
+    hue *= 60
+    if (hue < 0) hue += 360
+  }
+
+  return {
+    h: Math.round(hue),
+    s: Math.round(saturation * 100),
+    l: Math.round(lightness * 100),
+  }
+}
+
+function applyBackgroundColor(color: string) {
+  createEventForm.value.backgroundColor = color
+  const hsl = hexToHsl(color)
+  backgroundColorHue.value = hsl.h
+}
+
+function updateBackgroundFromHue() {
+  createEventForm.value.backgroundColor = hslToHex(backgroundColorHue.value, 68, 88)
+}
+
+function onEmojiPickerSelect(event: Event) {
+  const detail = (event as CustomEvent<{ unicode: string }>).detail
+  medalForm.value.icon = detail.unicode
+  emojiPickerOpen.value = false
+}
+
 function hexToRgba(hex: string, alpha: number) {
   const normalized = hex.replace('#', '')
   const source =
@@ -925,24 +1032,104 @@ function formatEventDateLabel(startsAt: string) {
   })
 }
 
+function formatShortEventDate(startsAt: string) {
+  const date = new Date(startsAt)
+  const now = new Date()
+  const isSameDay =
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate()
+
+  if (isSameDay) {
+    return date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+  }
+
+  return date.toLocaleString('ru-RU', {
+    day: 'numeric',
+    month: 'short',
+  })
+}
+
+function buildSeedChatMessages(
+  seed: { organizerName: string; photos: GalleryPhoto[]; startsAt: string },
+): EventChatMessage[] {
+  return seed.photos.slice(0, 4).map((photo, index) => ({
+    id: `seed-chat-${photo.id}`,
+    authorName: index % 2 === 0 ? seed.organizerName : 'Гость',
+    authorInitials: index % 2 === 0 ? seed.organizerName.slice(0, 1) : 'Г',
+    text: 'добавил(а) фото в альбом',
+    createdAt: seed.startsAt,
+    photoId: photo.id,
+  }))
+}
+
+function canExpandOnHome(event: GalleryEvent) {
+  return event.status === 'current' || event.status === 'past'
+}
+
+function canShowHomeAchievements(event: GalleryEvent) {
+  return canExpandOnHome(event) && event.achievements.length > 0
+}
+
+function getSavedPhotos(event: GalleryEvent) {
+  return event.photos.filter((photo) => photo.saved)
+}
+
+function getPhotoStyle(photo: GalleryPhoto) {
+  if (photo.src) {
+    return {
+      backgroundImage: `url("${photo.src}")`,
+      backgroundSize: 'cover',
+      backgroundPosition: 'center',
+    }
+  }
+
+  return { '--photo-tone': photo.tone }
+}
+
+function syncEventSavedCount(event: GalleryEvent) {
+  event.savedCount = getSavedPhotos(event).length
+  event.totalCount = event.photos.length
+}
+
 function isAssetSource(value: string) {
   return /\.(png|jpe?g|jfif|webp|avif|gif|mp4|webm)$/i.test(value)
 }
 
 function getCoverBackground(event: GalleryEvent) {
   if (isAssetSource(event.coverStart)) {
-    return `linear-gradient(180deg, rgba(22, 22, 22, 0.08), rgba(22, 22, 22, 0.64)), url("${event.coverStart}")`
+    return `url("${event.coverStart}")`
   }
 
-  return `linear-gradient(180deg, rgba(22, 22, 22, 0.02), rgba(22, 22, 22, 0.62)), linear-gradient(135deg, ${event.coverStart}, ${event.coverEnd})`
+  return `linear-gradient(135deg, ${event.coverStart}, ${event.coverEnd})`
 }
 
 function getBackgroundBackground(event: GalleryEvent) {
   if (isAssetSource(event.backgroundStart)) {
-    return `linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(22, 22, 22, 0.12)), url("${event.backgroundStart}")`
+    return `url("${event.backgroundStart}")`
   }
 
-  return `linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(22, 22, 22, 0.08)), linear-gradient(135deg, ${event.backgroundStart}, ${event.backgroundEnd})`
+  if (event.backgroundStart.startsWith('#')) {
+    return event.backgroundStart
+  }
+
+  return `linear-gradient(135deg, ${event.backgroundStart}, ${event.backgroundEnd})`
+}
+
+function getEventSurfaceStyle(start: string, end: string) {
+  if (isAssetSource(start)) {
+    return {
+      background: `url("${start}") center / cover no-repeat`,
+    }
+  }
+
+  if (start.startsWith('#')) {
+    return { background: start }
+  }
+
+  return {
+    background: `linear-gradient(135deg, ${start}, ${end})`,
+  }
 }
 
 function buildEventStatus(startsAt: string, endsAt: string) {
@@ -1023,7 +1210,7 @@ function normalizeSeedEvent(seed: {
   organizerInitials: string
   organizerName: string
   organizerTone: string
-  photos: GalleryPhoto[]
+  photos: Array<{ id: string; tone: string; likes: number; saved?: boolean }>
   role: string
   savedCount: number
   startsAt: string
@@ -1031,6 +1218,11 @@ function normalizeSeedEvent(seed: {
   totalCount: number
   description?: string
 }) {
+  const photos = seed.photos.map((photo, index) => ({
+    ...photo,
+    saved: photo.saved ?? index < seed.savedCount,
+  }))
+
   return {
     id: seed.id,
     title: seed.title,
@@ -1057,7 +1249,13 @@ function normalizeSeedEvent(seed: {
     payment: null,
     timezoneLabel: 'Екатеринбург (UTC+5)',
     achievements: seed.achievements.map((achievement) => normalizeSeedAchievement(achievement)),
-    photos: seed.photos,
+    photos,
+    chatMessages: photos.length
+      ? buildSeedChatMessages({ organizerName: seed.organizerName, photos, startsAt: seed.startsAt })
+      : [],
+    guestRsvps: [],
+    titleStyle: 'classic',
+    rsvpStyle: 'icons',
   } satisfies GalleryEvent
 }
 
@@ -1074,16 +1272,141 @@ const selectedPhoto = ref<{ eventId: string; photoId: string } | null>(null)
 const activeAchievement = ref<string | null>(null)
 const createEventOpen = ref(false)
 const medalBuilderOpen = ref(false)
-const guestPreviewOpen = ref(false)
+const activeEventId = ref<string | null>(null)
+const previewDraftEvent = ref<GalleryEvent | null>(null)
+const eventChatDraft = ref('')
+const editingEventId = ref<string | null>(null)
+const rsvpSheetOpen = ref(false)
+const rsvpSheetStatus = ref<RsvpStatus | null>(null)
+const rsvpSheetMessage = ref('')
+const albumPhotoInput = ref<HTMLInputElement | null>(null)
+const chatPhotoInput = ref<HTMLInputElement | null>(null)
+const pendingAlbumEventId = ref<string | null>(null)
+
+const rsvpStatusLabels: Record<RsvpStatus, string> = {
+  going: 'Пойду',
+  maybe: 'Возможно',
+  cant_go: 'Не смогу',
+}
 const coverPickerOpen = ref(false)
+const coverPickerTab = ref<'posters' | 'gifs'>('posters')
 const coverSearchQuery = ref('')
+const emojiPickerOpen = ref(false)
+const backgroundColorHue = ref(28)
 const createAchievementPopover = ref<string | null>(null)
 const createEventForm = ref<CreateEventForm>(createEmptyEventForm())
 const medalForm = ref<MedalForm>(createEmptyMedalForm())
 
 const hourOptions = Array.from({ length: 24 }, (_, index) => padNumber(index))
 const minuteOptions = Array.from({ length: 60 }, (_, index) => padNumber(index))
-const todayDate = new Date().toISOString().slice(0, 10)
+
+function getLocalDateString(date = new Date()) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function getNowParts() {
+  const now = new Date()
+  return {
+    date: getLocalDateString(now),
+    hour: padNumber(now.getHours()),
+    minute: padNumber(now.getMinutes()),
+  }
+}
+
+function filterHoursFrom(minHour: string) {
+  return hourOptions.filter((hour) => Number(hour) >= Number(minHour))
+}
+
+function filterMinutesFrom(minMinute: string) {
+  return minuteOptions.filter((minute) => Number(minute) >= Number(minute))
+}
+
+function clampStartDateTime() {
+  const now = getNowParts()
+  if (createEventForm.value.startDate < now.date) {
+    createEventForm.value.startDate = now.date
+  }
+
+  if (createEventForm.value.startDate === now.date) {
+    if (Number(createEventForm.value.startHour) < Number(now.hour)) {
+      createEventForm.value.startHour = now.hour
+    }
+    if (
+      createEventForm.value.startHour === now.hour &&
+      Number(createEventForm.value.startMinute) < Number(now.minute)
+    ) {
+      createEventForm.value.startMinute = now.minute
+    }
+  }
+}
+
+function clampEndDateTime() {
+  if (!createEventForm.value.startDate || !createEventForm.value.endDate) return
+
+  if (createEventForm.value.endDate < createEventForm.value.startDate) {
+    createEventForm.value.endDate = createEventForm.value.startDate
+  }
+
+  if (createEventForm.value.endDate === createEventForm.value.startDate) {
+    if (Number(createEventForm.value.endHour) < Number(createEventForm.value.startHour)) {
+      createEventForm.value.endHour = createEventForm.value.startHour
+    }
+    if (
+      createEventForm.value.endHour === createEventForm.value.startHour &&
+      Number(createEventForm.value.endMinute) < Number(createEventForm.value.startMinute)
+    ) {
+      createEventForm.value.endMinute = createEventForm.value.startMinute
+    }
+  }
+}
+
+function enforceCreateDateTimeRules() {
+  clampStartDateTime()
+  clampEndDateTime()
+}
+
+const minStartDate = computed(() => {
+  const today = getNowParts().date
+  if (!editingEventId.value) return today
+
+  const event = homeEvents.value.find((item) => item.id === editingEventId.value)
+  if (!event) return today
+
+  const eventStartDate = event.startsAt.slice(0, 10)
+  return eventStartDate < today ? eventStartDate : today
+})
+
+const availableStartHours = computed(() => {
+  const now = getNowParts()
+  if (createEventForm.value.startDate > now.date) return hourOptions
+  if (createEventForm.value.startDate < now.date) return hourOptions
+  return filterHoursFrom(now.hour)
+})
+
+const availableStartMinutes = computed(() => {
+  const now = getNowParts()
+  if (createEventForm.value.startDate > now.date) return minuteOptions
+  if (createEventForm.value.startDate < now.date) return minuteOptions
+  if (Number(createEventForm.value.startHour) > Number(now.hour)) return minuteOptions
+  return filterMinutesFrom(now.minute)
+})
+
+const availableEndHours = computed(() => {
+  if (!createEventForm.value.endDate) return hourOptions
+  if (createEventForm.value.endDate > createEventForm.value.startDate) return hourOptions
+  return filterHoursFrom(createEventForm.value.startHour)
+})
+
+const availableEndMinutes = computed(() => {
+  if (!createEventForm.value.endDate || createEventForm.value.endDate > createEventForm.value.startDate) {
+    return minuteOptions
+  }
+  if (Number(createEventForm.value.endHour) > Number(createEventForm.value.startHour)) return minuteOptions
+  return filterMinutesFrom(createEventForm.value.startMinute)
+})
 
 const eventStyle = computed(() => ({
   '--theme-start': selectedTheme.value.start,
@@ -1109,15 +1432,35 @@ const totalMedals = computed(() =>
   homeEvents.value.reduce((sum, event) => sum + event.achievements.length, 0),
 )
 
-const flatPhotos = computed(() =>
-  homeEvents.value.flatMap((event) => event.photos.map((photo) => ({ event, photo }))),
-)
+const photoViewerUsesAlbum = ref(false)
+
+const flatPhotos = computed(() => {
+  if (!selectedPhoto.value) return []
+
+  const event = getEventById(selectedPhoto.value.eventId)
+  if (!event) return []
+
+  const photos = photoViewerUsesAlbum.value ? event.photos : getSavedPhotos(event)
+  return photos.map((photo) => ({ event, photo }))
+})
+
+const expandableVisibleEvents = computed(() => visibleEvents.value.filter((event) => canExpandOnHome(event)))
 
 const allVisibleExpanded = computed(
   () =>
-    visibleEvents.value.length > 0 &&
-    visibleEvents.value.every((event) => expandedEvents.value.has(event.id)),
+    expandableVisibleEvents.value.length > 0 &&
+    expandableVisibleEvents.value.every((event) => expandedEvents.value.has(event.id)),
 )
+
+const activeEvent = computed(
+  () => homeEvents.value.find((event) => event.id === activeEventId.value) ?? null,
+)
+
+const eventPageData = computed(() => {
+  if (currentView.value === 'preview') return previewDraftEvent.value
+  if (currentView.value === 'event') return activeEvent.value
+  return null
+})
 
 function getAssetById(list: AssetOption[], id: string) {
   return list.find((item) => item.id === id) ?? null
@@ -1163,8 +1506,51 @@ const endDateTime = computed(() =>
   ),
 )
 
-const startIsInPast = computed(() => new Date(startDateTime.value).getTime() < Date.now())
-const endBeforeStart = computed(() => new Date(endDateTime.value).getTime() < new Date(startDateTime.value).getTime())
+const startIsInPast = computed(() => {
+  if (editingEventId.value) {
+    const existing = homeEvents.value.find((item) => item.id === editingEventId.value)
+    if (existing && new Date(existing.startsAt).getTime() <= Date.now()) {
+      return false
+    }
+  }
+  return new Date(startDateTime.value).getTime() < Date.now()
+})
+
+const endBeforeStart = computed(
+  () => new Date(endDateTime.value).getTime() < new Date(startDateTime.value).getTime(),
+)
+
+const canSaveEvent = computed(
+  () =>
+    Boolean(createEventForm.value.title.trim()) &&
+    Boolean(createEventForm.value.startDate) &&
+    Boolean(createEventForm.value.endDate) &&
+    !startIsInPast.value &&
+    !endBeforeStart.value,
+)
+
+watch(
+  () => [
+    createEventForm.value.startDate,
+    createEventForm.value.startHour,
+    createEventForm.value.startMinute,
+  ],
+  () => {
+    clampStartDateTime()
+    clampEndDateTime()
+  },
+)
+
+watch(
+  () => [
+    createEventForm.value.endDate,
+    createEventForm.value.endHour,
+    createEventForm.value.endMinute,
+  ],
+  () => {
+    clampEndDateTime()
+  },
+)
 
 const selectedAutomaticTemplates = computed(() =>
   systemAchievementTemplates.filter((template) => createEventForm.value.automaticTemplateIds.includes(template.id)),
@@ -1226,36 +1612,36 @@ const filteredCoverGifs = computed(() =>
   filteredCoverAssets.value.filter((asset) => asset.category === 'gif'),
 )
 
+const activeCoverPickerAssets = computed(() =>
+  coverPickerTab.value === 'gifs' ? filteredCoverGifs.value : filteredCoverPosters.value,
+)
+
 const createBackgroundStyle = computed(() => {
   if (createEventForm.value.backgroundMode === 'color') {
-    return {
-      backgroundImage: buildSoftColorGradient(createEventForm.value.backgroundColor),
-    }
+    return { background: createEventForm.value.backgroundColor }
   }
 
   if (selectedBackgroundAsset.value?.kind === 'image') {
     return {
-      backgroundImage: `linear-gradient(135deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.22)), url("${selectedBackgroundAsset.value.src}")`,
+      background: `url("${selectedBackgroundAsset.value.src}") center / cover no-repeat`,
     }
   }
 
-  return {
-    backgroundImage: buildSoftColorGradient('#e6dcff'),
-  }
+  return { background: '#f3f0ff' }
 })
 
 const previewBackgroundStyle = computed(() => {
   if (createEventForm.value.backgroundMode === 'color') {
-    return { backgroundImage: buildSoftColorGradient(createEventForm.value.backgroundColor) }
+    return { background: createEventForm.value.backgroundColor }
   }
 
   if (selectedBackgroundAsset.value?.kind === 'image') {
     return {
-      backgroundImage: `linear-gradient(180deg, rgba(255, 255, 255, 0.42), rgba(255, 255, 255, 0.78)), url("${selectedBackgroundAsset.value.src}")`,
+      background: `url("${selectedBackgroundAsset.value.src}") center / cover no-repeat`,
     }
   }
 
-  return { backgroundImage: buildSoftColorGradient('#e6dcff') }
+  return { background: '#f3f0ff' }
 })
 
 const previewDateLabel = computed(() => formatEventDateLabel(startDateTime.value))
@@ -1306,7 +1692,8 @@ function logout() {
   selectedPhoto.value = null
   createEventOpen.value = false
   medalBuilderOpen.value = false
-  guestPreviewOpen.value = false
+  activeEventId.value = null
+  previewDraftEvent.value = null
   coverPickerOpen.value = false
   createAchievementPopover.value = null
 }
@@ -1328,12 +1715,17 @@ function toggleProfileMenu() {
 function openCreateEvent() {
   createEventForm.value = createEmptyEventForm()
   medalForm.value = createEmptyMedalForm()
+  applyBackgroundColor(createEventForm.value.backgroundColor)
+  enforceCreateDateTimeRules()
   currentView.value = 'create'
   createEventOpen.value = true
   medalBuilderOpen.value = false
-  guestPreviewOpen.value = false
+  activeEventId.value = null
+  previewDraftEvent.value = null
   coverPickerOpen.value = false
+  coverPickerTab.value = 'posters'
   coverSearchQuery.value = ''
+  emojiPickerOpen.value = false
   createAchievementPopover.value = null
   notificationsOpen.value = false
   profileMenuOpen.value = false
@@ -1343,9 +1735,43 @@ function closeCreateEvent() {
   currentView.value = 'home'
   createEventOpen.value = false
   medalBuilderOpen.value = false
-  guestPreviewOpen.value = false
+  activeEventId.value = null
+  previewDraftEvent.value = null
+  editingEventId.value = null
   coverPickerOpen.value = false
   createAchievementPopover.value = null
+}
+
+function openGuestPreview() {
+  enforceCreateDateTimeRules()
+  const draft = createEventFromForm()
+  draft.title = draft.title || 'Untitled Event'
+  previewDraftEvent.value = draft
+  currentView.value = 'preview'
+  medalBuilderOpen.value = false
+  coverPickerOpen.value = false
+}
+
+function closeGuestPreview() {
+  currentView.value = 'create'
+  previewDraftEvent.value = null
+}
+
+function openEventPage(eventId: string) {
+  activeEventId.value = eventId
+  currentView.value = 'event'
+  eventChatDraft.value = ''
+  profileMenuOpen.value = false
+  notificationsOpen.value = false
+  selectedPhoto.value = null
+  closeRsvpSheet()
+}
+
+function closeEventPage() {
+  currentView.value = 'home'
+  activeEventId.value = null
+  eventChatDraft.value = ''
+  closeRsvpSheet()
 }
 
 function addInfoBlock() {
@@ -1361,8 +1787,21 @@ function removeInfoBlock(blockId: string) {
 function openMedalBuilder(scope: AchievementScope) {
   medalForm.value = createEmptyMedalForm()
   medalForm.value.scope = scope
+  emojiPickerOpen.value = false
   medalBuilderOpen.value = true
 }
+
+watch(coverPickerOpen, (isOpen) => {
+  if (isOpen) {
+    coverPickerTab.value = 'posters'
+  }
+})
+
+watch(medalBuilderOpen, (isOpen) => {
+  if (!isOpen) {
+    emojiPickerOpen.value = false
+  }
+})
 
 function saveCustomMedal() {
   const trimmedTitle = medalForm.value.title.trim()
@@ -1405,7 +1844,10 @@ function isEventExpanded(id: string) {
   return expandedEvents.value.has(id)
 }
 
-function toggleEvent(id: string) {
+function toggleEventExpanded(id: string) {
+  const event = homeEvents.value.find((item) => item.id === id)
+  if (!event || !canExpandOnHome(event)) return
+
   const next = new Set(expandedEvents.value)
   if (next.has(id)) {
     next.delete(id)
@@ -1419,20 +1861,69 @@ function toggleEvent(id: string) {
 function toggleAllEvents() {
   const next = new Set(expandedEvents.value)
   if (allVisibleExpanded.value) {
-    visibleEvents.value.forEach((event) => next.delete(event.id))
+    expandableVisibleEvents.value.forEach((event) => next.delete(event.id))
     activeAchievement.value = null
   } else {
-    visibleEvents.value.forEach((event) => next.add(event.id))
+    expandableVisibleEvents.value.forEach((event) => next.add(event.id))
   }
   expandedEvents.value = next
 }
 
-function openPhoto(event: GalleryEvent, photo: GalleryPhoto) {
+function getEventById(eventId: string) {
+  return homeEvents.value.find((event) => event.id === eventId) ?? null
+}
+
+function updateEventInList(eventId: string, updater: (event: GalleryEvent) => GalleryEvent) {
+  homeEvents.value = homeEvents.value.map((event) => (event.id === eventId ? updater(event) : event))
+}
+
+function sendEventChatMessage() {
+  const event = activeEvent.value
+  const text = eventChatDraft.value.trim()
+  if (!event || !text) return
+
+  updateEventInList(event.id, (current) => ({
+    ...current,
+    chatMessages: [
+      ...current.chatMessages,
+      {
+        id: createId('chat'),
+        authorName: currentUser.name,
+        authorInitials: currentUser.initials,
+        text,
+        createdAt: new Date().toISOString(),
+      },
+    ],
+  }))
+  eventChatDraft.value = ''
+}
+
+function togglePhotoSaved(eventId: string, photoId: string) {
+  updateEventInList(eventId, (current) => {
+    const nextEvent = {
+      ...current,
+      photos: current.photos.map((photo) =>
+        photo.id === photoId ? { ...photo, saved: !photo.saved } : photo,
+      ),
+    }
+    syncEventSavedCount(nextEvent)
+    return nextEvent
+  })
+}
+
+function isPhotoSaved(eventId: string, photoId: string) {
+  const photo = getEventById(eventId)?.photos.find((item) => item.id === photoId)
+  return Boolean(photo?.saved)
+}
+
+function openPhoto(event: GalleryEvent, photo: GalleryPhoto, useAlbum = false) {
+  photoViewerUsesAlbum.value = useAlbum
   selectedPhoto.value = { eventId: event.id, photoId: photo.id }
 }
 
 function closePhoto() {
   selectedPhoto.value = null
+  photoViewerUsesAlbum.value = false
 }
 
 function stepPhoto(direction: number) {
@@ -1555,6 +2046,255 @@ function getRsvpPreviewSymbols(styleId: string) {
   return symbolMap[styleId] ?? symbolMap.icons
 }
 
+function getRsvpChoices(styleId: string): RsvpChoice[] {
+  const symbols = getRsvpPreviewSymbols(styleId)
+  const ids: RsvpStatus[] = ['going', 'maybe', 'cant_go']
+  return ids.map((id, index) => ({
+    id,
+    label: rsvpStatusLabels[id],
+    symbol: symbols[index],
+  }))
+}
+
+function getRsvpStatusVerb(status: RsvpStatus) {
+  const verbs: Record<RsvpStatus, string> = {
+    going: 'пойдёт',
+    maybe: 'возможно придёт',
+    cant_go: 'не сможет прийти',
+  }
+  return verbs[status]
+}
+
+function getRsvpSummary(event: GalleryEvent) {
+  const going = event.guestRsvps.filter((entry) => entry.status === 'going').length
+  const maybe = event.guestRsvps.filter((entry) => entry.status === 'maybe').length
+  const cant = event.guestRsvps.filter((entry) => entry.status === 'cant_go').length
+  return { going, maybe, cant }
+}
+
+function getInfoBlockLabel(block: EventInfoBlock) {
+  if (block.type === 'other') return block.title.trim() || 'Другое'
+  return infoBlockTypeOptions.find((option) => option.value === block.type)?.label ?? block.title
+}
+
+function findAssetIdBySrc(list: AssetOption[], src: string) {
+  return list.find((asset) => asset.src === src)?.id ?? ''
+}
+
+function openRsvpSheet(status: RsvpStatus) {
+  if (currentView.value !== 'event' || !activeEvent.value) return
+  rsvpSheetStatus.value = status
+  rsvpSheetMessage.value = ''
+  rsvpSheetOpen.value = true
+}
+
+function closeRsvpSheet() {
+  rsvpSheetOpen.value = false
+  rsvpSheetStatus.value = null
+  rsvpSheetMessage.value = ''
+}
+
+function submitRsvpResponse() {
+  const event = activeEvent.value
+  const status = rsvpSheetStatus.value
+  if (!event || !status) return
+
+  const message = rsvpSheetMessage.value.trim()
+  const statusLabel = rsvpStatusLabels[status]
+  const chatText = message
+    ? `${currentUser.name} отметил(а) «${statusLabel}»: ${message}`
+    : `${currentUser.name} отметил(а) «${statusLabel}».`
+
+  updateEventInList(event.id, (current) => ({
+    ...current,
+    guestRsvps: [
+      ...current.guestRsvps.filter((entry) => entry.userName !== currentUser.name),
+      {
+        id: createId('rsvp'),
+        userName: currentUser.name,
+        userInitials: currentUser.initials,
+        status,
+        message: message || undefined,
+        createdAt: new Date().toISOString(),
+      },
+    ],
+    chatMessages: [
+      ...current.chatMessages,
+      {
+        id: createId('chat'),
+        authorName: currentUser.name,
+        authorInitials: currentUser.initials,
+        text: chatText,
+        createdAt: new Date().toISOString(),
+      },
+    ],
+  }))
+
+  notifications.value = [
+    {
+      id: createId('notice'),
+      title: 'Ответ на приглашение',
+      text: `${currentUser.name} ${getRsvpStatusVerb(status)} на «${event.title}»${message ? `: ${message}` : '.'}`,
+      time: 'сейчас',
+    },
+    ...notifications.value,
+  ]
+
+  closeRsvpSheet()
+}
+
+function addEventPhoto(eventId: string, file: File, source: 'album' | 'chat') {
+  const event = getEventById(eventId)
+  if (!event) return
+
+  const src = window.URL.createObjectURL(file)
+  const photo: GalleryPhoto = {
+    id: createId('photo'),
+    tone: '#ffffff,#d9e8ff,#5b8def',
+    likes: 0,
+    src,
+    saved: false,
+  }
+
+  updateEventInList(eventId, (current) => {
+    const nextEvent = {
+      ...current,
+      photos: [...current.photos, photo],
+      chatMessages:
+        source === 'chat'
+          ? [
+              ...current.chatMessages,
+              {
+                id: createId('chat'),
+                authorName: currentUser.name,
+                authorInitials: currentUser.initials,
+                text: 'добавил(а) фото',
+                createdAt: new Date().toISOString(),
+                photoId: photo.id,
+              },
+            ]
+          : current.chatMessages,
+    }
+    syncEventSavedCount(nextEvent)
+    return nextEvent
+  })
+
+  notifications.value = [
+    {
+      id: createId('notice'),
+      title: 'Новое фото',
+      text: `В событии «${event.title}» появилось новое фото.`,
+      time: 'сейчас',
+    },
+    ...notifications.value,
+  ]
+}
+
+function triggerAlbumPhotoPicker(eventId: string) {
+  pendingAlbumEventId.value = eventId
+  albumPhotoInput.value?.click()
+}
+
+function triggerChatPhotoPicker() {
+  chatPhotoInput.value?.click()
+}
+
+function handleAlbumPhotoUpload(nativeEvent: Event) {
+  const file = (nativeEvent.target as HTMLInputElement).files?.[0]
+  const eventId = pendingAlbumEventId.value ?? activeEventId.value
+  if (file && eventId) {
+    addEventPhoto(eventId, file, 'album')
+  }
+  pendingAlbumEventId.value = null
+  ;(nativeEvent.target as HTMLInputElement).value = ''
+}
+
+function handleChatPhotoUpload(nativeEvent: Event) {
+  const file = (nativeEvent.target as HTMLInputElement).files?.[0]
+  if (file && activeEventId.value) {
+    addEventPhoto(activeEventId.value, file, 'chat')
+  }
+  ;(nativeEvent.target as HTMLInputElement).value = ''
+}
+
+function getEventPhotoById(event: GalleryEvent, photoId?: string) {
+  if (!photoId) return null
+  return event.photos.find((photo) => photo.id === photoId) ?? null
+}
+
+function populateFormFromEvent(event: GalleryEvent) {
+  const start = toDateParts(event.startsAt)
+  const end = toDateParts(event.endsAt)
+  const coverMatch = findAssetIdBySrc(coverAssetOptions, event.coverStart)
+  const backgroundMatch = findAssetIdBySrc(backgroundAssetOptions, event.backgroundStart)
+  const isColorBackground = event.backgroundStart.startsWith('#')
+
+  createEventForm.value = {
+    ...createEmptyEventForm(),
+    title: event.title,
+    titleStyle: event.titleStyle ?? 'classic',
+    description: event.description ?? '',
+    startDate: start.date,
+    startHour: start.hour,
+    startMinute: start.minute,
+    endDate: end.date,
+    endHour: end.hour,
+    endMinute: end.minute,
+    timezone:
+      russianTimezoneOptions.find((zone) => formatTimezoneLabel(zone.id) === event.timezoneLabel)?.id ??
+      'Asia/Yekaterinburg',
+    hostAlias: event.organizerName,
+    location: event.location === 'Место уточняется' ? '' : event.location,
+    participantLimit: event.participantLimit ? String(event.participantLimit) : '',
+    coverAssetId: coverMatch || createEmptyEventForm().coverAssetId,
+    backgroundAssetId: backgroundMatch || createEmptyEventForm().backgroundAssetId,
+    backgroundMode: isColorBackground ? 'color' : 'asset',
+    backgroundColor: isColorBackground ? event.backgroundStart : createEmptyEventForm().backgroundColor,
+    uploadedCoverUrl: coverMatch ? null : isAssetSource(event.coverStart) ? event.coverStart : null,
+    uploadedBackgroundUrl:
+      !isColorBackground && !backgroundMatch && isAssetSource(event.backgroundStart)
+        ? event.backgroundStart
+        : null,
+    infoBlocks: event.infoBlocks ? event.infoBlocks.map((block) => ({ ...block })) : [],
+    paymentEnabled: Boolean(event.payment),
+    costPerPerson: event.payment?.amount ?? '',
+    paymentDestination: event.payment?.destination ?? '',
+    paymentComment: event.payment?.comment ?? '',
+    allowGuestInvites: Boolean(event.allowGuestInvites),
+    rsvpStyle: event.rsvpStyle ?? 'icons',
+    automaticTemplateIds: systemAchievementTemplates
+      .filter((template) => event.achievements.some((achievement) => achievement.title === template.title))
+      .map((template) => template.id),
+    selectedPersonalTemplateIds: customAchievementTemplates.value
+      .filter(
+        (template) =>
+          template.scope === 'personal' &&
+          event.achievements.some((achievement) => achievement.title === template.title),
+      )
+      .map((template) => template.id),
+    selectedGroupTemplateIds: customAchievementTemplates.value
+      .filter(
+        (template) =>
+          template.scope === 'group' &&
+          event.achievements.some((achievement) => achievement.title === template.title),
+      )
+      .map((template) => template.id),
+  }
+}
+
+function openEditEvent(eventId: string) {
+  const event = getEventById(eventId)
+  if (!event || event.role !== 'Организатор') return
+
+  editingEventId.value = eventId
+  populateFormFromEvent(event)
+  enforceCreateDateTimeRules()
+  currentView.value = 'create'
+  medalBuilderOpen.value = false
+  coverPickerOpen.value = false
+  previewDraftEvent.value = null
+}
+
 function scrollToCreateSection(sectionId: string) {
   document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
@@ -1579,7 +2319,7 @@ function createEventFromForm() {
   const coverAsset = selectedCoverAsset.value
   const backgroundAsset = selectedBackgroundAsset.value
   const safeStartsAt = startDateTime.value
-  const safeEndsAt = endBeforeStart.value ? startDateTime.value : endDateTime.value
+  const safeEndsAt = endDateTime.value
   const hostName = createEventForm.value.hostAlias.trim() || currentUser.name
   const hostInitials =
     hostName
@@ -1651,25 +2391,63 @@ function createEventFromForm() {
       ...selectedTemplates,
     ],
     photos: [],
+    chatMessages: [],
+    guestRsvps: [],
+    titleStyle: createEventForm.value.titleStyle,
+    rsvpStyle: createEventForm.value.rsvpStyle,
   }
 
   return newEvent
 }
 
 function saveEvent() {
-  if (!createEventForm.value.title.trim() || !createEventForm.value.startDate) return
-  if (startIsInPast.value) return
+  enforceCreateDateTimeRules()
+  if (!canSaveEvent.value) return
+
+  if (editingEventId.value) {
+    const existing = getEventById(editingEventId.value)
+    if (!existing) return
+
+    const updated = createEventFromForm()
+    updated.id = existing.id
+    updated.photos = existing.photos
+    updated.chatMessages = existing.chatMessages
+    updated.guestRsvps = existing.guestRsvps
+    updated.savedCount = existing.savedCount
+    updated.role = existing.role
+    updated.status = buildEventStatus(updated.startsAt, updated.endsAt)
+    syncEventSavedCount(updated)
+
+    homeEvents.value = homeEvents.value.map((event) => (event.id === updated.id ? updated : event))
+    activeTab.value = updated.status
+    editingEventId.value = null
+    createEventOpen.value = false
+    medalBuilderOpen.value = false
+    coverPickerOpen.value = false
+    previewDraftEvent.value = null
+    openEventPage(updated.id)
+    notifications.value = [
+      {
+        id: createId('notice'),
+        title: 'Событие обновлено',
+        text: `Изменения в «${updated.title}» сохранены.`,
+        time: 'сейчас',
+      },
+      ...notifications.value,
+    ]
+    return
+  }
 
   const nextEvent = createEventFromForm()
   homeEvents.value = [...homeEvents.value, nextEvent]
-  expandedEvents.value = new Set([nextEvent.id])
+  expandedEvents.value = new Set()
   activeTab.value = nextEvent.status
   activeAchievement.value = null
   createEventOpen.value = false
   medalBuilderOpen.value = false
-  guestPreviewOpen.value = false
   coverPickerOpen.value = false
-  currentView.value = 'home'
+  previewDraftEvent.value = null
+  openEventPage(nextEvent.id)
   notifications.value = [
     {
       id: createId('notice'),
@@ -1900,8 +2678,13 @@ function saveEvent() {
           <p class="eyebrow">Личная галерея</p>
           <h1 id="events-title">Мои события</h1>
         </div>
-        <button class="secondary-button" type="button" @click="toggleAllEvents">
-          {{ allVisibleExpanded ? 'Свернуть все события' : 'Раскрыть все события' }}
+        <button
+          v-if="expandableVisibleEvents.length"
+          class="secondary-button"
+          type="button"
+          @click="toggleAllEvents"
+        >
+          {{ allVisibleExpanded ? 'Свернуть галерею' : 'Раскрыть сохранённые фото' }}
         </button>
       </div>
 
@@ -1940,38 +2723,33 @@ function saveEvent() {
           :class="{ expanded: isEventExpanded(event.id) }"
           :style="{ '--event-accent': event.accent, '--organizer-tone': event.organizerTone }"
         >
-          <button
-            v-if="!isEventExpanded(event.id)"
-            class="event-compact"
-            type="button"
-            :style="{ backgroundImage: getCoverBackground(event) }"
-            @click="toggleEvent(event.id)"
-          >
-            <span class="event-role">{{ event.role }}</span>
-            <span class="event-date">{{ formatEventDateLabel(event.startsAt) }}</span>
-            <span class="event-sun" aria-hidden="true"></span>
-            <span class="event-compact-title">{{ event.title }}</span>
-            <span class="event-organizer">
-              <span
-                class="organizer-avatar"
-                :style="
-                  event.organizerAvatarSrc
-                    ? { backgroundImage: `url(${event.organizerAvatarSrc})`, backgroundSize: 'cover', backgroundPosition: 'center' }
-                    : undefined
-                "
-              >
-                <template v-if="!event.organizerAvatarSrc">{{ event.organizerInitials }}</template>
+          <div v-if="!isEventExpanded(event.id)" class="event-compact-shell">
+            <button
+              class="event-compact"
+              type="button"
+              :style="getEventSurfaceStyle(event.coverStart, event.coverEnd)"
+              @click="openEventPage(event.id)"
+            >
+              <span class="event-role">{{ event.role }}</span>
+              <span class="event-date">{{ formatShortEventDate(event.startsAt) }}</span>
+              <span class="event-compact-title">{{ event.title }}</span>
+              <span class="event-organizer">
+                <span class="organizer-avatar">{{ event.organizerInitials }}</span>
+                {{ event.organizerName }}
               </span>
-              {{ event.organizerName }}
-            </span>
-            <span class="event-badge-summary">
-              <span>🏆 {{ countAchievements(event, 'group') }}</span>
-              <span>🏅 {{ countAchievements(event, 'personal') }}</span>
-            </span>
-          </button>
+            </button>
+            <button
+              v-if="canExpandOnHome(event)"
+              class="event-expand-button"
+              type="button"
+              @click.stop="toggleEventExpanded(event.id)"
+            >
+              Раскрыть
+            </button>
+          </div>
 
-          <div v-else class="event-expanded" :style="{ backgroundImage: getBackgroundBackground(event) }">
-            <div class="expanded-achievements" aria-label="Достижения события">
+          <div v-else class="event-expanded" :style="getEventSurfaceStyle(event.backgroundStart, event.backgroundEnd)">
+            <div v-if="canShowHomeAchievements(event)" class="expanded-achievements" aria-label="Полученные достижения">
               <button
                 v-for="achievement in event.achievements"
                 :key="achievement.id"
@@ -1993,39 +2771,280 @@ function saveEvent() {
             </div>
 
             <div class="expanded-event-head">
-              <div>
-                <span class="event-role">{{ event.role }}</span>
-                <h2>{{ event.title }}</h2>
-                <p>
-                  {{ formatEventDateLabel(event.startsAt) }} · {{ event.location }} · организует
-                  {{ event.organizerName }}
-                </p>
+              <div class="expanded-event-copy">
+                <div>
+                  <span class="event-role">{{ event.role }}</span>
+                  <h2>{{ event.title }}</h2>
+                  <p>
+                    {{ formatEventDateLabel(event.startsAt) }} · {{ event.location }} · организует
+                    {{ event.organizerName }}
+                  </p>
+                </div>
+                <div
+                  class="expanded-cover-thumb"
+                  :style="getEventSurfaceStyle(event.coverStart, event.coverEnd)"
+                ></div>
               </div>
-              <button class="collapse-event-button" type="button" @click="toggleEvent(event.id)">
-                Скрыть
-              </button>
+              <div class="expanded-event-actions">
+                <button class="secondary-button compact-action" type="button" @click="openEventPage(event.id)">
+                  Открыть событие
+                </button>
+                <button class="collapse-event-button" type="button" @click="toggleEventExpanded(event.id)">
+                  Свернуть
+                </button>
+              </div>
             </div>
 
-            <div v-if="event.photos.length" class="event-photo-gallery">
+            <div v-if="getSavedPhotos(event).length" class="event-photo-gallery">
               <button
-                v-for="photo in event.photos"
+                v-for="photo in getSavedPhotos(event)"
                 :key="photo.id"
                 class="gallery-photo"
+                :class="{ saved: photo.saved }"
                 type="button"
-                :style="{ '--photo-tone': photo.tone }"
-                :aria-label="`Открыть фото события ${event.title}`"
+                :style="getPhotoStyle(photo)"
+                :aria-label="`Открыть сохранённое фото события ${event.title}`"
                 @click="openPhoto(event, photo)"
               ></button>
             </div>
             <div v-else class="event-photo-empty">
-              <strong>Фотографии появятся после события</strong>
-              <p>После загрузки снимков общий альбом автоматически свяжется с этой карточкой.</p>
+              <strong>Сохранённых фото пока нет</strong>
+              <p>Откройте событие и сохраните снимки из альбома — они появятся здесь.</p>
             </div>
           </div>
         </article>
       </section>
     </section>
   </main>
+
+  <main
+    v-else-if="currentView === 'preview' || currentView === 'event'"
+    class="event-page-shell"
+    :class="{ 'is-preview': currentView === 'preview' }"
+  >
+    <div
+      v-if="eventPageData"
+      class="event-page-background"
+      :style="getEventSurfaceStyle(eventPageData.backgroundStart, eventPageData.backgroundEnd)"
+    >
+      <video
+        v-if="isAssetSource(eventPageData.backgroundStart) && eventPageData.backgroundStart.endsWith('.mp4')"
+        class="event-page-background-video"
+        :src="eventPageData.backgroundStart"
+        autoplay
+        muted
+        loop
+        playsinline
+      ></video>
+    </div>
+
+    <header class="event-page-topbar">
+      <a class="brand home-brand" href="#" aria-label="Event Gallery" @click.prevent="currentView === 'preview' ? closeGuestPreview() : closeEventPage()">
+        <span class="brand-mark">EG</span>
+        <span>Event Gallery</span>
+      </a>
+
+      <div v-if="currentView === 'preview'" class="event-page-mode-banner">
+        <span>Просмотр события</span>
+        <button class="secondary-button compact-action" type="button" @click="closeGuestPreview">Назад</button>
+        <button class="primary-button compact-action" type="button" @click="saveEvent">Сохранить событие</button>
+      </div>
+      <div v-else class="event-page-top-actions">
+        <button
+          v-if="activeEvent?.role === 'Организатор'"
+          class="secondary-button compact-action"
+          type="button"
+          @click="openEditEvent(activeEvent.id)"
+        >
+          Изменить
+        </button>
+        <button class="secondary-button compact-action" type="button" @click="closeEventPage">Home</button>
+      </div>
+    </header>
+
+    <section v-if="eventPageData" class="event-page-stage">
+      <div class="event-page-layout">
+        <div class="event-page-main">
+          <h1 class="event-page-title" :class="getTitleStyleClass(eventPageData.titleStyle || 'classic')">
+            {{ eventPageData.title }}
+          </h1>
+          <p class="event-page-meta">
+            {{ formatEventDateLabel(eventPageData.startsAt) }}
+            <span v-if="eventPageData.timezoneLabel"> · {{ eventPageData.timezoneLabel }}</span>
+          </p>
+          <p class="event-page-location">📍 {{ eventPageData.location }}</p>
+          <div class="event-page-host">
+            <span class="organizer-avatar">{{ eventPageData.organizerInitials }}</span>
+            <span>Проводит {{ eventPageData.organizerName }}</span>
+          </div>
+          <p v-if="eventPageData.description" class="event-page-description">{{ eventPageData.description }}</p>
+
+          <ul v-if="eventPageData.infoBlocks?.length" class="event-info-list">
+            <li v-for="block in eventPageData.infoBlocks" :key="block.id" class="event-info-item">
+              <span class="event-info-icon">{{ block.icon }}</span>
+              <div class="event-info-copy">
+                <strong>{{ getInfoBlockLabel(block) }}</strong>
+                <a
+                  v-if="block.link"
+                  class="event-info-link"
+                  :href="block.link"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {{ block.link }}
+                </a>
+                <p v-if="block.description">{{ block.description }}</p>
+              </div>
+            </li>
+          </ul>
+
+          <section v-if="currentView === 'preview'" class="event-page-section">
+            <div class="event-page-section-head">
+              <strong>Guest List</strong>
+              <span class="event-page-section-note">Пример для preview</span>
+            </div>
+            <p class="event-page-section-copy">3 Going · 1 Maybe</p>
+          </section>
+
+          <template v-else>
+            <section class="event-page-section">
+              <div class="event-page-section-head">
+                <strong>Guest List</strong>
+              </div>
+              <p class="event-page-section-copy">
+                {{ getRsvpSummary(eventPageData).going }} пойдут ·
+                {{ getRsvpSummary(eventPageData).maybe }} возможно ·
+                {{ getRsvpSummary(eventPageData).cant }} не смогут
+              </p>
+              <div class="event-page-avatar-row">
+                <span
+                  v-for="entry in eventPageData.guestRsvps.slice(0, 6)"
+                  :key="entry.id"
+                  class="guest-avatar-chip"
+                  :title="`${entry.userName}: ${rsvpStatusLabels[entry.status]}`"
+                >
+                  {{ entry.userInitials }}
+                </span>
+              </div>
+            </section>
+
+            <section class="event-page-section">
+              <div class="event-page-section-head">
+                <strong>Photo Album</strong>
+                <span>{{ eventPageData.photos.length }} фото</span>
+              </div>
+              <div class="event-album-grid">
+                <button
+                  class="event-album-add-tile"
+                  type="button"
+                  aria-label="Добавить фото из файлов"
+                  @click="triggerAlbumPhotoPicker(eventPageData.id)"
+                >
+                  <span class="event-album-add-icon">+</span>
+                  <span>Добавить фото</span>
+                </button>
+                <article v-for="photo in eventPageData.photos" :key="photo.id" class="event-album-item">
+                  <button
+                    class="event-album-photo"
+                    type="button"
+                    :style="getPhotoStyle(photo)"
+                    :aria-label="`Открыть фото ${eventPageData.title}`"
+                    @click="openPhoto(eventPageData, photo, true)"
+                  ></button>
+                  <button
+                    class="event-save-photo-button"
+                    :class="{ active: photo.saved }"
+                    type="button"
+                    @click="togglePhotoSaved(eventPageData.id, photo.id)"
+                  >
+                    {{ photo.saved ? 'В сохранённых' : 'Сохранить' }}
+                  </button>
+                </article>
+              </div>
+            </section>
+
+            <section class="event-page-section">
+              <div class="event-page-section-head">
+                <strong>Activity</strong>
+                <span>{{ eventPageData.chatMessages.length }} updates</span>
+              </div>
+              <div class="event-chat-feed">
+                <article v-for="message in eventPageData.chatMessages" :key="message.id" class="event-chat-item">
+                  <span class="guest-avatar-chip">{{ message.authorInitials }}</span>
+                  <div class="event-chat-copy">
+                    <strong>{{ message.authorName }}</strong>
+                    <p>{{ message.text }}</p>
+                    <button
+                      v-if="getEventPhotoById(eventPageData, message.photoId)"
+                      class="event-chat-photo-link"
+                      type="button"
+                      @click="
+                        openPhoto(
+                          eventPageData,
+                          getEventPhotoById(eventPageData, message.photoId)!,
+                          true,
+                        )
+                      "
+                    >
+                      <img
+                        :src="getEventPhotoById(eventPageData, message.photoId)!.src"
+                        alt="Фото из чата"
+                        decoding="async"
+                      />
+                    </button>
+                  </div>
+                </article>
+              </div>
+              <form class="event-chat-composer" @submit.prevent="sendEventChatMessage">
+                <button
+                  class="event-attach-button"
+                  type="button"
+                  aria-label="Прикрепить фото"
+                  @click="triggerChatPhotoPicker"
+                >
+                  📎
+                </button>
+                <input v-model="eventChatDraft" type="text" placeholder="Написать в чат события..." />
+                <button class="primary-button compact-action" type="submit">Отправить</button>
+              </form>
+            </section>
+          </template>
+        </div>
+
+        <aside class="event-page-side">
+          <div class="event-page-poster">
+            <img
+              v-if="isAssetSource(eventPageData.coverStart)"
+              :src="eventPageData.coverStart"
+              :alt="eventPageData.title"
+              decoding="async"
+            />
+            <div
+              v-else
+              class="event-page-poster-fallback"
+              :style="getEventSurfaceStyle(eventPageData.coverStart, eventPageData.coverEnd)"
+            ></div>
+          </div>
+
+          <div class="rsvp-action-list" :data-style="eventPageData.rsvpStyle || 'icons'">
+            <button
+              v-for="choice in getRsvpChoices(eventPageData.rsvpStyle || 'icons')"
+              :key="choice.id"
+              class="rsvp-action-button"
+              :class="{ disabled: currentView === 'preview' }"
+              type="button"
+              :disabled="currentView === 'preview'"
+              @click="openRsvpSheet(choice.id)"
+            >
+              <span class="rsvp-action-symbol">{{ choice.symbol }}</span>
+              <span class="rsvp-action-label">{{ choice.label }}</span>
+            </button>
+          </div>
+        </aside>
+      </div>
+    </section>
+  </main>
+
   <main v-else class="create-page-shell">
     <div class="create-page-background" :style="createBackgroundStyle">
       <video
@@ -2051,6 +3070,7 @@ function saveEvent() {
     </header>
 
     <section class="create-canvas">
+      <p v-if="editingEventId" class="create-mode-note">Редактирование события</p>
       <form class="create-stream" @submit.prevent="saveEvent">
         <section id="create-core" class="create-primary-card">
           <input
@@ -2078,17 +3098,23 @@ function saveEvent() {
             <div class="datetime-card">
               <label class="stream-field">
                 <span>Дата начала</span>
-                <input v-model="createEventForm.startDate" :min="todayDate" type="date" required />
+                <input v-model="createEventForm.startDate" :min="minStartDate" type="date" required />
               </label>
               <div class="time-select-card">
                 <span>Время начала</span>
                 <div class="time-select-row">
                   <select v-model="createEventForm.startHour" class="time-select">
-                    <option v-for="hour in hourOptions" :key="`start-hour-${hour}`" :value="hour">{{ hour }}</option>
+                    <option v-for="hour in availableStartHours" :key="`start-hour-${hour}`" :value="hour">
+                      {{ hour }}
+                    </option>
                   </select>
                   <span class="time-divider">:</span>
                   <select v-model="createEventForm.startMinute" class="time-select">
-                    <option v-for="minute in minuteOptions" :key="`start-minute-${minute}`" :value="minute">
+                    <option
+                      v-for="minute in availableStartMinutes"
+                      :key="`start-minute-${minute}`"
+                      :value="minute"
+                    >
                       {{ minute }}
                     </option>
                   </select>
@@ -2105,11 +3131,13 @@ function saveEvent() {
                 <span>Время окончания</span>
                 <div class="time-select-row">
                   <select v-model="createEventForm.endHour" class="time-select">
-                    <option v-for="hour in hourOptions" :key="`end-hour-${hour}`" :value="hour">{{ hour }}</option>
+                    <option v-for="hour in availableEndHours" :key="`end-hour-${hour}`" :value="hour">
+                      {{ hour }}
+                    </option>
                   </select>
                   <span class="time-divider">:</span>
                   <select v-model="createEventForm.endMinute" class="time-select">
-                    <option v-for="minute in minuteOptions" :key="`end-minute-${minute}`" :value="minute">
+                    <option v-for="minute in availableEndMinutes" :key="`end-minute-${minute}`" :value="minute">
                       {{ minute }}
                     </option>
                   </select>
@@ -2192,10 +3220,10 @@ function saveEvent() {
             </label>
 
             <p v-if="startIsInPast" class="validation-note">
-              Начало события нельзя поставить в прошлое относительно текущего времени.
+              Начало события нельзя поставить в прошлое. Выберите сегодняшнюю дату и более позднее время.
             </p>
             <p v-else-if="endBeforeStart" class="validation-note">
-              Время окончания сейчас раньше начала. При сохранении оно будет выровнено по началу.
+              Окончание не может быть раньше начала. Доступны только дата и время не раньше старта.
             </p>
           </div>
         </section>
@@ -2505,7 +3533,9 @@ function saveEvent() {
 
         <div class="create-submit-row">
           <button class="secondary-button" type="button" @click="closeCreateEvent">Назад</button>
-          <button class="primary-button" :disabled="startIsInPast" type="submit">Добавить событие</button>
+          <button class="primary-button" :disabled="!canSaveEvent" type="submit">
+            {{ editingEventId ? 'Сохранить изменения' : 'Добавить событие' }}
+          </button>
         </div>
       </form>
 
@@ -2513,7 +3543,12 @@ function saveEvent() {
         <section id="create-cover" class="cover-stage">
           <button class="cover-change-button" type="button" @click="coverPickerOpen = true">
             <template v-if="selectedCoverAsset">
-              <img class="cover-stage-image" :src="selectedCoverAsset.src" :alt="selectedCoverAsset.label" />
+              <img
+                class="cover-stage-image"
+                :src="selectedCoverAsset.src"
+                :alt="selectedCoverAsset.label"
+                decoding="async"
+              />
             </template>
             <span v-else class="cover-stage-fallback">Выбери обложку</span>
           </button>
@@ -2537,19 +3572,15 @@ function saveEvent() {
               {{ option.label }}
             </button>
           </div>
-          <div class="rsvp-preview-row" :data-style="createEventForm.rsvpStyle">
+          <div class="rsvp-preview-row rsvp-preview-row-labeled" :data-style="createEventForm.rsvpStyle">
             <div
-              v-for="(symbol, index) in getRsvpPreviewSymbols(createEventForm.rsvpStyle)"
-              :key="`${createEventForm.rsvpStyle}-${index}`"
-              class="rsvp-preview-bubble"
+              v-for="choice in getRsvpChoices(createEventForm.rsvpStyle)"
+              :key="`${createEventForm.rsvpStyle}-${choice.id}`"
+              class="rsvp-preview-option"
             >
-              {{ symbol }}
+              <span class="rsvp-preview-bubble">{{ choice.symbol }}</span>
+              <span class="rsvp-preview-option-label">{{ choice.label }}</span>
             </div>
-          </div>
-          <div class="rsvp-label-row">
-            <span>Going</span>
-            <span>Maybe</span>
-            <span>Can't Go</span>
           </div>
         </section>
 
@@ -2592,16 +3623,37 @@ function saveEvent() {
                 </template>
               </button>
             </div>
-            <div v-else class="color-swatch-row">
-              <button
-                v-for="color in softBackgroundColors"
-                :key="color"
-                class="color-swatch"
-                :class="{ active: createEventForm.backgroundColor === color }"
-                :style="{ background: buildSoftColorGradient(color) }"
-                type="button"
-                @click="createEventForm.backgroundColor = color"
-              ></button>
+            <div v-else class="custom-color-panel">
+              <div class="custom-color-head">
+                <strong>Свой цвет</strong>
+              </div>
+              <div
+                class="custom-color-preview"
+                :style="{ background: createEventForm.backgroundColor }"
+              ></div>
+              <label class="custom-color-hue">
+                <span>Оттенок</span>
+                <input
+                  v-model.number="backgroundColorHue"
+                  class="hue-slider"
+                  type="range"
+                  min="0"
+                  max="360"
+                  @input="updateBackgroundFromHue"
+                />
+              </label>
+              <div class="color-swatch-row">
+                <button
+                  v-for="color in softBackgroundColors"
+                  :key="color"
+                  class="color-swatch"
+                  :class="{ active: createEventForm.backgroundColor === color }"
+                  :style="{ background: color }"
+                  type="button"
+                  :aria-label="`Цвет ${color}`"
+                  @click="applyBackgroundColor(color)"
+                ></button>
+              </div>
             </div>
             <label v-if="createEventForm.backgroundMode === 'asset'" class="upload-chip small">
               Свой фон
@@ -2625,7 +3677,7 @@ function saveEvent() {
           <span>{{ getRsvpStyleOption(createEventForm.rsvpStyle).emoji }}</span>
           <small>RSVP</small>
         </button>
-        <button class="side-action-button" type="button" @click="guestPreviewOpen = true">
+        <button class="side-action-button" type="button" @click="openGuestPreview">
           <span>👁</span>
           <small>Preview</small>
         </button>
@@ -2645,90 +3697,49 @@ function saveEvent() {
           />
         </div>
 
-        <div v-if="filteredCoverPosters.length" class="cover-picker-section">
-          <div class="cover-picker-label">Постеры</div>
-          <div class="cover-picker-grid">
-            <button
-              v-for="asset in filteredCoverPosters"
-              :key="asset.id"
-              class="cover-picker-tile"
-              :class="{ active: createEventForm.coverAssetId === asset.id && !createEventForm.uploadedCoverUrl }"
-              type="button"
-              @click="createEventForm.coverAssetId = asset.id; createEventForm.uploadedCoverUrl = null; coverPickerOpen = false"
-            >
-              <img :src="asset.src" :alt="asset.label" />
-            </button>
-          </div>
+        <div class="cover-picker-tabs" role="tablist" aria-label="Тип обложки">
+          <button
+            type="button"
+            role="tab"
+            class="cover-picker-tab"
+            :class="{ active: coverPickerTab === 'posters' }"
+            :aria-selected="coverPickerTab === 'posters'"
+            @click="coverPickerTab = 'posters'"
+          >
+            Постеры
+          </button>
+          <button
+            type="button"
+            role="tab"
+            class="cover-picker-tab"
+            :class="{ active: coverPickerTab === 'gifs' }"
+            :aria-selected="coverPickerTab === 'gifs'"
+            @click="coverPickerTab = 'gifs'"
+          >
+            GIF
+          </button>
         </div>
 
-        <div v-if="filteredCoverGifs.length" class="cover-picker-section">
-          <div class="cover-picker-label">GIF</div>
+        <div v-if="activeCoverPickerAssets.length" class="cover-picker-section">
           <div class="cover-picker-grid">
             <button
-              v-for="asset in filteredCoverGifs"
+              v-for="asset in activeCoverPickerAssets"
               :key="asset.id"
               class="cover-picker-tile"
               :class="{ active: createEventForm.coverAssetId === asset.id && !createEventForm.uploadedCoverUrl }"
               type="button"
               @click="createEventForm.coverAssetId = asset.id; createEventForm.uploadedCoverUrl = null; coverPickerOpen = false"
             >
-              <img :src="asset.src" :alt="asset.label" />
+              <img :src="asset.src" :alt="asset.label" decoding="async" />
             </button>
           </div>
         </div>
+        <p v-else class="cover-picker-empty">Ничего не найдено. Попробуйте другой запрос.</p>
 
         <label class="cover-upload-tile">
           Загрузить свою обложку
           <input type="file" accept="image/*,.gif" hidden @change="handleCoverUpload" />
         </label>
-      </section>
-    </div>
-
-    <div v-if="guestPreviewOpen" class="guest-preview-overlay" @click.self="guestPreviewOpen = false">
-      <section class="guest-preview-sheet" aria-modal="true" role="dialog" aria-labelledby="guest-preview-title">
-        <div class="guest-preview-background" :style="previewBackgroundStyle">
-          <video
-            v-if="createEventForm.backgroundMode === 'asset' && selectedBackgroundAsset?.kind === 'video'"
-            class="guest-preview-video"
-            :src="selectedBackgroundAsset.src"
-            autoplay
-            muted
-            loop
-            playsinline
-          ></video>
-        </div>
-        <button class="ghost-inline-button preview-close-button" type="button" @click="guestPreviewOpen = false">
-          ×
-        </button>
-        <div class="guest-preview-cover">
-          <img
-            v-if="selectedCoverAsset?.kind === 'image'"
-            :src="selectedCoverAsset.src"
-            :alt="selectedCoverAsset.label"
-          />
-        </div>
-        <div class="guest-preview-copy">
-          <p class="eyebrow">Preview</p>
-          <h2 id="guest-preview-title" class="guest-preview-title" :class="getTitleStyleClass(createEventForm.titleStyle)">
-            {{ createEventForm.title || 'Untitled Event' }}
-          </h2>
-          <p>{{ previewDateLabel }} · {{ previewTimezoneLabel }} · {{ createEventForm.location || 'Location' }}</p>
-          <p v-if="createEventForm.description">{{ createEventForm.description }}</p>
-        </div>
-        <div v-if="createEventForm.infoBlocks.length" class="guest-preview-tags">
-          <span v-for="block in createEventForm.infoBlocks" :key="block.id" class="guest-preview-tag">
-            {{ block.icon }} {{ block.title || 'Ссылка' }}
-          </span>
-        </div>
-        <div class="guest-preview-rsvp">
-          <div
-            v-for="(symbol, index) in getRsvpPreviewSymbols(createEventForm.rsvpStyle)"
-            :key="`preview-${index}`"
-            class="rsvp-preview-bubble"
-          >
-            {{ symbol }}
-          </div>
-        </div>
       </section>
     </div>
 
@@ -2748,9 +3759,20 @@ function saveEvent() {
             <span>Описание *</span>
             <textarea v-model="medalForm.description" rows="3" placeholder="За что выдается эта медаль"></textarea>
           </label>
-          <div class="field-block field-span-2">
+          <div class="field-block field-span-2 emoji-picker-field">
             <span>Emoji</span>
-            <div class="emoji-picker-grid">
+            <button
+              class="emoji-picker-trigger"
+              type="button"
+              @click="emojiPickerOpen = !emojiPickerOpen"
+            >
+              <span class="emoji-picker-current">{{ medalForm.icon || '🏅' }}</span>
+              <span>Выбрать emoji</span>
+            </button>
+            <div v-if="emojiPickerOpen" class="emoji-picker-popover">
+              <emoji-picker class="medal-emoji-picker" @emoji-click="onEmojiPickerSelect"></emoji-picker>
+            </div>
+            <div class="emoji-quick-row">
               <button
                 v-for="emoji in emojiPickerOptions"
                 :key="emoji"
@@ -2864,6 +3886,53 @@ function saveEvent() {
     </section>
   </div>
 
+  <input
+    ref="albumPhotoInput"
+    type="file"
+    accept="image/*,.gif"
+    hidden
+    @change="handleAlbumPhotoUpload"
+  />
+  <input ref="chatPhotoInput" type="file" accept="image/*,.gif" hidden @change="handleChatPhotoUpload" />
+
+  <div v-if="rsvpSheetOpen && rsvpSheetStatus" class="rsvp-sheet-overlay" @click.self="closeRsvpSheet">
+    <section class="rsvp-sheet" aria-modal="true" role="dialog" aria-labelledby="rsvp-sheet-title">
+      <div class="rsvp-sheet-preview-row">
+        <button
+          v-for="choice in getRsvpChoices(activeEvent?.rsvpStyle || 'icons')"
+          :key="`sheet-${choice.id}`"
+          class="rsvp-sheet-choice"
+          :class="{ active: rsvpSheetStatus === choice.id }"
+          type="button"
+          @click="rsvpSheetStatus = choice.id"
+        >
+          <span class="rsvp-action-symbol">{{ choice.symbol }}</span>
+          <span class="rsvp-action-label">{{ choice.label }}</span>
+        </button>
+      </div>
+
+      <div class="rsvp-sheet-user">
+        <span class="rsvp-sheet-user-label">Отвечаете как</span>
+        <span class="guest-avatar-chip">{{ currentUser.initials }}</span>
+        <strong>{{ currentUser.name }}</strong>
+      </div>
+
+      <label class="rsvp-sheet-message">
+        <span>+ Добавить сообщение</span>
+        <textarea
+          v-model="rsvpSheetMessage"
+          rows="3"
+          placeholder="Напишите организатору..."
+        ></textarea>
+      </label>
+
+      <div class="rsvp-sheet-actions">
+        <button class="ghost-button" type="button" @click="closeRsvpSheet">Отмена</button>
+        <button class="primary-button" type="button" @click="submitRsvpResponse">Отправить</button>
+      </div>
+    </section>
+  </div>
+
   <div
     v-if="activePhotoEntry"
     class="photo-viewer"
@@ -2875,8 +3944,8 @@ function saveEvent() {
     @click.self="closePhoto"
   >
     <section class="photo-viewer-card" aria-label="Просмотр фото">
-      <button class="viewer-close" type="button" aria-label="Закрыть" @click="closePhoto">Г—</button>
-      <div class="viewer-photo"></div>
+      <button class="viewer-close" type="button" aria-label="Закрыть" @click="closePhoto">×</button>
+      <div class="viewer-photo" :style="getPhotoStyle(activePhotoEntry.photo)"></div>
       <div class="viewer-info">
         <span>{{ activePhotoEntry.event.title }}</span>
         <h3>Фото из события</h3>
@@ -2885,6 +3954,13 @@ function saveEvent() {
         </p>
       </div>
       <div class="viewer-actions">
+        <button
+          class="secondary-button"
+          type="button"
+          @click="togglePhotoSaved(activePhotoEntry.event.id, activePhotoEntry.photo.id)"
+        >
+          {{ isPhotoSaved(activePhotoEntry.event.id, activePhotoEntry.photo.id) ? 'Убрать из сохранённых' : 'Сохранить' }}
+        </button>
         <button class="secondary-button" type="button" @click="stepPhoto(-1)">Назад</button>
         <button class="primary-button" type="button" @click="stepPhoto(1)">Дальше</button>
       </div>

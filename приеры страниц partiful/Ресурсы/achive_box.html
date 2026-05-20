@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Макет блока достижений</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #d9d8df;
+      color: #242126;
+    }
+
+    button {
+      font: inherit;
+    }
+
+    .page {
+      width: min(800px, calc(100% - 32px));
+      margin: 40px auto 80px;
+    }
+
+    .demo-title {
+      display: inline-flex;
+      align-items: center;
+      height: 50px;
+      padding: 0 28px;
+      margin-bottom: 24px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.84);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.9), 0 10px 24px rgba(38,35,43,.06);
+      font-size: 21px;
+      font-weight: 950;
+      letter-spacing: -0.02em;
+    }
+
+    .examples-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 24px;
+      align-items: start;
+    }
+
+    .achievement-block {
+      position: relative;
+      border-radius: 34px;
+      background: rgba(247, 247, 249, 0.88);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.86), 0 18px 36px rgba(38,35,43,.09);
+      border: 1px solid rgba(255,255,255,.56);
+      overflow: visible;
+      padding: 18px 20px 22px;
+      transition: padding 0.2s ease;
+    }
+
+    /* Скрытое состояние: прячем только списки, разрешаем перенос строк */
+    .achievement-block.collapsed {
+      padding: 18px 20px; 
+    }
+    .achievement-block.collapsed .available-list,
+    .achievement-block.collapsed .empty-msg {
+      display: none !important;
+    }
+
+    .block-header {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+    }
+
+    .block-name {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 950;
+      white-space: nowrap;
+      height: 44px; /* Выравнивание по высоте пилюли */
+      display: flex;
+      align-items: center;
+    }
+
+    .selected-row {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap; /* Позволяет достижениям переноситься на новые строки */
+    }
+
+    .selected-pill {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      height: 44px;
+      min-width: 126px;
+      max-width: 210px;
+      padding: 6px 38px 6px 7px;
+      border: 0;
+      border-radius: 999px;
+      background: #fff;
+      color: #242126;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.95), 0 8px 16px rgba(38,35,43,.09);
+      cursor: pointer;
+      font-weight: 900;
+    }
+
+    .selected-pill.gold { background: linear-gradient(180deg, #fff2bf, #ffe19a); }
+    .selected-pill.blue { background: linear-gradient(180deg, #dff8ff, #b7eaff); }
+    .selected-pill.pink { background: linear-gradient(180deg, #ffe0ea, #ffc0d2); }
+    .selected-pill.green { background: linear-gradient(180deg, #dcf8e2, #b8eac6); }
+
+    .pill-icon {
+      width: 30px;
+      height: 30px;
+      display: grid;
+      place-items: center;
+      flex: 0 0 auto;
+      border-radius: 50%;
+      background: rgba(255,255,255,.72);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.9);
+      font-size: 17px;
+    }
+
+    .pill-text {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 13px;
+    }
+
+    .remove-pill {
+      position: absolute;
+      right: -5px;
+      top: -7px;
+      width: 24px;
+      height: 24px;
+      display: grid;
+      place-items: center;
+      border: 0;
+      border-radius: 50%;
+      background: #716f75;
+      color: #fff;
+      cursor: pointer;
+      font-size: 15px;
+      font-weight: 950;
+      line-height: 1;
+      box-shadow: 0 8px 14px rgba(38,35,43,.18);
+    }
+
+    .toggle-btn {
+      width: 36px;
+      height: 36px;
+      display: grid;
+      place-items: center;
+      margin-left: auto;
+      margin-top: 4px; /* Центрируем с первым рядом */
+      flex-shrink: 0;
+      border: 0;
+      border-radius: 50%;
+      background: #716f75;
+      color: #fff;
+      cursor: pointer;
+      box-shadow: 0 8px 14px rgba(38,35,43,.16);
+      font-size: 16px;
+      font-weight: 950;
+    }
+
+    .available-list {
+      display: grid;
+      gap: 12px;
+      margin-top: 14px;
+    }
+
+    .available-achievement {
+      display: grid;
+      grid-template-columns: 58px minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: center;
+      min-height: 74px;
+      padding: 9px 12px;
+      border-radius: 22px;
+      background: rgba(255,255,255,.78);
+      border: 1px solid rgba(255,255,255,.72);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.9), 0 8px 18px rgba(38,35,43,.055);
+    }
+
+    .available-icon {
+      width: 54px;
+      height: 54px;
+      display: grid;
+      place-items: center;
+      border-radius: 18px;
+      font-size: 25px;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.7), 0 8px 14px rgba(38,35,43,.08);
+    }
+
+    .available-icon.gold { background: linear-gradient(180deg, #fff0a8, #ffca42); }
+    .available-icon.blue { background: linear-gradient(180deg, #75e7ee, #4da9e8); }
+    .available-icon.pink { background: linear-gradient(180deg, #ff8ea7, #ffcfdd); }
+    .available-icon.green { background: linear-gradient(180deg, #8ee0a6, #5fc68e); }
+
+    .available-title {
+      margin: 0 0 3px;
+      font-size: 15px;
+      font-weight: 950;
+      letter-spacing: -0.01em;
+    }
+
+    .available-desc {
+      margin: 0;
+      color: #706c75;
+      font-size: 13px;
+      line-height: 1.35;
+    }
+
+    .available-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .choose-btn, .delete-btn {
+      min-width: 100px;
+      height: 34px;
+      padding: 0 16px;
+      border-radius: 999px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 950;
+    }
+
+    .choose-btn {
+      border: 1px solid #d7d3dc;
+      background: #fff;
+      color: #242126;
+    }
+
+    .delete-btn {
+      border: 1px solid #ffcfdd;
+      background: #fffafa;
+      color: #d14343;
+    }
+
+    .empty-msg {
+      text-align: center;
+      padding: 30px 20px;
+      margin-top: 14px;
+      background: rgba(255,255,255,.5);
+      border-radius: 22px;
+      border: 1px dashed rgba(0,0,0,.15);
+      color: #706c75;
+      font-size: 14px;
+      font-weight: 700;
+      display: none;
+    }
+
+    .popover {
+      position: absolute;
+      z-index: 20;
+      display: none;
+      width: min(320px, calc(100vw - 40px));
+      padding: 14px 16px;
+      border-radius: 18px;
+      background: rgba(255,255,255,.96);
+      box-shadow: 0 18px 42px rgba(38,35,43,.18);
+      border: 1px solid rgba(255,255,255,.8);
+      text-align: center;
+    }
+
+    .popover.open { display: block; }
+
+    .popover::before {
+      content: "";
+      position: absolute;
+      top: -8px;
+      left: 50%;
+      width: 16px;
+      height: 16px;
+      transform: translateX(-50%) rotate(45deg);
+      background: rgba(255,255,255,.96);
+      border-left: 1px solid rgba(255,255,255,.8);
+      border-top: 1px solid rgba(255,255,255,.8);
+    }
+
+    .popover-title { margin: 0 0 6px; font-size: 14px; font-weight: 950; }
+    .popover-text { margin: 0; color: #5f5a64; font-size: 13px; line-height: 1.45; }
+
+    @media (max-width: 620px) {
+      .page {
+        width: min(100% - 16px, 1320px);
+        margin-top: 14px;
+      }
+      .demo-title {
+        width: 100%;
+        justify-content: center;
+        font-size: 17px;
+      }
+      .achievement-block.open { padding: 14px; border-radius: 26px; }
+      .available-achievement { grid-template-columns: 48px 1fr; }
+      .available-icon { width: 48px; height: 48px; font-size: 22px; }
+      .available-actions { grid-column: 1 / -1; flex-direction: row; width: 100%; }
+      .choose-btn, .delete-btn { flex: 1; height: 38px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <div class="demo-title">Достижения события</div>
+
+    <section class="examples-grid">
+      <section class="achievement-block open" id="groupOpen">
+        <div class="block-header">
+          <h2 class="block-name">Групповые</h2>
+          <div class="selected-row">
+            <button class="selected-pill gold" data-title="Папарацци" data-desc="Сделал больше всех фото в общем альбоме события.">
+              <span class="pill-icon">📷</span>
+              <span class="pill-text">Папарацци</span>
+              <span class="remove-pill">×</span>
+            </button>
+            <button class="selected-pill pink" data-title="Танцор вечера" data-desc="За самый мощный танцевальный вклад в атмосферу события.">
+              <span class="pill-icon">🕺</span>
+              <span class="pill-text">Танцор вечера</span>
+              <span class="remove-pill">×</span>
+            </button>
+          </div>
+          <button class="toggle-btn" data-target="groupOpen">−</button>
+        </div>
+
+        <div class="available-list">
+          <article class="available-achievement" data-title="Полароид" data-icon="📸" data-color="blue" data-desc="Сделать общее фото или важный кадр события.">
+            <div class="available-icon blue">📸</div>
+            <div>
+              <h3 class="available-title">Полароид</h3>
+              <p class="available-desc">Сделать общее фото или важный кадр события.</p>
+            </div>
+            <div class="available-actions">
+              <button class="choose-btn">Выбрать</button>
+              <button class="delete-btn">Удалить</button>
+            </div>
+          </article>
+
+          <article class="available-achievement" data-title="Сбор всей банды" data-icon="👥" data-color="green" data-desc="Групповое достижение для фото, где собрались участники события.">
+            <div class="available-icon green">👥</div>
+            <div>
+              <h3 class="available-title">Сбор всей банды</h3>
+              <p class="available-desc">Групповое достижение для фото, где собрались участники события.</p>
+            </div>
+            <div class="available-actions">
+              <button class="choose-btn">Выбрать</button>
+              <button class="delete-btn">Удалить</button>
+            </div>
+          </article>
+        </div>
+        
+        <div class="empty-msg">В этой категории не осталось доступных достижений.</div>
+        <div class="popover"></div>
+      </section>
+
+      <section class="achievement-block open" id="personalOpen">
+        <div class="block-header">
+          <h2 class="block-name">Личные</h2>
+          <div class="selected-row"></div>
+          <button class="toggle-btn" data-target="personalOpen">−</button>
+        </div>
+
+        <div class="available-list">
+          <article class="available-achievement" data-title="Лучший образ" data-icon="💎" data-color="pink" data-desc="Организатор вручает участнику за самый выразительный образ события.">
+            <div class="available-icon pink">💎</div>
+            <div>
+              <h3 class="available-title">Лучший образ</h3>
+              <p class="available-desc">Организатор вручает участнику за самый выразительный образ события.</p>
+            </div>
+            <div class="available-actions">
+              <button class="choose-btn">Выбрать</button>
+              <button class="delete-btn">Удалить</button>
+            </div>
+          </article>
+
+          <article class="available-achievement" data-title="Душа компании" data-icon="✨" data-color="green" data-desc="Организатор вручает участнику, который лучше всех поддерживал атмосферу.">
+            <div class="available-icon green">✨</div>
+            <div>
+              <h3 class="available-title">Душа компании</h3>
+              <p class="available-desc">Организатор вручает участнику, который лучше всех поддерживал атмосферу.</p>
+            </div>
+            <div class="available-actions">
+              <button class="choose-btn">Выбрать</button>
+              <button class="delete-btn">Удалить</button>
+            </div>
+          </article>
+        </div>
+
+        <div class="empty-msg">В этой категории не осталось доступных достижений.</div>
+        <div class="popover"></div>
+      </section>
+    </section>
+  </main>
+
+  <script>
+    function closeAllPopovers(except = null) {
+      document.querySelectorAll('.popover.open').forEach(popover => {
+        if (popover !== except) {
+          popover.classList.remove('open');
+          if (!popover.dataset.static) popover.innerHTML = '';
+        }
+      });
+    }
+
+    function showPopover(block, trigger, title, desc) {
+      const popover = block.querySelector('.popover');
+      const blockRect = block.getBoundingClientRect();
+      const triggerRect = trigger.getBoundingClientRect();
+      const popoverWidth = Math.min(320, window.innerWidth - 40);
+
+      if (popover.classList.contains('open') && popover.dataset.activeTitle === title) {
+        popover.classList.remove('open');
+        popover.innerHTML = '';
+        popover.dataset.activeTitle = '';
+        return;
+      }
+
+      closeAllPopovers(popover);
+
+      popover.innerHTML = `
+        <h3 class="popover-title">${title}</h3>
+        <p class="popover-text">${desc}</p>
+      `;
+
+      let left = triggerRect.left - blockRect.left + triggerRect.width / 2 - popoverWidth / 2;
+      left = Math.max(12, Math.min(left, blockRect.width - popoverWidth - 12));
+
+      popover.style.width = `${popoverWidth}px`;
+      popover.style.left = `${left}px`;
+      popover.style.top = `${triggerRect.bottom - blockRect.top + 10}px`;
+      popover.dataset.activeTitle = title;
+      popover.classList.add('open');
+    }
+
+    // Проверка, пуст ли список доступных достижений
+    function checkEmptyState(block) {
+      const list = block.querySelector('.available-list');
+      const emptyMsg = block.querySelector('.empty-msg');
+      let availableCount = 0;
+      
+      list.querySelectorAll('.available-achievement').forEach(item => {
+        if (item.style.display !== 'none') availableCount++;
+      });
+
+      if (availableCount === 0) {
+        emptyMsg.style.display = 'block';
+        list.style.display = 'none';
+      } else {
+        emptyMsg.style.display = 'none';
+        list.style.display = 'grid';
+      }
+    }
+
+    // Привязка удаления с подтверждением
+    function bindDeleteEvent(btn, card, block) {
+      btn.addEventListener('click', () => {
+        if (confirm('Вы уверены, что хотите удалить это достижение навсегда?')) {
+          card.remove();
+          checkEmptyState(block);
+          closeAllPopovers();
+        }
+      });
+    }
+
+    function chooseAchievement(card) {
+      const block = card.closest('.achievement-block');
+      const row = block.querySelector('.selected-row');
+      const title = card.dataset.title;
+      const desc = card.dataset.desc;
+      const icon = card.dataset.icon;
+      const color = card.dataset.color || 'gold';
+
+      const pill = document.createElement('button');
+      pill.className = `selected-pill ${color}`;
+      pill.dataset.title = title;
+      pill.dataset.desc = desc;
+      pill.innerHTML = `
+        <span class="pill-icon">${icon}</span>
+        <span class="pill-text">${title}</span>
+        <span class="remove-pill">×</span>
+      `;
+
+      pill.addEventListener('click', event => {
+        if (event.target.classList.contains('remove-pill')) return;
+        showPopover(block, pill, title, desc);
+      });
+
+      pill.querySelector('.remove-pill').addEventListener('click', event => {
+        event.stopPropagation();
+        card.style.display = 'grid';
+        pill.remove();
+        closeAllPopovers();
+        checkEmptyState(block);
+      });
+
+      row.appendChild(pill);
+      card.style.display = 'none';
+      closeAllPopovers();
+      checkEmptyState(block);
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      // Инициализация изначально выбранных пилюль
+      document.querySelectorAll('.selected-pill').forEach(pill => {
+        pill.addEventListener('click', event => {
+          if (event.target.classList.contains('remove-pill')) return;
+          const block = pill.closest('.achievement-block');
+          showPopover(block, pill, pill.dataset.title, pill.dataset.desc);
+        });
+      });
+
+      // Логика "крестика" для изначально выбранных пилюль (восстановление в список)
+      document.querySelectorAll('.remove-pill').forEach(remove => {
+        remove.addEventListener('click', event => {
+          event.stopPropagation();
+          const pill = remove.closest('.selected-pill');
+          const block = pill.closest('.achievement-block');
+          const title = pill.dataset.title;
+          const desc = pill.dataset.desc;
+          const icon = pill.querySelector('.pill-icon').textContent;
+          const color = [...pill.classList].find(c => ['gold','blue','pink','green'].includes(c)) || 'gold';
+
+          const card = document.createElement('article');
+          card.className = 'available-achievement';
+          card.dataset.title = title;
+          card.dataset.icon = icon;
+          card.dataset.color = color;
+          card.dataset.desc = desc;
+          card.innerHTML = `
+            <div class="available-icon ${color}">${icon}</div>
+            <div>
+              <h3 class="available-title">${title}</h3>
+              <p class="available-desc">${desc}</p>
+            </div>
+            <div class="available-actions">
+              <button class="choose-btn">Выбрать</button>
+              <button class="delete-btn">Удалить</button>
+            </div>
+          `;
+
+          card.querySelector('.choose-btn').addEventListener('click', () => chooseAchievement(card));
+          bindDeleteEvent(card.querySelector('.delete-btn'), card, block);
+
+          block.querySelector('.available-list').appendChild(card);
+          pill.remove();
+          closeAllPopovers();
+          checkEmptyState(block);
+        });
+      });
+
+      // Инициализация изначально доступных карточек
+      document.querySelectorAll('.available-achievement').forEach(card => {
+        const block = card.closest('.achievement-block');
+        card.querySelector('.choose-btn').addEventListener('click', () => chooseAchievement(card));
+        bindDeleteEvent(card.querySelector('.delete-btn'), card, block);
+      });
+
+      // Кнопки сворачивания/разворачивания
+      document.querySelectorAll('.toggle-btn').forEach(button => {
+        button.addEventListener('click', () => {
+          const block = document.getElementById(button.dataset.target);
+          block.classList.toggle('collapsed');
+          block.classList.toggle('open');
+          button.textContent = block.classList.contains('collapsed') ? '+' : '−';
+          closeAllPopovers();
+        });
+      });
+
+      // Первичная проверка на пустые списки
+      document.querySelectorAll('.achievement-block').forEach(block => {
+        checkEmptyState(block);
+      });
+    });
+
+    document.addEventListener('click', event => {
+      const clickedInsidePopover = event.target.closest('.popover');
+      const clickedAchievement = event.target.closest('.selected-pill');
+      if (!clickedInsidePopover && !clickedAchievement) closeAllPopovers();
+    });
+  </script>
+</body>
+</html>

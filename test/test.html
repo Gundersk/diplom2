@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Event Gallery — личная галерея</title>
+  <style>
+    :root {
+      --bg: #09090f;
+      --panel: rgba(255, 255, 255, 0.08);
+      --panel-strong: rgba(255, 255, 255, 0.13);
+      --text: #f7f3ff;
+      --muted: rgba(247, 243, 255, 0.68);
+      --muted-2: rgba(247, 243, 255, 0.45);
+      --line: rgba(255, 255, 255, 0.12);
+      --accent: #b994ff;
+      --accent-2: #ff8ec7;
+      --gold: #ffd36e;
+      --blue: #7fb7ff;
+      --green: #76e7b8;
+      --pink: #ff8ec7;
+      --radius-lg: 32px;
+      --radius-md: 22px;
+      --radius-sm: 14px;
+      --shadow: 0 24px 90px rgba(0, 0, 0, 0.45);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 10% 5%, rgba(122, 94, 255, 0.6), transparent 28%),
+        radial-gradient(circle at 82% 0%, rgba(255, 126, 205, 0.45), transparent 25%),
+        linear-gradient(180deg, #17112b 0%, #09090f 34%, #050509 100%);
+    }
+
+    .app {
+      width: min(1220px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 28px 0 56px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      margin-bottom: 42px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      font-size: 25px;
+    }
+
+    .brand-mark {
+      width: 34px;
+      height: 34px;
+      border-radius: 50% 50% 50% 12px;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      box-shadow: 0 0 32px rgba(185, 148, 255, 0.55);
+      transform: rotate(-18deg);
+    }
+
+    .nav {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    button, .pill {
+      border: 1px solid var(--line);
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 999px;
+      padding: 10px 16px;
+      font-weight: 700;
+      cursor: pointer;
+      backdrop-filter: blur(18px);
+    }
+
+    .primary {
+      background: linear-gradient(135deg, #f7f0ff, #ffd8ef);
+      color: #170d22;
+      border: 0;
+      box-shadow: 0 14px 36px rgba(255, 142, 199, 0.22);
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 24px;
+      align-items: stretch;
+      margin-bottom: 24px;
+    }
+
+    .profile-card {
+      position: relative;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      background: linear-gradient(135deg, rgba(255,255,255,0.13), rgba(255,255,255,0.05));
+      border-radius: var(--radius-lg);
+      padding: 34px;
+      box-shadow: var(--shadow);
+      min-height: 270px;
+    }
+
+    .profile-card::after {
+      content: "";
+      position: absolute;
+      inset: auto -90px -120px auto;
+      width: 330px;
+      height: 330px;
+      border-radius: 999px;
+      background: radial-gradient(circle, rgba(255,142,199,.42), transparent 68%);
+      pointer-events: none;
+    }
+
+    .profile-row {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      gap: 18px;
+      align-items: center;
+      margin-bottom: 28px;
+    }
+
+    .avatar {
+      width: 82px;
+      height: 82px;
+      border-radius: 28px;
+      display: grid;
+      place-items: center;
+      font-size: 32px;
+      font-weight: 900;
+      color: #12091d;
+      background: linear-gradient(135deg, #fff3bb, #ff9dd2 45%, #9bd8ff);
+      box-shadow: 0 18px 40px rgba(0,0,0,.28);
+    }
+
+    h1, h2, h3, p { margin: 0; }
+
+    h1 {
+      font-size: clamp(34px, 5vw, 58px);
+      line-height: .95;
+      letter-spacing: -0.07em;
+    }
+
+    .subtitle {
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 16px;
+      max-width: 640px;
+      line-height: 1.55;
+    }
+
+    .stats {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+    }
+
+    .stat {
+      padding: 16px;
+      border-radius: 22px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid var(--line);
+    }
+
+    .stat strong {
+      display: block;
+      font-size: 28px;
+      letter-spacing: -0.05em;
+    }
+
+    .stat span {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .side-card {
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.07);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+      box-shadow: var(--shadow);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      min-height: 270px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .side-card::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: url('https://images.unsplash.com/photo-1530103862676-de8c9debad1d?auto=format&fit=crop&w=900&q=80') center/cover;
+      opacity: .22;
+      filter: saturate(1.2);
+    }
+
+    .side-card > * { position: relative; z-index: 1; }
+
+    .section-head {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 18px;
+      margin: 34px 0 16px;
+    }
+
+    .section-head h2 {
+      font-size: 30px;
+      letter-spacing: -0.05em;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+
+    .tab {
+      color: var(--muted);
+      background: rgba(255,255,255,.06);
+    }
+
+    .tab.active {
+      color: #170d22;
+      background: #f8f0ff;
+      border-color: transparent;
+    }
+
+    .gallery-layout {
+      display: grid;
+      grid-template-columns: 1fr 330px;
+      gap: 22px;
+      align-items: start;
+    }
+
+    .event-feed {
+      display: grid;
+      gap: 18px;
+    }
+
+    .event-card {
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      background: rgba(255,255,255,.075);
+      overflow: hidden;
+      box-shadow: 0 18px 60px rgba(0,0,0,.25);
+    }
+
+    .event-cover {
+      min-height: 210px;
+      padding: 22px;
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 18px;
+      background:
+        linear-gradient(180deg, rgba(0,0,0,.08), rgba(0,0,0,.78)),
+        var(--cover);
+      background-size: cover;
+      background-position: center;
+    }
+
+    .event-title h3 {
+      font-size: 34px;
+      letter-spacing: -0.06em;
+      margin-bottom: 6px;
+    }
+
+    .event-title p {
+      color: rgba(255,255,255,.78);
+      font-weight: 650;
+    }
+
+    .badge-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .medal {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      border-radius: 999px;
+      padding: 8px 11px;
+      font-size: 13px;
+      font-weight: 850;
+      border: 1px solid rgba(255,255,255,.18);
+      backdrop-filter: blur(18px);
+      white-space: nowrap;
+    }
+
+    .personal { background: rgba(127, 183, 255, .22); }
+    .auto { background: rgba(255, 211, 110, .22); }
+    .group { background: rgba(255, 142, 199, .22); }
+
+    .event-body {
+      padding: 18px;
+    }
+
+    .event-actions {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 650;
+    }
+
+    .photo-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+
+    .photo {
+      position: relative;
+      min-height: 150px;
+      border-radius: 20px;
+      overflow: hidden;
+      border: 1px solid rgba(255,255,255,.1);
+      background: var(--photo) center/cover;
+    }
+
+    .photo.tall { grid-row: span 2; min-height: 310px; }
+    .photo.wide { grid-column: span 2; }
+
+    .photo::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(180deg, transparent 50%, rgba(0,0,0,.58));
+    }
+
+    .photo-chip {
+      position: absolute;
+      left: 10px;
+      bottom: 10px;
+      z-index: 2;
+      border-radius: 999px;
+      padding: 7px 10px;
+      font-weight: 800;
+      font-size: 12px;
+      background: rgba(0,0,0,.52);
+      border: 1px solid rgba(255,255,255,.16);
+      backdrop-filter: blur(14px);
+    }
+
+    .sidebar {
+      display: grid;
+      gap: 16px;
+      position: sticky;
+      top: 20px;
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      background: rgba(255,255,255,.075);
+      padding: 18px;
+    }
+
+    .panel h3 {
+      font-size: 18px;
+      margin-bottom: 14px;
+      letter-spacing: -0.03em;
+    }
+
+    .achievement-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .achievement {
+      display: grid;
+      grid-template-columns: 42px 1fr;
+      gap: 10px;
+      align-items: center;
+      padding: 11px;
+      border-radius: 18px;
+      background: rgba(255,255,255,.06);
+      border: 1px solid rgba(255,255,255,.08);
+    }
+
+    .achievement-icon {
+      width: 42px;
+      height: 42px;
+      border-radius: 16px;
+      display: grid;
+      place-items: center;
+      font-size: 20px;
+      background: rgba(255,255,255,.12);
+    }
+
+    .achievement strong {
+      display: block;
+      font-size: 14px;
+    }
+
+    .achievement span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .mode-preview {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .mini {
+      aspect-ratio: 1;
+      border-radius: 14px;
+      background: var(--photo) center/cover;
+      border: 1px solid rgba(255,255,255,.1);
+    }
+
+    .floating-note {
+      margin-top: 18px;
+      color: var(--muted);
+      line-height: 1.55;
+      font-size: 14px;
+    }
+
+    @media (max-width: 980px) {
+      .hero, .gallery-layout { grid-template-columns: 1fr; }
+      .sidebar { position: static; }
+      .stats { grid-template-columns: repeat(2, 1fr); }
+      .photo-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    @media (max-width: 560px) {
+      .app { width: min(100% - 20px, 1220px); padding-top: 16px; }
+      .topbar, .section-head, .event-cover, .event-actions { align-items: flex-start; flex-direction: column; }
+      .profile-card { padding: 22px; }
+      .profile-row { align-items: flex-start; flex-direction: column; }
+      .stats { grid-template-columns: 1fr; }
+      .photo-grid { grid-template-columns: 1fr; }
+      .photo.wide { grid-column: span 1; }
+      .photo.tall { min-height: 220px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <header class="topbar">
+      <div class="brand"><span class="brand-mark"></span> event gallery</div>
+      <nav class="nav">
+        <button>Мои события</button>
+        <button>Общий альбом</button>
+        <button class="primary">+ Создать событие</button>
+      </nav>
+    </header>
+
+    <section class="hero">
+      <article class="profile-card">
+        <div class="profile-row">
+          <div class="avatar">Ю</div>
+          <div>
+            <h1>Моя галерея</h1>
+            <p class="subtitle">Личные воспоминания из событий: фото сохраняются из общего альбома, но остаются связанными с мероприятием, достижениями и визуальной темой.</p>
+          </div>
+        </div>
+
+        <div class="stats">
+          <div class="stat"><strong>12</strong><span>событий</span></div>
+          <div class="stat"><strong>148</strong><span>сохранённых фото</span></div>
+          <div class="stat"><strong>23</strong><span>достижения</span></div>
+          <div class="stat"><strong>4</strong><span>фото вечера</span></div>
+        </div>
+      </article>
+
+      <aside class="side-card">
+        <div>
+          <span class="pill">Ближайшее событие</span>
+          <h2 style="font-size: 34px; margin-top: 18px; letter-spacing: -0.05em;">Вечер группы ИС-31</h2>
+          <p class="subtitle">Сегодня · общий альбом открыт · 18 участников</p>
+        </div>
+        <div class="badge-row" style="justify-content: flex-start; margin-top: 26px;">
+          <span class="medal auto">⚡ папарацци</span>
+          <span class="medal group">👥 100 фото</span>
+        </div>
+      </aside>
+    </section>
+
+    <div class="section-head">
+      <div>
+        <h2>Личная галерея</h2>
+        <p class="subtitle">Гибрид: сначала карточки событий, внутри — раскрываемые фотографии. Можно переключиться в режим обычной фотоленты.</p>
+      </div>
+      <button class="primary">Развернуть все фото</button>
+    </div>
+
+    <div class="tabs">
+      <button class="tab active">События</button>
+      <button class="tab">Фото</button>
+      <button class="tab">Избранное</button>
+      <button class="tab">Достижения</button>
+    </div>
+
+    <section class="gallery-layout">
+      <div class="event-feed">
+        <article class="event-card">
+          <div class="event-cover" style="--cover: url('https://images.unsplash.com/photo-1511795409834-ef04bbd61622?auto=format&fit=crop&w=1300&q=80')">
+            <div class="event-title">
+              <h3>День рождения у Ани</h3>
+              <p>24 мая 2026 · сохранено 18 фото</p>
+            </div>
+            <div class="badge-row">
+              <span class="medal personal">🏅 2 личных</span>
+              <span class="medal auto">⚡ 3 авто</span>
+              <span class="medal group">👥 1 тусовки</span>
+            </div>
+          </div>
+          <div class="event-body">
+            <div class="event-actions">
+              <span>Карточка события раскрыта: фото остаются внутри визуальной оболочки мероприятия</span>
+              <button>Свернуть</button>
+            </div>
+            <div class="photo-grid">
+              <div class="photo tall" style="--photo: url('https://images.unsplash.com/photo-1527529482837-4698179dc6ce?auto=format&fit=crop&w=800&q=80')"><span class="photo-chip">Фото вечера · 48 лайков</span></div>
+              <div class="photo" style="--photo: url('https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=800&q=80')"><span class="photo-chip">Сохранено</span></div>
+              <div class="photo" style="--photo: url('https://images.unsplash.com/photo-1505236858219-8359eb29e329?auto=format&fit=crop&w=800&q=80')"><span class="photo-chip">Папарацци</span></div>
+              <div class="photo" style="--photo: url('https://images.unsplash.com/photo-1519671482749-fd09be7ccebf?auto=format&fit=crop&w=800&q=80')"><span class="photo-chip">Групповое</span></div>
+              <div class="photo wide" style="--photo: url('https://images.unsplash.com/photo-1533174072545-7a4b6ad7a6c3?auto=format&fit=crop&w=1000&q=80')"><span class="photo-chip">Задание выполнено</span></div>
+            </div>
+          </div>
+        </article>
+
+        <article class="event-card">
+          <div class="event-cover" style="--cover: url('https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=1300&q=80')">
+            <div class="event-title">
+              <h3>Вечер группы ИС-31</h3>
+              <p>12 июня 2026 · сохранено 9 фото</p>
+            </div>
+            <div class="badge-row">
+              <span class="medal auto">⚡ первый кадр</span>
+              <span class="medal group">👥 вся группа</span>
+            </div>
+          </div>
+          <div class="event-body">
+            <div class="event-actions">
+              <span>Свернутая карточка: видна связь фото с мероприятием</span>
+              <button>Раскрыть фото</button>
+            </div>
+            <div class="mode-preview">
+              <div class="mini" style="--photo: url('https://images.unsplash.com/photo-1517457373958-b7bdd4587205?auto=format&fit=crop&w=500&q=80')"></div>
+              <div class="mini" style="--photo: url('https://images.unsplash.com/photo-1528605105345-5344ea20e269?auto=format&fit=crop&w=500&q=80')"></div>
+              <div class="mini" style="--photo: url('https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?auto=format&fit=crop&w=500&q=80')"></div>
+            </div>
+          </div>
+        </article>
+      </div>
+
+      <aside class="sidebar">
+        <section class="panel">
+          <h3>Типы достижений</h3>
+          <div class="achievement-list">
+            <div class="achievement">
+              <div class="achievement-icon" style="background: rgba(127,183,255,.18);">🏅</div>
+              <div><strong>Личные</strong><span>прогресс конкретного участника</span></div>
+            </div>
+            <div class="achievement">
+              <div class="achievement-icon" style="background: rgba(255,211,110,.18);">⚡</div>
+              <div><strong>Автоматические</strong><span>выдаются системой за активность</span></div>
+            </div>
+            <div class="achievement">
+              <div class="achievement-icon" style="background: rgba(255,142,199,.18);">👥</div>
+              <div><strong>Достижения тусовки</strong><span>общие цели ивента</span></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h3>Связь с общим альбомом</h3>
+          <p class="floating-note">Фото не копируется физически. Пользователь сохраняет ссылку на фото из общего альбома события. Если он вернётся на страницу ивента и сохранит новые снимки, они добавятся в эту же карточку.</p>
+        </section>
+
+        <section class="panel">
+          <h3>Режимы просмотра</h3>
+          <div class="achievement-list">
+            <div class="achievement"><div class="achievement-icon">🧩</div><div><strong>Карточки событий</strong><span>основной режим по умолчанию</span></div></div>
+            <div class="achievement"><div class="achievement-icon">🖼️</div><div><strong>Фотолента</strong><span>обычная галерея с группировкой</span></div></div>
+            <div class="achievement"><div class="achievement-icon">⭐</div><div><strong>Избранное</strong><span>важные фото из разных ивентов</span></div></div>
+          </div>
+        </section>
+      </aside>
+    </section>
+  </main>
+</body>
+</html>

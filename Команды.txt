@@ -1,0 +1,1 @@
+npm run dev - запуск локально на http://localhost:5180
