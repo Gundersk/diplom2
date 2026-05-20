@@ -85,6 +85,7 @@ type GalleryEvent = {
   participantLimit?: null | number
   infoBlocks?: EventInfoBlock[]
   payment?: EventPaymentInfo | null
+  timezoneLabel?: string
   achievements: EventAchievement[]
   photos: GalleryPhoto[]
 }
@@ -112,28 +113,35 @@ type CreateEventForm = {
   title: string
   titleStyle: string
   description: string
-  startsAt: string
-  endsAt: string
+  startDate: string
+  startHour: string
+  startMinute: string
+  endDate: string
+  endHour: string
+  endMinute: string
+  timezone: string
   hostAlias: string
   location: string
   participantLimit: string
-  costPerPerson: string
   coverAssetId: string
   backgroundAssetId: string
-  avatarAssetId: string
+  backgroundMode: 'asset' | 'color'
+  backgroundColor: string
+  paymentEnabled: boolean
+  costPerPerson: string
   uploadedCoverUrl: null | string
   uploadedBackgroundUrl: null | string
-  uploadedAvatarUrl: null | string
   infoBlocks: EventInfoBlock[]
   paymentDestination: string
   paymentComment: string
   allowGuestInvites: boolean
   rsvpStyle: string
   automaticExpanded: boolean
+  personalExpanded: boolean
+  groupExpanded: boolean
   automaticTemplateIds: string[]
   selectedPersonalTemplateIds: string[]
   selectedGroupTemplateIds: string[]
-  localAchievements: EventAchievement[]
 }
 
 type MedalForm = {
@@ -150,6 +158,12 @@ type AssetOption = {
   kind: 'image' | 'video'
   label: string
   src: string
+  category?: 'gif' | 'poster'
+}
+
+type TimezoneOption = {
+  id: string
+  label: string
 }
 
 const themes: EventTheme[] = [
@@ -674,22 +688,59 @@ const medalToneOptions = [
   '#151515,#ffffff',
 ]
 
+const russianTimezoneOptions: TimezoneOption[] = [
+  { id: 'Europe/Kaliningrad', label: 'Калининград (UTC+2)' },
+  { id: 'Europe/Moscow', label: 'Москва (UTC+3)' },
+  { id: 'Europe/Samara', label: 'Самара (UTC+4)' },
+  { id: 'Asia/Yekaterinburg', label: 'Екатеринбург (UTC+5)' },
+  { id: 'Asia/Omsk', label: 'Омск (UTC+6)' },
+  { id: 'Asia/Krasnoyarsk', label: 'Красноярск (UTC+7)' },
+  { id: 'Asia/Irkutsk', label: 'Иркутск (UTC+8)' },
+  { id: 'Asia/Yakutsk', label: 'Якутск (UTC+9)' },
+  { id: 'Asia/Vladivostok', label: 'Владивосток (UTC+10)' },
+  { id: 'Asia/Sakhalin', label: 'Сахалин (UTC+11)' },
+  { id: 'Asia/Magadan', label: 'Магадан (UTC+11)' },
+  { id: 'Asia/Kamchatka', label: 'Камчатка (UTC+12)' },
+]
+
+const softBackgroundColors = [
+  '#ffd8d8',
+  '#ffdcb8',
+  '#ffe8a8',
+  '#d6f0b4',
+  '#cdeee2',
+  '#d9e8ff',
+  '#e6dcff',
+  '#f6d9f6',
+]
+
+const emojiPickerOptions = [
+  '🏅',
+  '📸',
+  '⭐',
+  '💎',
+  '✨',
+  '👥',
+  '🎉',
+  '🌟',
+  '🧠',
+  '🌿',
+  '🪩',
+  '🎭',
+  '🎧',
+  '🫶',
+  '🔥',
+  '📚',
+]
+
 const currentUser = {
   initials: 'Ю',
   name: 'Юрий',
   role: 'Организатор' as const,
 }
 
-const avatarAssetModules = import.meta.glob(
-  '../приеры страниц partiful/Ресурсы/Аватарки/*.{png,jpg,jpeg,jfif,avif,webp}',
-  {
-    eager: true,
-    import: 'default',
-  },
-) as Record<string, string>
-
 const coverAssetModules = import.meta.glob(
-  '../приеры страниц partiful/Ресурсы/Обложки/*.{png,jpg,jpeg,jfif,avif,webp}',
+  '../приеры страниц partiful/Ресурсы/Обложки/**/*.{png,jpg,jpeg,jfif,avif,webp,gif}',
   {
     eager: true,
     import: 'default',
@@ -715,13 +766,13 @@ function buildAssetOptions(
       return {
         id: `asset-${index + 1}`,
         kind: kindResolver?.(path) ?? 'image',
+        category: path.includes('/gif/') || path.toLowerCase().endsWith('.gif') ? 'gif' : 'poster',
         label: fileName.replace(/\.[^.]+$/, ''),
         src,
       } satisfies AssetOption
     })
 }
 
-const avatarAssetOptions = buildAssetOptions(avatarAssetModules)
 const coverAssetOptions = buildAssetOptions(coverAssetModules)
 const backgroundAssetOptions = buildAssetOptions(backgroundAssetModules, (path) =>
   path.endsWith('.mp4') || path.endsWith('.webm') ? 'video' : 'image',
@@ -747,6 +798,52 @@ function buildDefaultDate(offsetDays = 2, hour = 19) {
   return `${year}-${month}-${day}T${hours}:${minutes}`
 }
 
+function padNumber(value: number) {
+  return String(value).padStart(2, '0')
+}
+
+function toDateParts(value: string) {
+  const date = new Date(value)
+  return {
+    date: value.slice(0, 10),
+    hour: padNumber(date.getHours()),
+    minute: padNumber(date.getMinutes()),
+  }
+}
+
+function buildDateTimeFromParts(date: string, hour: string, minute: string) {
+  return `${date}T${hour}:${minute}`
+}
+
+function formatTimezoneLabel(timezoneId: string) {
+  return (
+    russianTimezoneOptions.find((option) => option.id === timezoneId)?.label ??
+    russianTimezoneOptions[3].label
+  )
+}
+
+function hexToRgba(hex: string, alpha: number) {
+  const normalized = hex.replace('#', '')
+  const source =
+    normalized.length === 3
+      ? normalized
+          .split('')
+          .map((item) => item + item)
+          .join('')
+      : normalized
+  const red = Number.parseInt(source.slice(0, 2), 16)
+  const green = Number.parseInt(source.slice(2, 4), 16)
+  const blue = Number.parseInt(source.slice(4, 6), 16)
+  return `rgba(${red}, ${green}, ${blue}, ${alpha})`
+}
+
+function buildSoftColorGradient(color: string) {
+  return `
+    radial-gradient(circle at 50% 42%, rgba(255, 255, 255, 0.97) 0%, rgba(255, 255, 255, 0.92) 30%, ${hexToRgba(color, 0.72)} 100%),
+    linear-gradient(135deg, ${hexToRgba(color, 0.86)}, rgba(255, 255, 255, 0.94) 56%, ${hexToRgba(color, 0.64)})
+  `
+}
+
 function createEmptyInfoBlock(): EventInfoBlock {
   return {
     id: createId('block'),
@@ -759,32 +856,41 @@ function createEmptyInfoBlock(): EventInfoBlock {
 }
 
 function createEmptyEventForm(): CreateEventForm {
+  const startDefault = toDateParts(buildDefaultDate(2, 19))
+  const endDefault = toDateParts(buildDefaultDate(2, 23))
   return {
     title: '',
     titleStyle: titleStyleOptions[0].id,
     description: '',
-    startsAt: buildDefaultDate(2, 19),
-    endsAt: buildDefaultDate(2, 23),
+    startDate: startDefault.date,
+    startHour: startDefault.hour,
+    startMinute: startDefault.minute,
+    endDate: endDefault.date,
+    endHour: endDefault.hour,
+    endMinute: endDefault.minute,
+    timezone: 'Asia/Yekaterinburg',
     hostAlias: currentUser.name,
     location: '',
     participantLimit: '',
+    paymentEnabled: false,
     costPerPerson: '',
     coverAssetId: coverAssetOptions[0]?.id ?? '',
     backgroundAssetId: backgroundAssetOptions[0]?.id ?? '',
-    avatarAssetId: avatarAssetOptions[0]?.id ?? '',
+    backgroundMode: 'asset',
+    backgroundColor: softBackgroundColors[0],
     uploadedCoverUrl: null,
     uploadedBackgroundUrl: null,
-    uploadedAvatarUrl: null,
     infoBlocks: [],
     paymentDestination: '',
     paymentComment: '',
     allowGuestInvites: false,
     rsvpStyle: rsvpStyleOptions[2]?.id ?? rsvpStyleOptions[0].id,
     automaticExpanded: false,
+    personalExpanded: true,
+    groupExpanded: true,
     automaticTemplateIds: [],
     selectedPersonalTemplateIds: [],
     selectedGroupTemplateIds: [],
-    localAchievements: [],
   }
 }
 
@@ -949,6 +1055,7 @@ function normalizeSeedEvent(seed: {
     participantLimit: null,
     infoBlocks: [],
     payment: null,
+    timezoneLabel: 'Екатеринбург (UTC+5)',
     achievements: seed.achievements.map((achievement) => normalizeSeedAchievement(achievement)),
     photos: seed.photos,
   } satisfies GalleryEvent
@@ -966,12 +1073,17 @@ const expandedEvents = ref<Set<string>>(new Set())
 const selectedPhoto = ref<{ eventId: string; photoId: string } | null>(null)
 const activeAchievement = ref<string | null>(null)
 const createEventOpen = ref(false)
-const templatePickerOpen = ref(false)
 const medalBuilderOpen = ref(false)
-const achievementPickerScope = ref<AchievementScope>('personal')
 const guestPreviewOpen = ref(false)
+const coverPickerOpen = ref(false)
+const coverSearchQuery = ref('')
+const createAchievementPopover = ref<string | null>(null)
 const createEventForm = ref<CreateEventForm>(createEmptyEventForm())
 const medalForm = ref<MedalForm>(createEmptyMedalForm())
+
+const hourOptions = Array.from({ length: 24 }, (_, index) => padNumber(index))
+const minuteOptions = Array.from({ length: 60 }, (_, index) => padNumber(index))
+const todayDate = new Date().toISOString().slice(0, 10)
 
 const eventStyle = computed(() => ({
   '--theme-start': selectedTheme.value.start,
@@ -1023,25 +1135,39 @@ const selectedCoverAsset = computed(() =>
 )
 
 const selectedBackgroundAsset = computed(() =>
-  createEventForm.value.uploadedBackgroundUrl
+  createEventForm.value.backgroundMode === 'asset' && createEventForm.value.uploadedBackgroundUrl
     ? {
         id: 'uploaded-background',
         kind: 'image' as const,
         label: 'Свой фон',
         src: createEventForm.value.uploadedBackgroundUrl,
       }
-    : getAssetById(backgroundAssetOptions, createEventForm.value.backgroundAssetId),
+    : createEventForm.value.backgroundMode === 'asset'
+      ? getAssetById(backgroundAssetOptions, createEventForm.value.backgroundAssetId)
+      : null,
 )
 
-const selectedAvatarAsset = computed(() =>
-  createEventForm.value.uploadedAvatarUrl
-    ? {
-        id: 'uploaded-avatar',
-        kind: 'image' as const,
-        label: 'Свой аватар',
-        src: createEventForm.value.uploadedAvatarUrl,
-      }
-    : getAssetById(avatarAssetOptions, createEventForm.value.avatarAssetId),
+const startDateTime = computed(() =>
+  buildDateTimeFromParts(
+    createEventForm.value.startDate,
+    createEventForm.value.startHour,
+    createEventForm.value.startMinute,
+  ),
+)
+
+const endDateTime = computed(() =>
+  buildDateTimeFromParts(
+    createEventForm.value.endDate,
+    createEventForm.value.endHour,
+    createEventForm.value.endMinute,
+  ),
+)
+
+const startIsInPast = computed(() => new Date(startDateTime.value).getTime() < Date.now())
+const endBeforeStart = computed(() => new Date(endDateTime.value).getTime() < new Date(startDateTime.value).getTime())
+
+const selectedAutomaticTemplates = computed(() =>
+  systemAchievementTemplates.filter((template) => createEventForm.value.automaticTemplateIds.includes(template.id)),
 )
 
 const selectedPersonalTemplates = computed(() =>
@@ -1060,22 +1186,96 @@ const selectedGroupTemplates = computed(() =>
   ),
 )
 
-const localPersonalAchievements = computed(() =>
-  createEventForm.value.localAchievements.filter((achievement) => achievement.scope === 'personal'),
+const availableAutomaticTemplates = computed(() =>
+  systemAchievementTemplates.filter((template) => !createEventForm.value.automaticTemplateIds.includes(template.id)),
 )
 
-const localGroupAchievements = computed(() =>
-  createEventForm.value.localAchievements.filter((achievement) => achievement.scope === 'group'),
+const availablePersonalTemplates = computed(() =>
+  customAchievementTemplates.value.filter(
+    (template) =>
+      template.scope === 'personal' &&
+      !createEventForm.value.selectedPersonalTemplateIds.includes(template.id),
+  ),
+)
+
+const availableGroupTemplates = computed(() =>
+  customAchievementTemplates.value.filter(
+    (template) =>
+      template.scope === 'group' &&
+      !createEventForm.value.selectedGroupTemplateIds.includes(template.id),
+  ),
 )
 
 const previewAchievements = computed(() => [
-  ...systemAchievementTemplates.filter((template) =>
-    createEventForm.value.automaticTemplateIds.includes(template.id),
-  ),
+  ...selectedAutomaticTemplates.value,
   ...selectedPersonalTemplates.value,
   ...selectedGroupTemplates.value,
-  ...createEventForm.value.localAchievements,
 ])
+
+const filteredCoverAssets = computed(() => {
+  const normalizedQuery = coverSearchQuery.value.trim().toLowerCase()
+  if (!normalizedQuery) return coverAssetOptions
+  return coverAssetOptions.filter((asset) => asset.label.toLowerCase().includes(normalizedQuery))
+})
+
+const filteredCoverPosters = computed(() =>
+  filteredCoverAssets.value.filter((asset) => asset.category !== 'gif'),
+)
+
+const filteredCoverGifs = computed(() =>
+  filteredCoverAssets.value.filter((asset) => asset.category === 'gif'),
+)
+
+const createBackgroundStyle = computed(() => {
+  if (createEventForm.value.backgroundMode === 'color') {
+    return {
+      backgroundImage: buildSoftColorGradient(createEventForm.value.backgroundColor),
+    }
+  }
+
+  if (selectedBackgroundAsset.value?.kind === 'image') {
+    return {
+      backgroundImage: `linear-gradient(135deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.22)), url("${selectedBackgroundAsset.value.src}")`,
+    }
+  }
+
+  return {
+    backgroundImage: buildSoftColorGradient('#e6dcff'),
+  }
+})
+
+const previewBackgroundStyle = computed(() => {
+  if (createEventForm.value.backgroundMode === 'color') {
+    return { backgroundImage: buildSoftColorGradient(createEventForm.value.backgroundColor) }
+  }
+
+  if (selectedBackgroundAsset.value?.kind === 'image') {
+    return {
+      backgroundImage: `linear-gradient(180deg, rgba(255, 255, 255, 0.42), rgba(255, 255, 255, 0.78)), url("${selectedBackgroundAsset.value.src}")`,
+    }
+  }
+
+  return { backgroundImage: buildSoftColorGradient('#e6dcff') }
+})
+
+const previewDateLabel = computed(() => formatEventDateLabel(startDateTime.value))
+const previewTimezoneLabel = computed(() => formatTimezoneLabel(createEventForm.value.timezone))
+
+const createPaymentEnabled = computed(
+  () =>
+    createEventForm.value.paymentEnabled ||
+    Boolean(
+      createEventForm.value.costPerPerson ||
+        createEventForm.value.paymentDestination ||
+        createEventForm.value.paymentComment,
+    ),
+)
+
+const selectedCountBySection = computed(() => ({
+  automatic: selectedAutomaticTemplates.value.length,
+  personal: selectedPersonalTemplates.value.length,
+  group: selectedGroupTemplates.value.length,
+}))
 
 const activePhotoEntry = computed(() => {
   if (!selectedPhoto.value) return null
@@ -1106,8 +1306,9 @@ function logout() {
   selectedPhoto.value = null
   createEventOpen.value = false
   medalBuilderOpen.value = false
-  templatePickerOpen.value = false
   guestPreviewOpen.value = false
+  coverPickerOpen.value = false
+  createAchievementPopover.value = null
 }
 
 function toggleNotifications() {
@@ -1129,9 +1330,11 @@ function openCreateEvent() {
   medalForm.value = createEmptyMedalForm()
   currentView.value = 'create'
   createEventOpen.value = true
-  templatePickerOpen.value = false
   medalBuilderOpen.value = false
   guestPreviewOpen.value = false
+  coverPickerOpen.value = false
+  coverSearchQuery.value = ''
+  createAchievementPopover.value = null
   notificationsOpen.value = false
   profileMenuOpen.value = false
 }
@@ -1139,9 +1342,10 @@ function openCreateEvent() {
 function closeCreateEvent() {
   currentView.value = 'home'
   createEventOpen.value = false
-  templatePickerOpen.value = false
   medalBuilderOpen.value = false
   guestPreviewOpen.value = false
+  coverPickerOpen.value = false
+  createAchievementPopover.value = null
 }
 
 function addInfoBlock() {
@@ -1152,34 +1356,6 @@ function removeInfoBlock(blockId: string) {
   createEventForm.value.infoBlocks = createEventForm.value.infoBlocks.filter(
     (block) => block.id !== blockId,
   )
-}
-
-function toggleTemplatePicker(scope: AchievementScope) {
-  if (templatePickerOpen.value && achievementPickerScope.value === scope) {
-    templatePickerOpen.value = false
-    return
-  }
-
-  achievementPickerScope.value = scope
-  templatePickerOpen.value = true
-}
-
-function toggleTemplateSelection(templateId: string, scope: AchievementScope) {
-  const sourceIds =
-    scope === 'group'
-      ? createEventForm.value.selectedGroupTemplateIds
-      : createEventForm.value.selectedPersonalTemplateIds
-  const nextIds = new Set(sourceIds)
-  if (nextIds.has(templateId)) {
-    nextIds.delete(templateId)
-  } else {
-    nextIds.add(templateId)
-  }
-  if (scope === 'group') {
-    createEventForm.value.selectedGroupTemplateIds = [...nextIds]
-  } else {
-    createEventForm.value.selectedPersonalTemplateIds = [...nextIds]
-  }
 }
 
 function openMedalBuilder(scope: AchievementScope) {
@@ -1204,23 +1380,16 @@ function saveCustomMedal() {
     isSystem: false,
   }
 
-  if (medalForm.value.saveAsTemplate) {
-    customAchievementTemplates.value = [newTemplate, ...customAchievementTemplates.value]
-    if (newTemplate.scope === 'group') {
-      createEventForm.value.selectedGroupTemplateIds = [
-        ...createEventForm.value.selectedGroupTemplateIds,
-        newTemplate.id,
-      ]
-    } else {
-      createEventForm.value.selectedPersonalTemplateIds = [
-        ...createEventForm.value.selectedPersonalTemplateIds,
-        newTemplate.id,
-      ]
-    }
+  customAchievementTemplates.value = [newTemplate, ...customAchievementTemplates.value]
+  if (newTemplate.scope === 'group') {
+    createEventForm.value.selectedGroupTemplateIds = [
+      ...createEventForm.value.selectedGroupTemplateIds,
+      newTemplate.id,
+    ]
   } else {
-    createEventForm.value.localAchievements = [
-      ...createEventForm.value.localAchievements,
-      buildAchievementFromTemplate(newTemplate),
+    createEventForm.value.selectedPersonalTemplateIds = [
+      ...createEventForm.value.selectedPersonalTemplateIds,
+      newTemplate.id,
     ]
   }
 
@@ -1292,21 +1461,79 @@ function countAchievements(event: GalleryEvent, scope: AchievementScope) {
   return event.achievements.filter((achievement) => achievement.scope === scope).length
 }
 
-function removeSelectedAchievement(templateId: string, scope: AchievementScope) {
+function toggleAutomaticTemplate(templateId: string) {
+  const nextIds = new Set(createEventForm.value.automaticTemplateIds)
+  if (nextIds.has(templateId)) {
+    nextIds.delete(templateId)
+  } else {
+    nextIds.add(templateId)
+  }
+  createEventForm.value.automaticTemplateIds = [...nextIds]
+}
+
+function toggleManualTemplate(templateId: string, scope: AchievementScope) {
+  const nextIds = new Set(
+    scope === 'group'
+      ? createEventForm.value.selectedGroupTemplateIds
+      : createEventForm.value.selectedPersonalTemplateIds,
+  )
+  if (nextIds.has(templateId)) {
+    nextIds.delete(templateId)
+  } else {
+    nextIds.add(templateId)
+  }
   if (scope === 'group') {
-    createEventForm.value.selectedGroupTemplateIds =
-      createEventForm.value.selectedGroupTemplateIds.filter((id) => id !== templateId)
+    createEventForm.value.selectedGroupTemplateIds = [...nextIds]
+  } else {
+    createEventForm.value.selectedPersonalTemplateIds = [...nextIds]
+  }
+}
+
+function removeSelectedAchievement(templateId: string, scope: 'automatic' | AchievementScope) {
+  if (scope === 'automatic') {
+    createEventForm.value.automaticTemplateIds = createEventForm.value.automaticTemplateIds.filter(
+      (id) => id !== templateId,
+    )
     return
   }
 
-  createEventForm.value.selectedPersonalTemplateIds =
-    createEventForm.value.selectedPersonalTemplateIds.filter((id) => id !== templateId)
+  if (scope === 'group') {
+    createEventForm.value.selectedGroupTemplateIds = createEventForm.value.selectedGroupTemplateIds.filter(
+      (id) => id !== templateId,
+    )
+    return
+  }
+
+  createEventForm.value.selectedPersonalTemplateIds = createEventForm.value.selectedPersonalTemplateIds.filter(
+    (id) => id !== templateId,
+  )
 }
 
-function removeLocalAchievement(achievementId: string) {
-  createEventForm.value.localAchievements = createEventForm.value.localAchievements.filter(
-    (achievement) => achievement.id !== achievementId,
+function toggleCreateAchievementPopover(key: string) {
+  createAchievementPopover.value = createAchievementPopover.value === key ? null : key
+}
+
+function getCreateAchievementKey(scope: string, templateId: string) {
+  return `${scope}-${templateId}`
+}
+
+function deleteTemplate(templateId: string) {
+  const template = customAchievementTemplates.value.find((item) => item.id === templateId)
+  if (!template) return
+  if (!window.confirm(`Удалить шаблон достижения "${template.title}"?`)) return
+
+  customAchievementTemplates.value = customAchievementTemplates.value.filter(
+    (item) => item.id !== templateId,
   )
+  createEventForm.value.selectedPersonalTemplateIds = createEventForm.value.selectedPersonalTemplateIds.filter(
+    (id) => id !== templateId,
+  )
+  createEventForm.value.selectedGroupTemplateIds = createEventForm.value.selectedGroupTemplateIds.filter(
+    (id) => id !== templateId,
+  )
+  if (createAchievementPopover.value?.endsWith(templateId)) {
+    createAchievementPopover.value = null
+  }
 }
 
 function getTitleStyleClass(styleId: string) {
@@ -1336,19 +1563,14 @@ function handleCoverUpload(event: Event) {
   const file = (event.target as HTMLInputElement).files?.[0]
   if (file) {
     createEventForm.value.uploadedCoverUrl = window.URL.createObjectURL(file)
-  }
-}
-
-function handleAvatarUpload(event: Event) {
-  const file = (event.target as HTMLInputElement).files?.[0]
-  if (file) {
-    createEventForm.value.uploadedAvatarUrl = window.URL.createObjectURL(file)
+    coverPickerOpen.value = false
   }
 }
 
 function handleBackgroundUpload(event: Event) {
   const file = (event.target as HTMLInputElement).files?.[0]
   if (file) {
+    createEventForm.value.backgroundMode = 'asset'
     createEventForm.value.uploadedBackgroundUrl = window.URL.createObjectURL(file)
   }
 }
@@ -1356,8 +1578,8 @@ function handleBackgroundUpload(event: Event) {
 function createEventFromForm() {
   const coverAsset = selectedCoverAsset.value
   const backgroundAsset = selectedBackgroundAsset.value
-  const avatarAsset = selectedAvatarAsset.value
-  const safeEndsAt = createEventForm.value.endsAt || createEventForm.value.startsAt
+  const safeStartsAt = startDateTime.value
+  const safeEndsAt = endBeforeStart.value ? startDateTime.value : endDateTime.value
   const hostName = createEventForm.value.hostAlias.trim() || currentUser.name
   const hostInitials =
     hostName
@@ -1367,20 +1589,17 @@ function createEventFromForm() {
       .join('')
       .slice(0, 2)
       .toUpperCase() || currentUser.initials
-  const automaticAchievements = systemAchievementTemplates
-    .filter((template) => createEventForm.value.automaticTemplateIds.includes(template.id))
-    .map((template) => buildAchievementFromTemplate(template))
-  const selectedTemplates = customAchievementTemplates.value
-    .filter(
-      (template) =>
-        createEventForm.value.selectedPersonalTemplateIds.includes(template.id) ||
-        createEventForm.value.selectedGroupTemplateIds.includes(template.id),
-    )
-    .map((template) => buildAchievementFromTemplate(template))
+  const automaticAchievements = selectedAutomaticTemplates.value.map((template) =>
+    buildAchievementFromTemplate(template),
+  )
+  const selectedTemplates = [...selectedPersonalTemplates.value, ...selectedGroupTemplates.value].map(
+    (template) => buildAchievementFromTemplate(template),
+  )
   const payment =
-    createEventForm.value.costPerPerson ||
-    createEventForm.value.paymentDestination ||
-    createEventForm.value.paymentComment
+    createPaymentEnabled.value &&
+    (createEventForm.value.costPerPerson ||
+      createEventForm.value.paymentDestination ||
+      createEventForm.value.paymentComment)
       ? {
           amount: createEventForm.value.costPerPerson,
           destination: createEventForm.value.paymentDestination,
@@ -1399,31 +1618,37 @@ function createEventFromForm() {
   const newEvent: GalleryEvent = {
     id: createId('event'),
     title: createEventForm.value.title.trim(),
-    status: buildEventStatus(createEventForm.value.startsAt, safeEndsAt),
-    startsAt: createEventForm.value.startsAt,
+    status: buildEventStatus(safeStartsAt, safeEndsAt),
+    startsAt: safeStartsAt,
     endsAt: safeEndsAt,
     role: currentUser.role,
     organizerName: hostName,
     organizerInitials: hostInitials,
     organizerTone: '#ffd166,#41d3bd',
-    organizerAvatarSrc: avatarAsset?.src,
+    organizerAvatarSrc: undefined,
     description: createEventForm.value.description.trim(),
     location: createEventForm.value.location.trim() || 'Место уточняется',
     savedCount: 0,
     totalCount: 0,
     coverStart: coverAsset?.src ?? '#ff7a59',
     coverEnd: coverAsset?.src ?? '#ffd166',
-    backgroundStart: backgroundAsset?.src ?? '#f8f7f2',
-    backgroundEnd: backgroundAsset?.src ?? '#ffffff',
+    backgroundStart:
+      createEventForm.value.backgroundMode === 'color'
+        ? createEventForm.value.backgroundColor
+        : backgroundAsset?.src ?? '#f8f7f2',
+    backgroundEnd:
+      createEventForm.value.backgroundMode === 'color'
+        ? '#fffaf6'
+        : backgroundAsset?.src ?? '#ffffff',
     accent: '#ff7a59',
     allowGuestInvites: createEventForm.value.allowGuestInvites,
     participantLimit: Number(createEventForm.value.participantLimit) || null,
     infoBlocks: trimmedBlocks,
     payment,
+    timezoneLabel: formatTimezoneLabel(createEventForm.value.timezone),
     achievements: [
       ...automaticAchievements,
       ...selectedTemplates,
-      ...createEventForm.value.localAchievements,
     ],
     photos: [],
   }
@@ -1432,7 +1657,8 @@ function createEventFromForm() {
 }
 
 function saveEvent() {
-  if (!createEventForm.value.title.trim() || !createEventForm.value.startsAt) return
+  if (!createEventForm.value.title.trim() || !createEventForm.value.startDate) return
+  if (startIsInPast.value) return
 
   const nextEvent = createEventFromForm()
   homeEvents.value = [...homeEvents.value, nextEvent]
@@ -1441,8 +1667,8 @@ function saveEvent() {
   activeAchievement.value = null
   createEventOpen.value = false
   medalBuilderOpen.value = false
-  templatePickerOpen.value = false
   guestPreviewOpen.value = false
+  coverPickerOpen.value = false
   currentView.value = 'home'
   notifications.value = [
     {
@@ -1801,12 +2027,9 @@ function saveEvent() {
     </section>
   </main>
   <main v-else class="create-page-shell">
-    <div
-      class="create-page-background"
-      :style="selectedBackgroundAsset?.kind === 'image' ? { backgroundImage: `url(${selectedBackgroundAsset.src})` } : undefined"
-    >
+    <div class="create-page-background" :style="createBackgroundStyle">
       <video
-        v-if="selectedBackgroundAsset?.kind === 'video'"
+        v-if="createEventForm.backgroundMode === 'asset' && selectedBackgroundAsset?.kind === 'video'"
         class="create-background-video"
         :src="selectedBackgroundAsset.src"
         autoplay
@@ -1852,45 +2075,128 @@ function saveEvent() {
           </div>
 
           <div class="create-core-stack">
-            <label class="stream-field">
-              <span>Set a date...</span>
-              <input v-model="createEventForm.startsAt" type="datetime-local" required />
-            </label>
-            <label class="stream-field optional-field">
-              <span>End time</span>
-              <input v-model="createEventForm.endsAt" type="datetime-local" />
-            </label>
+            <div class="datetime-card">
+              <label class="stream-field">
+                <span>Дата начала</span>
+                <input v-model="createEventForm.startDate" :min="todayDate" type="date" required />
+              </label>
+              <div class="time-select-card">
+                <span>Время начала</span>
+                <div class="time-select-row">
+                  <select v-model="createEventForm.startHour" class="time-select">
+                    <option v-for="hour in hourOptions" :key="`start-hour-${hour}`" :value="hour">{{ hour }}</option>
+                  </select>
+                  <span class="time-divider">:</span>
+                  <select v-model="createEventForm.startMinute" class="time-select">
+                    <option v-for="minute in minuteOptions" :key="`start-minute-${minute}`" :value="minute">
+                      {{ minute }}
+                    </option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div class="datetime-card optional-field">
+              <label class="stream-field">
+                <span>Дата окончания</span>
+                <input v-model="createEventForm.endDate" :min="createEventForm.startDate" type="date" />
+              </label>
+              <div class="time-select-card">
+                <span>Время окончания</span>
+                <div class="time-select-row">
+                  <select v-model="createEventForm.endHour" class="time-select">
+                    <option v-for="hour in hourOptions" :key="`end-hour-${hour}`" :value="hour">{{ hour }}</option>
+                  </select>
+                  <span class="time-divider">:</span>
+                  <select v-model="createEventForm.endMinute" class="time-select">
+                    <option v-for="minute in minuteOptions" :key="`end-minute-${minute}`" :value="minute">
+                      {{ minute }}
+                    </option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
             <label class="stream-field host-field">
-              <span>Hosted by</span>
+              <span>Проводит</span>
               <div class="stream-inline-row">
                 <div class="stream-avatar-card">
-                  <span
-                    class="stream-avatar"
-                    :style="selectedAvatarAsset ? { backgroundImage: `url(${selectedAvatarAsset.src})` } : undefined"
-                  >
-                    <template v-if="!selectedAvatarAsset">{{ currentUser.initials }}</template>
-                  </span>
+                  <span class="stream-avatar">{{ currentUser.initials }}</span>
                 </div>
-                <input v-model="createEventForm.hostAlias" type="text" placeholder="host nickname" />
+                <input v-model="createEventForm.hostAlias" type="text" placeholder="Имя организатора" />
               </div>
             </label>
             <label class="stream-field">
-              <span>Location</span>
-              <input v-model="createEventForm.location" type="text" placeholder="Where will it happen?" />
+              <span>Часовой пояс</span>
+              <select v-model="createEventForm.timezone" class="timezone-select">
+                <option v-for="timezone in russianTimezoneOptions" :key="timezone.id" :value="timezone.id">
+                  {{ timezone.label }}
+                </option>
+              </select>
             </label>
             <label class="stream-field">
-              <span>Maximum spots</span>
+              <span>Место</span>
+              <input v-model="createEventForm.location" type="text" placeholder="Где пройдет событие?" />
+            </label>
+            <label class="stream-field">
+              <span>Максимум участников</span>
               <input
                 v-model="createEventForm.participantLimit"
                 type="number"
                 min="1"
-                placeholder="Unlimited spots"
+                placeholder="Без ограничения"
               />
             </label>
-            <label class="stream-field">
-              <span>Cost per person</span>
-              <input v-model="createEventForm.costPerPerson" type="text" placeholder="300 ₽" />
+            <section class="payment-shell">
+              <div class="payment-switch-row">
+                <span>Платность события</span>
+                <div class="payment-switcher">
+                  <button
+                    class="payment-switch-option"
+                    :class="{ active: !createPaymentEnabled }"
+                    type="button"
+                    @click="createEventForm.paymentEnabled = false"
+                  >
+                    Бесплатно
+                  </button>
+                  <button
+                    class="payment-switch-option"
+                    :class="{ active: createPaymentEnabled }"
+                    type="button"
+                    @click="createEventForm.paymentEnabled = true"
+                  >
+                    Платно
+                  </button>
+                </div>
+              </div>
+
+              <div v-if="createPaymentEnabled" class="payment-fields-grid">
+                <label class="stream-field">
+                  <span>Стоимость с человека</span>
+                  <input v-model="createEventForm.costPerPerson" type="text" placeholder="300 ₽" />
+                </label>
+                <label class="stream-field">
+                  <span>Куда переводить</span>
+                  <input v-model="createEventForm.paymentDestination" type="text" placeholder="Сбер +7..." />
+                </label>
+                <label class="stream-field">
+                  <span>Комментарий к оплате</span>
+                  <input v-model="createEventForm.paymentComment" type="text" placeholder="Например, за еду и аренду" />
+                </label>
+              </div>
+            </section>
+
+            <label class="stream-inline-toggle">
+              <input v-model="createEventForm.allowGuestInvites" type="checkbox" />
+              <span>Гости могут приглашать других</span>
             </label>
+
+            <p v-if="startIsInPast" class="validation-note">
+              Начало события нельзя поставить в прошлое относительно текущего времени.
+            </p>
+            <p v-else-if="endBeforeStart" class="validation-note">
+              Время окончания сейчас раньше начала. При сохранении оно будет выровнено по началу.
+            </p>
           </div>
         </section>
 
@@ -1944,244 +2250,274 @@ function saveEvent() {
             <textarea
               v-model="createEventForm.description"
               rows="4"
-              placeholder="Add a description of your event"
+              placeholder="Описание события"
             ></textarea>
           </label>
-
-          <div class="payment-meta-row">
-            <label class="stream-inline-toggle">
-              <input v-model="createEventForm.allowGuestInvites" type="checkbox" />
-              <span>Guests can invite others</span>
-            </label>
-            <input
-              v-model="createEventForm.paymentDestination"
-              class="meta-input"
-              type="text"
-              placeholder="Куда переводить"
-            />
-            <input
-              v-model="createEventForm.paymentComment"
-              class="meta-input"
-              type="text"
-              placeholder="Комментарий к оплате"
-            />
-          </div>
         </section>
 
         <section id="create-achievements" class="create-panel-shell achievement-stream-section">
-          <button
-            class="accordion-button"
-            type="button"
-            @click="createEventForm.automaticExpanded = !createEventForm.automaticExpanded"
-          >
-            Автоматические достижения
-          </button>
-          <div v-if="createEventForm.automaticExpanded" class="automatic-grid">
-            <label
-              v-for="template in systemAchievementTemplates"
-              :key="template.id"
-              class="achievement-selection-card automatic-selection-card"
-              :style="{ '--medal-tone': template.tone }"
-            >
-              <input v-model="createEventForm.automaticTemplateIds" type="checkbox" :value="template.id" />
-              <span class="achievement-selection-icon">{{ template.icon }}</span>
-              <div class="achievement-selection-copy">
-                <strong>{{ template.title }}</strong>
-                <p>{{ template.description }}</p>
-              </div>
-            </label>
-          </div>
-
-          <div class="achievement-groups">
-            <article class="achievement-group-panel">
-              <div class="section-title-row">
-                <strong>Личные медали</strong>
-                <div class="mini-action-row">
-                  <button class="secondary-button compact-action" type="button" @click="toggleTemplatePicker('personal')">
-                    Из шаблонов
-                  </button>
-                  <button class="ghost-button compact-action" type="button" @click="openMedalBuilder('personal')">
-                    Создать
-                  </button>
-                </div>
-              </div>
-
-              <div class="selected-achievement-grid">
-                <button
-                  v-for="template in selectedPersonalTemplates"
+          <article class="achievement-block-shell" :class="{ collapsed: !createEventForm.automaticExpanded }">
+            <div class="achievement-block-header">
+              <button
+                class="accordion-button"
+                type="button"
+                @click="createEventForm.automaticExpanded = !createEventForm.automaticExpanded"
+              >
+                Автоматические достижения
+              </button>
+              <div class="selected-pill-row">
+                <div
+                  v-for="template in selectedAutomaticTemplates"
                   :key="template.id"
-                  class="achievement-selection-card interactive-achievement-card"
-                  :style="{ '--medal-tone': template.tone }"
-                  type="button"
-                  @click="removeSelectedAchievement(template.id, 'personal')"
+                  class="selected-pill-wrap"
                 >
-                  <span class="achievement-selection-icon">{{ template.icon }}</span>
-                  <div class="achievement-selection-copy">
+                  <button
+                    class="selected-achievement-pill"
+                    :style="{ '--medal-tone': template.tone }"
+                    type="button"
+                    @click="toggleCreateAchievementPopover(getCreateAchievementKey('automatic', template.id))"
+                  >
+                    <span class="selected-pill-icon">{{ template.icon }}</span>
+                    <span class="selected-pill-text">{{ template.title }}</span>
+                  </button>
+                  <button
+                    class="selected-pill-remove"
+                    type="button"
+                    @click.stop="removeSelectedAchievement(template.id, 'automatic')"
+                  >
+                    ×
+                  </button>
+                  <div
+                    v-if="createAchievementPopover === getCreateAchievementKey('automatic', template.id)"
+                    class="selected-pill-popover"
+                  >
                     <strong>{{ template.title }}</strong>
                     <p>{{ template.description }}</p>
                   </div>
-                </button>
-                <button
-                  v-for="achievement in localPersonalAchievements"
-                  :key="achievement.id"
-                  class="achievement-selection-card interactive-achievement-card"
-                  :style="{ '--medal-tone': achievement.tone }"
-                  type="button"
-                  @click="removeLocalAchievement(achievement.id)"
+                </div>
+              </div>
+              <button
+                class="achievement-collapse-button"
+                type="button"
+                @click="createEventForm.automaticExpanded = !createEventForm.automaticExpanded"
+              >
+                {{ createEventForm.automaticExpanded ? '–' : '+' }}
+              </button>
+            </div>
+
+            <div v-if="createEventForm.automaticExpanded" class="achievement-available-list">
+              <article
+                v-for="template in availableAutomaticTemplates"
+                :key="template.id"
+                class="available-achievement-card"
+              >
+                <span class="available-achievement-icon" :style="{ '--medal-tone': template.tone }">
+                  {{ template.icon }}
+                </span>
+                <div class="available-achievement-copy">
+                  <strong>{{ template.title }}</strong>
+                  <p>{{ template.description }}</p>
+                </div>
+                <div class="available-achievement-actions">
+                  <button class="secondary-button compact-action wide" type="button" @click="toggleAutomaticTemplate(template.id)">
+                    Выбрать
+                  </button>
+                </div>
+              </article>
+              <p v-if="!availableAutomaticTemplates.length" class="achievement-empty-note">
+                Все автоматические достижения уже выбраны.
+              </p>
+            </div>
+          </article>
+
+          <article class="achievement-block-shell" :class="{ collapsed: !createEventForm.personalExpanded }">
+            <div class="achievement-block-header">
+              <button
+                class="accordion-button"
+                type="button"
+                @click="createEventForm.personalExpanded = !createEventForm.personalExpanded"
+              >
+                Личные медали
+              </button>
+              <div class="selected-pill-row">
+                <div
+                  v-for="template in selectedPersonalTemplates"
+                  :key="template.id"
+                  class="selected-pill-wrap"
                 >
-                  <span class="achievement-selection-icon">{{ achievement.icon }}</span>
-                  <div class="achievement-selection-copy">
-                    <strong>{{ achievement.title }}</strong>
-                    <p>{{ achievement.description }}</p>
+                  <button
+                    class="selected-achievement-pill"
+                    :style="{ '--medal-tone': template.tone }"
+                    type="button"
+                    @click="toggleCreateAchievementPopover(getCreateAchievementKey('personal', template.id))"
+                  >
+                    <span class="selected-pill-icon">{{ template.icon }}</span>
+                    <span class="selected-pill-text">{{ template.title }}</span>
+                  </button>
+                  <button
+                    class="selected-pill-remove"
+                    type="button"
+                    @click.stop="removeSelectedAchievement(template.id, 'personal')"
+                  >
+                    ×
+                  </button>
+                  <div
+                    v-if="createAchievementPopover === getCreateAchievementKey('personal', template.id)"
+                    class="selected-pill-popover"
+                  >
+                    <strong>{{ template.title }}</strong>
+                    <p>{{ template.description }}</p>
                   </div>
+                </div>
+              </div>
+              <button
+                class="achievement-collapse-button"
+                type="button"
+                @click="createEventForm.personalExpanded = !createEventForm.personalExpanded"
+              >
+                {{ createEventForm.personalExpanded ? '–' : '+' }}
+              </button>
+            </div>
+
+            <div v-if="createEventForm.personalExpanded" class="achievement-available-wrap">
+              <div class="achievement-toolbar">
+                <span class="achievement-toolbar-pill">Из шаблонов</span>
+                <button class="ghost-button compact-action" type="button" @click="openMedalBuilder('personal')">
+                  Создать
                 </button>
-                <p
-                  v-if="!selectedPersonalTemplates.length && !localPersonalAchievements.length"
-                  class="achievement-empty-note"
+              </div>
+
+              <div class="achievement-available-list">
+                <article
+                  v-for="template in availablePersonalTemplates"
+                  :key="template.id"
+                  class="available-achievement-card"
                 >
+                  <span class="available-achievement-icon" :style="{ '--medal-tone': template.tone }">
+                    {{ template.icon }}
+                  </span>
+                  <div class="available-achievement-copy">
+                    <strong>{{ template.title }}</strong>
+                    <p>{{ template.description }}</p>
+                  </div>
+                  <div class="available-achievement-actions">
+                    <button class="secondary-button compact-action wide" type="button" @click="toggleManualTemplate(template.id, 'personal')">
+                      Выбрать
+                    </button>
+                    <button class="template-delete-button" type="button" @click="deleteTemplate(template.id)">
+                      Удалить
+                    </button>
+                  </div>
+                </article>
+                <p v-if="!availablePersonalTemplates.length" class="achievement-empty-note">
                   Пока пусто. Добавленные медали будут появляться здесь и удаляться по клику.
                 </p>
               </div>
+            </div>
+          </article>
 
-              <div v-if="templatePickerOpen && achievementPickerScope === 'personal'" class="floating-template-picker">
-                <article
-                  v-for="template in customAchievementTemplates.filter((template) => template.scope === 'personal')"
-                  :key="template.id"
-                  class="template-picker-card"
-                  :class="{ active: createEventForm.selectedPersonalTemplateIds.includes(template.id) }"
-                >
-                  <div class="template-achievement-preview">
-                    <span class="template-achievement-icon" :style="{ '--medal-tone': template.tone }">
-                      {{ template.icon }}
-                    </span>
-                    <div>
-                      <strong>{{ template.title }}</strong>
-                      <p>{{ template.description }}</p>
-                    </div>
-                  </div>
-                  <button
-                    class="secondary-button compact-action"
-                    type="button"
-                    @click="toggleTemplateSelection(template.id, 'personal')"
-                  >
-                    {{ createEventForm.selectedPersonalTemplateIds.includes(template.id) ? 'Убрать' : 'Выбрать' }}
-                  </button>
-                </article>
-              </div>
-            </article>
-
-            <article class="achievement-group-panel">
-              <div class="section-title-row">
-                <strong>Групповые медали</strong>
-                <div class="mini-action-row">
-                  <button class="secondary-button compact-action" type="button" @click="toggleTemplatePicker('group')">
-                    Из шаблонов
-                  </button>
-                  <button class="ghost-button compact-action" type="button" @click="openMedalBuilder('group')">
-                    Создать
-                  </button>
-                </div>
-              </div>
-
-              <div class="selected-achievement-grid">
-                <button
+          <article class="achievement-block-shell" :class="{ collapsed: !createEventForm.groupExpanded }">
+            <div class="achievement-block-header">
+              <button
+                class="accordion-button"
+                type="button"
+                @click="createEventForm.groupExpanded = !createEventForm.groupExpanded"
+              >
+                Групповые медали
+              </button>
+              <div class="selected-pill-row">
+                <div
                   v-for="template in selectedGroupTemplates"
                   :key="template.id"
-                  class="achievement-selection-card interactive-achievement-card"
-                  :style="{ '--medal-tone': template.tone }"
-                  type="button"
-                  @click="removeSelectedAchievement(template.id, 'group')"
+                  class="selected-pill-wrap"
                 >
-                  <span class="achievement-selection-icon">{{ template.icon }}</span>
-                  <div class="achievement-selection-copy">
+                  <button
+                    class="selected-achievement-pill"
+                    :style="{ '--medal-tone': template.tone }"
+                    type="button"
+                    @click="toggleCreateAchievementPopover(getCreateAchievementKey('group', template.id))"
+                  >
+                    <span class="selected-pill-icon">{{ template.icon }}</span>
+                    <span class="selected-pill-text">{{ template.title }}</span>
+                  </button>
+                  <button
+                    class="selected-pill-remove"
+                    type="button"
+                    @click.stop="removeSelectedAchievement(template.id, 'group')"
+                  >
+                    ×
+                  </button>
+                  <div
+                    v-if="createAchievementPopover === getCreateAchievementKey('group', template.id)"
+                    class="selected-pill-popover"
+                  >
                     <strong>{{ template.title }}</strong>
                     <p>{{ template.description }}</p>
                   </div>
+                </div>
+              </div>
+              <button
+                class="achievement-collapse-button"
+                type="button"
+                @click="createEventForm.groupExpanded = !createEventForm.groupExpanded"
+              >
+                {{ createEventForm.groupExpanded ? '–' : '+' }}
+              </button>
+            </div>
+
+            <div v-if="createEventForm.groupExpanded" class="achievement-available-wrap">
+              <div class="achievement-toolbar">
+                <span class="achievement-toolbar-pill">Из шаблонов</span>
+                <button class="ghost-button compact-action" type="button" @click="openMedalBuilder('group')">
+                  Создать
                 </button>
-                <button
-                  v-for="achievement in localGroupAchievements"
-                  :key="achievement.id"
-                  class="achievement-selection-card interactive-achievement-card"
-                  :style="{ '--medal-tone': achievement.tone }"
-                  type="button"
-                  @click="removeLocalAchievement(achievement.id)"
+              </div>
+
+              <div class="achievement-available-list">
+                <article
+                  v-for="template in availableGroupTemplates"
+                  :key="template.id"
+                  class="available-achievement-card"
                 >
-                  <span class="achievement-selection-icon">{{ achievement.icon }}</span>
-                  <div class="achievement-selection-copy">
-                    <strong>{{ achievement.title }}</strong>
-                    <p>{{ achievement.description }}</p>
+                  <span class="available-achievement-icon" :style="{ '--medal-tone': template.tone }">
+                    {{ template.icon }}
+                  </span>
+                  <div class="available-achievement-copy">
+                    <strong>{{ template.title }}</strong>
+                    <p>{{ template.description }}</p>
                   </div>
-                </button>
-                <p v-if="!selectedGroupTemplates.length && !localGroupAchievements.length" class="achievement-empty-note">
+                  <div class="available-achievement-actions">
+                    <button class="secondary-button compact-action wide" type="button" @click="toggleManualTemplate(template.id, 'group')">
+                      Выбрать
+                    </button>
+                    <button class="template-delete-button" type="button" @click="deleteTemplate(template.id)">
+                      Удалить
+                    </button>
+                  </div>
+                </article>
+                <p v-if="!availableGroupTemplates.length" class="achievement-empty-note">
                   Здесь будут медали для всей компании.
                 </p>
               </div>
-
-              <div v-if="templatePickerOpen && achievementPickerScope === 'group'" class="floating-template-picker">
-                <article
-                  v-for="template in customAchievementTemplates.filter((template) => template.scope === 'group')"
-                  :key="template.id"
-                  class="template-picker-card"
-                  :class="{ active: createEventForm.selectedGroupTemplateIds.includes(template.id) }"
-                >
-                  <div class="template-achievement-preview">
-                    <span class="template-achievement-icon" :style="{ '--medal-tone': template.tone }">
-                      {{ template.icon }}
-                    </span>
-                    <div>
-                      <strong>{{ template.title }}</strong>
-                      <p>{{ template.description }}</p>
-                    </div>
-                  </div>
-                  <button
-                    class="secondary-button compact-action"
-                    type="button"
-                    @click="toggleTemplateSelection(template.id, 'group')"
-                  >
-                    {{ createEventForm.selectedGroupTemplateIds.includes(template.id) ? 'Убрать' : 'Выбрать' }}
-                  </button>
-                </article>
-              </div>
-            </article>
-          </div>
+            </div>
+          </article>
         </section>
 
         <div class="create-submit-row">
           <button class="secondary-button" type="button" @click="closeCreateEvent">Назад</button>
-          <button class="primary-button" type="submit">Добавить событие</button>
+          <button class="primary-button" :disabled="startIsInPast" type="submit">Добавить событие</button>
         </div>
       </form>
 
       <aside class="create-side-stage">
         <section id="create-cover" class="cover-stage">
-          <button class="cover-change-button" type="button">
-            <template v-if="selectedCoverAsset?.kind === 'image'">
+          <button class="cover-change-button" type="button" @click="coverPickerOpen = true">
+            <template v-if="selectedCoverAsset">
               <img class="cover-stage-image" :src="selectedCoverAsset.src" :alt="selectedCoverAsset.label" />
             </template>
             <span v-else class="cover-stage-fallback">Выбери обложку</span>
           </button>
-
-          <div class="asset-strip">
-            <button
-              v-for="asset in coverAssetOptions"
-              :key="asset.id"
-              class="asset-thumb"
-              :class="{ active: createEventForm.coverAssetId === asset.id && !createEventForm.uploadedCoverUrl }"
-              type="button"
-              @click="createEventForm.coverAssetId = asset.id; createEventForm.uploadedCoverUrl = null"
-            >
-              <img :src="asset.src" :alt="asset.label" />
-            </button>
-          </div>
-          <label class="upload-chip">
-            Своя обложка
-            <input
-              type="file"
-              accept="image/*"
-              hidden
-              @change="handleCoverUpload"
-            />
-          </label>
+          <p class="cover-stage-note">Нажми на картинку, чтобы выбрать другую обложку или загрузить свою.</p>
         </section>
 
         <section id="create-rsvp" class="rsvp-panel">
@@ -2219,33 +2555,27 @@ function saveEvent() {
 
         <section id="create-assets" class="asset-browser">
           <div class="asset-browser-group">
-            <strong>Аватар</strong>
-            <div class="asset-strip avatars">
+            <strong>Фон страницы</strong>
+            <div class="background-mode-row">
               <button
-                v-for="asset in avatarAssetOptions"
-                :key="asset.id"
-                class="asset-thumb avatar-thumb"
-                :class="{ active: createEventForm.avatarAssetId === asset.id && !createEventForm.uploadedAvatarUrl }"
+                class="background-mode-button"
+                :class="{ active: createEventForm.backgroundMode === 'asset' }"
                 type="button"
-                @click="createEventForm.avatarAssetId = asset.id; createEventForm.uploadedAvatarUrl = null"
+                @click="createEventForm.backgroundMode = 'asset'"
               >
-                <img :src="asset.src" :alt="asset.label" />
+                Из подборки
+              </button>
+              <button
+                class="background-mode-button"
+                :class="{ active: createEventForm.backgroundMode === 'color' }"
+                type="button"
+                @click="createEventForm.backgroundMode = 'color'"
+              >
+                Цвет
               </button>
             </div>
-            <label class="upload-chip small">
-              Свой аватар
-              <input
-                type="file"
-                accept="image/*"
-                hidden
-                @change="handleAvatarUpload"
-              />
-            </label>
-          </div>
 
-          <div class="asset-browser-group">
-            <strong>Фон страницы</strong>
-            <div class="asset-strip backgrounds">
+            <div v-if="createEventForm.backgroundMode === 'asset'" class="asset-strip backgrounds">
               <button
                 v-for="asset in backgroundAssetOptions"
                 :key="asset.id"
@@ -2262,7 +2592,18 @@ function saveEvent() {
                 </template>
               </button>
             </div>
-            <label class="upload-chip small">
+            <div v-else class="color-swatch-row">
+              <button
+                v-for="color in softBackgroundColors"
+                :key="color"
+                class="color-swatch"
+                :class="{ active: createEventForm.backgroundColor === color }"
+                :style="{ background: buildSoftColorGradient(color) }"
+                type="button"
+                @click="createEventForm.backgroundColor = color"
+              ></button>
+            </div>
+            <label v-if="createEventForm.backgroundMode === 'asset'" class="upload-chip small">
               Свой фон
               <input
                 type="file"
@@ -2276,10 +2617,6 @@ function saveEvent() {
       </aside>
 
       <nav class="create-side-bar" aria-label="Быстрые действия">
-        <button class="side-action-button" type="button" @click="scrollToCreateSection('create-cover')">
-          <span>🖼</span>
-          <small>Cover</small>
-        </button>
         <button class="side-action-button" type="button" @click="scrollToCreateSection('create-assets')">
           <span>🎬</span>
           <small>Theme</small>
@@ -2295,11 +2632,63 @@ function saveEvent() {
       </nav>
     </section>
 
+    <div v-if="coverPickerOpen" class="cover-picker-overlay" @click.self="coverPickerOpen = false">
+      <section class="cover-picker-sheet" aria-modal="true" role="dialog" aria-labelledby="cover-picker-title">
+        <button class="cover-picker-close" type="button" @click="coverPickerOpen = false">×</button>
+        <div class="cover-picker-head">
+          <h3 id="cover-picker-title">Выбор обложки</h3>
+          <input
+            v-model="coverSearchQuery"
+            class="cover-search-input"
+            type="text"
+            placeholder="Найти картинку..."
+          />
+        </div>
+
+        <div v-if="filteredCoverPosters.length" class="cover-picker-section">
+          <div class="cover-picker-label">Постеры</div>
+          <div class="cover-picker-grid">
+            <button
+              v-for="asset in filteredCoverPosters"
+              :key="asset.id"
+              class="cover-picker-tile"
+              :class="{ active: createEventForm.coverAssetId === asset.id && !createEventForm.uploadedCoverUrl }"
+              type="button"
+              @click="createEventForm.coverAssetId = asset.id; createEventForm.uploadedCoverUrl = null; coverPickerOpen = false"
+            >
+              <img :src="asset.src" :alt="asset.label" />
+            </button>
+          </div>
+        </div>
+
+        <div v-if="filteredCoverGifs.length" class="cover-picker-section">
+          <div class="cover-picker-label">GIF</div>
+          <div class="cover-picker-grid">
+            <button
+              v-for="asset in filteredCoverGifs"
+              :key="asset.id"
+              class="cover-picker-tile"
+              :class="{ active: createEventForm.coverAssetId === asset.id && !createEventForm.uploadedCoverUrl }"
+              type="button"
+              @click="createEventForm.coverAssetId = asset.id; createEventForm.uploadedCoverUrl = null; coverPickerOpen = false"
+            >
+              <img :src="asset.src" :alt="asset.label" />
+            </button>
+          </div>
+        </div>
+
+        <label class="cover-upload-tile">
+          Загрузить свою обложку
+          <input type="file" accept="image/*,.gif" hidden @change="handleCoverUpload" />
+        </label>
+      </section>
+    </div>
+
     <div v-if="guestPreviewOpen" class="guest-preview-overlay" @click.self="guestPreviewOpen = false">
       <section class="guest-preview-sheet" aria-modal="true" role="dialog" aria-labelledby="guest-preview-title">
-        <div class="guest-preview-background">
+        <div class="guest-preview-background" :style="previewBackgroundStyle">
           <video
-            v-if="selectedBackgroundAsset?.kind === 'video'"
+            v-if="createEventForm.backgroundMode === 'asset' && selectedBackgroundAsset?.kind === 'video'"
             class="guest-preview-video"
             :src="selectedBackgroundAsset.src"
             autoplay
@@ -2323,7 +2712,7 @@ function saveEvent() {
           <h2 id="guest-preview-title" class="guest-preview-title" :class="getTitleStyleClass(createEventForm.titleStyle)">
             {{ createEventForm.title || 'Untitled Event' }}
           </h2>
-          <p>{{ formatEventDateLabel(createEventForm.startsAt) }} · {{ createEventForm.location || 'Location' }}</p>
+          <p>{{ previewDateLabel }} · {{ previewTimezoneLabel }} · {{ createEventForm.location || 'Location' }}</p>
           <p v-if="createEventForm.description">{{ createEventForm.description }}</p>
         </div>
         <div v-if="createEventForm.infoBlocks.length" class="guest-preview-tags">
@@ -2359,10 +2748,21 @@ function saveEvent() {
             <span>Описание *</span>
             <textarea v-model="medalForm.description" rows="3" placeholder="За что выдается эта медаль"></textarea>
           </label>
-          <label class="field-block">
+          <div class="field-block field-span-2">
             <span>Emoji</span>
-            <input v-model="medalForm.icon" type="text" maxlength="2" placeholder="🏅" />
-          </label>
+            <div class="emoji-picker-grid">
+              <button
+                v-for="emoji in emojiPickerOptions"
+                :key="emoji"
+                class="emoji-picker-option"
+                :class="{ active: medalForm.icon === emoji }"
+                type="button"
+                @click="medalForm.icon = emoji"
+              >
+                {{ emoji }}
+              </button>
+            </div>
+          </div>
         </div>
 
         <div class="medal-preview-row">
