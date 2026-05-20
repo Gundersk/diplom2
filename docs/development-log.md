@@ -802,3 +802,64 @@ feat: refine create event interactions
 ```bash
 npm run build
 ```
+
+## Step 14 - 2026-05-20
+
+### Goal
+
+Continue MVP auth work without connecting Appwrite yet:
+- separate `demo user`, `guest user`, and `profile user`;
+- remove the old hardcoded guest fallback through the name `Юрий`;
+- add a working auth gate for guest login and mock email-code login;
+- make profile name and avatar editable through the existing UI;
+- keep account name separate from event participant name.
+
+### What was added
+
+1. `authService` was cleaned up and extended:
+   - `CurrentUser.mode` now supports `demo | guest | profile`;
+   - `Юрий` is used only for explicit demo fallback;
+   - guest login now creates a real guest with fallback like `Гость 4821`;
+   - mock email-code flow still uses development code `000000`;
+   - guest can be upgraded to profile without changing `userId`.
+2. `App.vue` now uses a clearer auth flow:
+   - if a stored user exists, it is restored from `localStorage`;
+   - if not, the app creates an explicit demo user instead of pretending every guest is `Юрий`;
+   - auth modal now has two scenarios: guest and email-code.
+3. Added editable profile UI in the current visual style:
+   - open from existing profile menu buttons;
+   - allows changing global account name;
+   - allows uploading avatar image by file.
+4. Added MVP avatar upload through `FileReader`:
+   - accepted formats: PNG, JPEG, WEBP;
+   - size limit: 2 MB;
+   - avatar is stored as `base64/data URL` in `localStorage`;
+   - avatar survives page reload.
+5. Account identity and event identity remain separated:
+   - `currentUser.displayName` is the global profile name;
+   - `currentParticipant.displayName` is the name inside a concrete event;
+   - participant name is updated only carefully, when it was empty or matched the previous global name.
+
+### Files changed
+
+- `src/services/authService.ts`
+- `src/types/user.ts`
+- `src/App.vue`
+- `src/style.css`
+- `docs/development-log.md`
+
+### Architecture notes
+
+- Appwrite Auth and Storage are still **not** connected.
+- Avatar storage is temporary MVP logic for frontend verification only.
+- This step prepares the UI and service layer so `authService` can later be replaced with an Appwrite adapter without rewriting the screens.
+
+### Verification
+
+```bash
+npm run build
+```
+
+### Next step
+
+Extract auth/profile UI into smaller components or start building an Appwrite-backed adapter for `authService` and avatar storage one layer at a time.

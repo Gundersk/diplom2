@@ -14,6 +14,16 @@ function createId(prefix: string) {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}`
 }
 
+function createGuestFallbackName() {
+  return `Гость ${Math.floor(1000 + Math.random() * 9000)}`
+}
+
+function normalizeDisplayName(name?: string, fallback?: string) {
+  const trimmedName = name?.trim()
+  if (trimmedName) return trimmedName
+  return fallback ?? createGuestFallbackName()
+}
+
 function readCurrentUser(): CurrentUser | null {
   if (!canUseLocalStorage()) return null
 
@@ -58,15 +68,37 @@ function assertDevelopmentCode(code: string) {
   }
 }
 
+function ensureCurrentUser() {
+  const currentUser = readCurrentUser()
+  if (!currentUser) {
+    throw new Error('Пользователь не найден. Сначала выполните вход.')
+  }
+  return currentUser
+}
+
 export const authService = {
   async getCurrentUser(): Promise<CurrentUser | null> {
     return readCurrentUser()
   },
 
+  async createDemoUser(displayName = 'Юрий'): Promise<CurrentUser> {
+    const now = new Date().toISOString()
+    const demoUser: CurrentUser = {
+      id: createId('demo'),
+      mode: 'demo',
+      displayName: normalizeDisplayName(displayName, 'Юрий'),
+      createdAt: now,
+      updatedAt: now,
+    }
+
+    persistCurrentUser(demoUser)
+    return demoUser
+  },
+
   async createGuestUser(displayName?: string): Promise<CurrentUser> {
     const currentUser = readCurrentUser()
     const now = new Date().toISOString()
-    const normalizedName = displayName?.trim() || currentUser?.displayName || 'Юрий'
+    const normalizedName = normalizeDisplayName(displayName)
 
     if (currentUser?.mode === 'guest') {
       const nextGuest: CurrentUser = {
@@ -82,6 +114,7 @@ export const authService = {
       id: createId('guest'),
       mode: 'guest',
       displayName: normalizedName,
+      avatarUrl: currentUser?.mode === 'demo' ? currentUser.avatarUrl : undefined,
       createdAt: now,
       updatedAt: now,
     }
@@ -115,7 +148,7 @@ export const authService = {
     const currentUser = readCurrentUser()
     const now = new Date().toISOString()
 
-    if (currentUser?.mode === 'guest') {
+    if (currentUser && currentUser.mode !== 'profile') {
       return this.upgradeGuestToProfile(normalizedEmail, code)
     }
 
@@ -143,7 +176,7 @@ export const authService = {
   async upgradeGuestToProfile(email: string, code: string): Promise<CurrentUser> {
     const currentUser = readCurrentUser()
     const normalizedEmail = email.trim().toLowerCase()
-    if (!currentUser || currentUser.mode !== 'guest') {
+    if (!currentUser || (currentUser.mode !== 'guest' && currentUser.mode !== 'demo')) {
       return this.verifyEmailCode(normalizedEmail, code)
     }
 
@@ -159,6 +192,50 @@ export const authService = {
 
     persistCurrentUser(profileUser)
     return profileUser
+  },
+
+  async updateCurrentUserProfile(payload: {
+    displayName?: string
+    avatarUrl?: string
+  }): Promise<CurrentUser> {
+    const currentUser = ensureCurrentUser()
+    const nextDisplayName =
+      payload.displayName !== undefined
+        ? normalizeDisplayName(
+            payload.displayName,
+            currentUser.mode === 'profile' ? undefined : createGuestFallbackName(),
+          )
+        : currentUser.displayName
+
+    if (!nextDisplayName?.trim()) {
+      throw new Error('Имя не может быть пустым.')
+    }
+
+    const nextUser: CurrentUser = {
+      ...currentUser,
+      displayName: nextDisplayName.trim(),
+      avatarUrl: payload.avatarUrl !== undefined ? payload.avatarUrl : currentUser.avatarUrl,
+      updatedAt: new Date().toISOString(),
+    }
+
+    persistCurrentUser(nextUser)
+    return nextUser
+  },
+
+  async updateDisplayName(displayName: string): Promise<CurrentUser> {
+    if (!displayName.trim()) {
+      throw new Error('Введите имя пользователя.')
+    }
+
+    return this.updateCurrentUserProfile({ displayName })
+  },
+
+  async updateAvatar(avatarUrl: string): Promise<CurrentUser> {
+    if (!avatarUrl.trim()) {
+      throw new Error('Не удалось сохранить аватар.')
+    }
+
+    return this.updateCurrentUserProfile({ avatarUrl })
   },
 
   async logout(): Promise<void> {

@@ -1,6 +1,6 @@
 ﻿<script setup lang="ts">
 import 'emoji-picker-element'
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { buildEventStatus } from './data/mockEvents'
 import { authService } from './services/authService'
 import { eventService } from './services/eventService'
@@ -260,10 +260,21 @@ function buildUserInitials(name?: string) {
   )
 }
 
+function getAvatarStyle(avatarUrl?: string) {
+  return avatarUrl
+    ? {
+        backgroundImage: `url("${avatarUrl}")`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+      }
+    : undefined
+}
+
 const currentUser = reactive<CurrentUserView>({
   id: 'guest_demo',
-  mode: 'guest',
+  mode: 'demo',
   displayName: 'Юрий',
+  avatarUrl: undefined,
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
   initials: 'Ю',
@@ -319,15 +330,29 @@ function applyCurrentUser(user: CurrentUser) {
   currentUser.mode = user.mode
   currentUser.email = user.email
   currentUser.displayName = user.displayName
+  currentUser.avatarUrl = user.avatarUrl
   currentUser.createdAt = user.createdAt
   currentUser.updatedAt = user.updatedAt
-  currentUser.name = user.displayName?.trim() || 'Юрий'
+  currentUser.avatarEmoji = user.avatarEmoji
+  currentUser.name =
+    user.displayName?.trim() || (user.mode === 'demo' ? 'Юрий' : `Гость ${String(user.id).slice(-4)}`)
   currentUser.initials = buildUserInitials(currentUser.name)
+}
+
+function buildRuntimeDemoUser(): CurrentUser {
+  const now = new Date().toISOString()
+  return {
+    id: 'demo-local',
+    mode: 'demo',
+    displayName: 'Юрий',
+    createdAt: now,
+    updatedAt: now,
+  }
 }
 
 async function initializeCurrentUser() {
   const storedUser = await authService.getCurrentUser()
-  const nextUser = storedUser ?? (await authService.createGuestUser('Юрий'))
+  const nextUser = storedUser ?? (await authService.createDemoUser('Юрий'))
   applyCurrentUser(nextUser)
 }
 
@@ -652,10 +677,11 @@ const selectedTheme = ref<EventTheme>(themes[0])
 const homeEvents = ref<GalleryEvent[]>(eventService.getHomeEvents())
 const authOpen = ref(false)
 const authMode = ref<AuthMode>('guest')
-const authGuestName = ref(currentUser.name)
+const authGuestName = ref('')
 const authEmail = ref('')
 const authCode = ref('')
 const authError = ref('')
+const authEmailCodeRequested = ref(false)
 const currentView = ref<ViewMode>('landing')
 const activeTab = ref<EventTab>('current')
 const profileMenuOpen = ref(false)
@@ -674,7 +700,12 @@ const rsvpSheetStatus = ref<RsvpStatus | null>(null)
 const rsvpSheetMessage = ref('')
 const albumPhotoInput = ref<HTMLInputElement | null>(null)
 const chatPhotoInput = ref<HTMLInputElement | null>(null)
+const profileAvatarInput = ref<HTMLInputElement | null>(null)
 const pendingAlbumEventId = ref<string | null>(null)
+const profileEditorOpen = ref(false)
+const profileEditorName = ref('')
+const profileEditorAvatarUrl = ref<string | null>(null)
+const profileEditorError = ref('')
 
 void initializeCurrentUser()
 
@@ -1071,9 +1102,23 @@ const activePhotoEntry = computed(() => {
 
 function openAuth(mode: AuthMode) {
   authMode.value = mode
-  authGuestName.value = currentUser.name
+  authGuestName.value = currentUser.mode === 'demo' ? '' : currentUser.name
+  authEmail.value = currentUser.mode === 'profile' ? currentUser.email ?? '' : ''
+  authCode.value = ''
+  authEmailCodeRequested.value = false
   authError.value = ''
   authOpen.value = true
+}
+
+async function requestAuthCode() {
+  authError.value = ''
+
+  try {
+    await authService.requestEmailCode(authEmail.value)
+    authEmailCodeRequested.value = true
+  } catch (error) {
+    authError.value = error instanceof Error ? error.message : 'Не удалось подготовить код.'
+  }
 }
 
 async function completeAuth() {
@@ -1085,9 +1130,12 @@ async function completeAuth() {
     if (authMode.value === 'guest') {
       nextUser = await authService.createGuestUser(authGuestName.value)
     } else {
-      await authService.requestEmailCode(authEmail.value)
+      if (!authEmailCodeRequested.value) {
+        await authService.requestEmailCode(authEmail.value)
+        authEmailCodeRequested.value = true
+      }
       nextUser =
-        currentUser.mode === 'guest'
+        currentUser.mode === 'guest' || currentUser.mode === 'demo'
           ? await authService.upgradeGuestToProfile(authEmail.value, authCode.value)
           : await authService.verifyEmailCode(authEmail.value, authCode.value)
     }
@@ -1104,6 +1152,7 @@ async function completeAuth() {
 
 async function logout() {
   await authService.logout()
+  applyCurrentUser(buildRuntimeDemoUser())
   currentView.value = 'landing'
   profileMenuOpen.value = false
   notificationsOpen.value = false
@@ -1116,6 +1165,8 @@ async function logout() {
   createAchievementPopover.value = null
   authCode.value = ''
   authEmail.value = ''
+  authGuestName.value = ''
+  authEmailCodeRequested.value = false
   authError.value = ''
 }
 
@@ -1130,6 +1181,112 @@ function toggleProfileMenu() {
   profileMenuOpen.value = !profileMenuOpen.value
   if (profileMenuOpen.value) {
     notificationsOpen.value = false
+  }
+}
+
+function openProfileEditor(focus: 'name' | 'avatar' = 'name') {
+  profileEditorName.value = currentUser.displayName?.trim() || ''
+  profileEditorAvatarUrl.value = currentUser.avatarUrl ?? null
+  profileEditorError.value = ''
+  profileEditorOpen.value = true
+  profileMenuOpen.value = false
+
+  if (focus === 'avatar') {
+    void nextTick(() => triggerProfileAvatarPicker())
+  }
+}
+
+function triggerProfileAvatarPicker() {
+  profileAvatarInput.value?.click()
+}
+
+function closeProfileEditor() {
+  profileEditorOpen.value = false
+  profileEditorError.value = ''
+  profileEditorName.value = ''
+  profileEditorAvatarUrl.value = null
+  if (profileAvatarInput.value) {
+    profileAvatarInput.value.value = ''
+  }
+}
+
+function readFileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        resolve(reader.result)
+      } else {
+        reject(new Error('Не удалось прочитать изображение.'))
+      }
+    }
+    reader.onerror = () => reject(new Error('Не удалось прочитать изображение.'))
+    reader.readAsDataURL(file)
+  })
+}
+
+async function handleProfileAvatarUpload(nativeEvent: Event) {
+  const input = nativeEvent.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+
+  const allowedTypes = ['image/png', 'image/jpeg', 'image/webp']
+  if (!allowedTypes.includes(file.type)) {
+    profileEditorError.value = 'Поддерживаются PNG, JPEG и WEBP.'
+    input.value = ''
+    return
+  }
+
+  if (file.size > 2 * 1024 * 1024) {
+    profileEditorError.value = 'Файл аватара должен быть не больше 2 МБ.'
+    input.value = ''
+    return
+  }
+
+  try {
+    profileEditorAvatarUrl.value = await readFileAsDataUrl(file)
+    profileEditorError.value = ''
+  } catch (error) {
+    profileEditorError.value =
+      error instanceof Error ? error.message : 'Не удалось загрузить изображение.'
+  } finally {
+    input.value = ''
+  }
+}
+
+async function syncParticipantNameAfterProfileChange(previousName: string, nextName: string) {
+  if (
+    !currentParticipant.value ||
+    !nextName.trim() ||
+    (currentParticipant.value.displayName &&
+      currentParticipant.value.displayName !== previousName &&
+      currentParticipant.value.displayName.trim() !== '')
+  ) {
+    return
+  }
+
+  const updatedParticipant = await participantService.updateParticipantDisplayName(
+    currentParticipant.value.id,
+    nextName.trim(),
+  )
+  currentParticipant.value = updatedParticipant
+}
+
+async function saveProfileEditor() {
+  profileEditorError.value = ''
+
+  try {
+    const previousName = currentUser.name
+    const nextUser = await authService.updateCurrentUserProfile({
+      displayName: profileEditorName.value,
+      avatarUrl: profileEditorAvatarUrl.value ?? undefined,
+    })
+    applyCurrentUser(nextUser)
+    await syncParticipantNameAfterProfileChange(previousName, nextUser.displayName?.trim() || '')
+    closeProfileEditor()
+  } catch (error) {
+    profileEditorError.value =
+      error instanceof Error ? error.message : 'Не удалось сохранить профиль.'
   }
 }
 
@@ -2189,8 +2346,10 @@ async function saveEvent() {
           Создать событие
         </button>
         <button class="profile-button" type="button" @click="toggleProfileMenu">
-          <span class="profile-avatar">Ю</span>
-          <span>Юрий</span>
+          <span class="profile-avatar" :class="{ filled: Boolean(currentUser.avatarUrl) }" :style="getAvatarStyle(currentUser.avatarUrl)">
+            {{ currentUser.avatarUrl ? '' : currentUser.initials }}
+          </span>
+          <span>{{ currentUser.name }}</span>
         </button>
       </div>
 
@@ -2207,8 +2366,8 @@ async function saveEvent() {
       </section>
 
       <section v-if="profileMenuOpen" class="profile-popover" aria-label="Меню профиля">
-        <button type="button">Изменить имя</button>
-        <button type="button">Изменить аватар</button>
+        <button type="button" @click="openProfileEditor('name')">Изменить имя</button>
+        <button type="button" @click="openProfileEditor('avatar')">Изменить аватар</button>
         <button type="button" @click="logout">Выйти</button>
       </section>
     </header>
@@ -2690,7 +2849,13 @@ async function saveEvent() {
               <span>Проводит</span>
               <div class="stream-inline-row">
                 <div class="stream-avatar-card">
-                  <span class="stream-avatar">{{ currentUser.initials }}</span>
+                  <span
+                    class="stream-avatar"
+                    :class="{ filled: Boolean(currentUser.avatarUrl) }"
+                    :style="getAvatarStyle(currentUser.avatarUrl)"
+                  >
+                    {{ currentUser.avatarUrl ? '' : currentUser.initials }}
+                  </span>
                 </div>
                 <input v-model="createEventForm.hostAlias" type="text" placeholder="Имя организатора" />
               </div>
@@ -3367,16 +3532,11 @@ async function saveEvent() {
   </main>
   <div v-if="authOpen" class="auth-backdrop" @click.self="authOpen = false">
     <section class="auth-dialog" aria-modal="true" role="dialog" aria-labelledby="auth-title">
-      <button class="close-button" type="button" aria-label="Закрыть" @click="authOpen = false">
-        Г—
-      </button>
+      <button class="close-button" type="button" aria-label="Закрыть" @click="authOpen = false">×</button>
 
       <p class="eyebrow">Event Gallery</p>
-      <h2 id="auth-title">Вход в событие</h2>
-      <p class="auth-subtitle">
-        Для MVP основной сценарий начинается с гостевого входа, а профиль можно подключить
-        позднее.
-      </p>
+      <h2 id="auth-title">Вход</h2>
+      <p class="auth-subtitle">Гостевой вход остается самым быстрым сценарием, а профиль можно привязать через email-код.</p>
 
       <div class="auth-tabs" role="tablist" aria-label="Способ входа">
         <button
@@ -3386,7 +3546,7 @@ async function saveEvent() {
           :class="{ active: authMode === 'guest' }"
           @click="authMode = 'guest'"
         >
-          Гость
+          Войти как гость
         </button>
         <button
           type="button"
@@ -3395,36 +3555,99 @@ async function saveEvent() {
           :class="{ active: authMode === 'profile' }"
           @click="authMode = 'profile'"
         >
-          Профиль
+          Войти по email
         </button>
       </div>
 
       <form class="auth-form" @submit.prevent="completeAuth">
         <template v-if="authMode === 'guest'">
           <label>
-            Код события
-            <input type="text" placeholder="MAY-24" autocomplete="off" />
-          </label>
-          <label>
             Имя участника
-            <input v-model="authGuestName" type="text" placeholder="Например, Аня" autocomplete="name" />
+            <input
+              v-model="authGuestName"
+              type="text"
+              placeholder="Например, Аня"
+              autocomplete="name"
+            />
           </label>
-          <button class="primary-button full" type="submit">Войти как гость</button>
+          <p class="auth-hint">Если поле пустое, приложение создаст имя вроде “Гость 4821”.</p>
+          <button class="primary-button full" type="submit">Продолжить</button>
         </template>
 
         <template v-else>
           <label>
             Email
-            <input v-model="authEmail" type="email" placeholder="student@example.ru" autocomplete="email" />
+            <input
+              v-model="authEmail"
+              type="email"
+              placeholder="student@example.ru"
+              autocomplete="email"
+            />
           </label>
+          <button class="secondary-button full" type="button" @click="requestAuthCode">
+            Получить код
+          </button>
           <label>
             Код подтверждения
-            <input v-model="authCode" type="text" placeholder="000000" autocomplete="one-time-code" />
+            <input
+              v-model="authCode"
+              type="text"
+              placeholder="000000"
+              autocomplete="one-time-code"
+            />
           </label>
-          <button class="primary-button full" type="submit">Войти в профиль</button>
+          <p class="auth-hint">Код для разработки: <strong>000000</strong></p>
+          <button class="primary-button full" type="submit">
+            {{ currentUser.mode === 'guest' || currentUser.mode === 'demo' ? 'Создать профиль' : 'Войти' }}
+          </button>
         </template>
       </form>
       <p v-if="authError" class="auth-subtitle">{{ authError }}</p>
+    </section>
+  </div>
+
+  <div v-if="profileEditorOpen" class="auth-backdrop" @click.self="closeProfileEditor">
+    <section class="auth-dialog profile-editor-dialog" aria-modal="true" role="dialog" aria-labelledby="profile-title">
+      <button class="close-button" type="button" aria-label="Закрыть" @click="closeProfileEditor">×</button>
+
+      <p class="eyebrow">Профиль</p>
+      <h2 id="profile-title">Имя и аватар</h2>
+      <p class="auth-subtitle">Глобальное имя аккаунта редактируется отдельно от имени участника внутри конкретного события.</p>
+
+      <form class="auth-form" @submit.prevent="saveProfileEditor">
+        <div class="profile-editor-avatar-row">
+          <span
+            class="profile-editor-avatar"
+            :class="{ filled: Boolean(profileEditorAvatarUrl) }"
+            :style="getAvatarStyle(profileEditorAvatarUrl || undefined)"
+          >
+            {{ profileEditorAvatarUrl ? '' : buildUserInitials(profileEditorName || currentUser.name) }}
+          </span>
+          <div class="profile-editor-copy">
+            <strong>Аватар профиля</strong>
+            <span>PNG, JPEG или WEBP до 2 МБ</span>
+            <button class="secondary-button" type="button" @click="triggerProfileAvatarPicker">
+              Загрузить изображение
+            </button>
+          </div>
+        </div>
+
+        <label>
+          Имя
+          <input
+            v-model="profileEditorName"
+            type="text"
+            placeholder="Как показывать вас в профиле"
+            autocomplete="name"
+          />
+        </label>
+
+        <div class="create-actions">
+          <button class="secondary-button" type="button" @click="closeProfileEditor">Отмена</button>
+          <button class="primary-button" type="submit">Сохранить</button>
+        </div>
+      </form>
+      <p v-if="profileEditorError" class="auth-subtitle">{{ profileEditorError }}</p>
     </section>
   </div>
 
@@ -3436,6 +3659,13 @@ async function saveEvent() {
     @change="handleAlbumPhotoUpload"
   />
   <input ref="chatPhotoInput" type="file" accept="image/*,.gif" hidden @change="handleChatPhotoUpload" />
+  <input
+    ref="profileAvatarInput"
+    type="file"
+    accept="image/png,image/jpeg,image/webp"
+    hidden
+    @change="handleProfileAvatarUpload"
+  />
 
   <div v-if="rsvpSheetOpen && rsvpSheetStatus" class="rsvp-sheet-overlay" @click.self="closeRsvpSheet">
     <section class="rsvp-sheet" aria-modal="true" role="dialog" aria-labelledby="rsvp-sheet-title">
