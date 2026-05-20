@@ -1,8 +1,10 @@
 ﻿<script setup lang="ts">
 import 'emoji-picker-element'
-import { computed, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { buildEventStatus } from './data/mockEvents'
+import { authService } from './services/authService'
 import { eventService } from './services/eventService'
+import { participantService } from './services/participantService'
 import type {
   AchievementMode,
   AchievementScope,
@@ -27,9 +29,15 @@ import type {
   TimezoneOption,
 } from './types/event'
 import type { GalleryPhoto } from './types/photo'
+import type { CurrentUser } from './types/user'
 
 type AuthMode = 'guest' | 'profile'
 type ViewMode = 'landing' | 'home' | 'create' | 'preview' | 'event'
+type CurrentUserView = CurrentUser & {
+  initials: string
+  name: string
+  role: 'Организатор'
+}
 
 const themes: EventTheme[] = [
   {
@@ -239,11 +247,28 @@ const emojiPickerOptions = [
   '📚',
 ]
 
-const currentUser = {
+function buildUserInitials(name?: string) {
+  return (
+    name
+      ?.split(/\s+/)
+      .filter(Boolean)
+      .map((part) => part.slice(0, 1))
+      .join('')
+      .slice(0, 2)
+      .toUpperCase() || 'Ю'
+  )
+}
+
+const currentUser = reactive<CurrentUserView>({
+  id: 'guest_demo',
+  mode: 'guest',
+  displayName: 'Юрий',
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString(),
   initials: 'Ю',
   name: 'Юрий',
-  role: 'Организатор' as const,
-}
+  role: 'Организатор',
+})
 
 const coverAssetModules = import.meta.glob(
   '../приеры страниц partiful/Ресурсы/Обложки/**/*.{png,jpg,jpeg,jfif,avif,webp,gif}',
@@ -286,6 +311,23 @@ const backgroundAssetOptions = buildAssetOptions(backgroundAssetModules, (path) 
 
 function createId(prefix: string) {
   return `${prefix}-${Math.random().toString(36).slice(2, 8)}-${Date.now().toString(36)}`
+}
+
+function applyCurrentUser(user: CurrentUser) {
+  currentUser.id = user.id
+  currentUser.mode = user.mode
+  currentUser.email = user.email
+  currentUser.displayName = user.displayName
+  currentUser.createdAt = user.createdAt
+  currentUser.updatedAt = user.updatedAt
+  currentUser.name = user.displayName?.trim() || 'Юрий'
+  currentUser.initials = buildUserInitials(currentUser.name)
+}
+
+async function initializeCurrentUser() {
+  const storedUser = await authService.getCurrentUser()
+  const nextUser = storedUser ?? (await authService.createGuestUser('Юрий'))
+  applyCurrentUser(nextUser)
 }
 
 function getThemeById(themeId: string) {
@@ -609,6 +651,10 @@ const selectedTheme = ref<EventTheme>(themes[0])
 const homeEvents = ref<GalleryEvent[]>(eventService.getHomeEvents())
 const authOpen = ref(false)
 const authMode = ref<AuthMode>('guest')
+const authGuestName = ref(currentUser.name)
+const authEmail = ref('')
+const authCode = ref('')
+const authError = ref('')
 const currentView = ref<ViewMode>('landing')
 const activeTab = ref<EventTab>('current')
 const profileMenuOpen = ref(false)
@@ -628,6 +674,8 @@ const rsvpSheetMessage = ref('')
 const albumPhotoInput = ref<HTMLInputElement | null>(null)
 const chatPhotoInput = ref<HTMLInputElement | null>(null)
 const pendingAlbumEventId = ref<string | null>(null)
+
+void initializeCurrentUser()
 
 const rsvpStatusLabels: Record<RsvpStatus, string> = {
   going: 'Пойду',
@@ -1021,17 +1069,39 @@ const activePhotoEntry = computed(() => {
 
 function openAuth(mode: AuthMode) {
   authMode.value = mode
+  authGuestName.value = currentUser.name
+  authError.value = ''
   authOpen.value = true
 }
 
-function completeAuth() {
-  currentView.value = 'home'
-  authOpen.value = false
-  profileMenuOpen.value = false
-  notificationsOpen.value = false
+async function completeAuth() {
+  authError.value = ''
+
+  try {
+    let nextUser: CurrentUser
+
+    if (authMode.value === 'guest') {
+      nextUser = await authService.createGuestUser(authGuestName.value)
+    } else {
+      await authService.requestEmailCode(authEmail.value)
+      nextUser =
+        currentUser.mode === 'guest'
+          ? await authService.upgradeGuestToProfile(authEmail.value, authCode.value)
+          : await authService.verifyEmailCode(authEmail.value, authCode.value)
+    }
+
+    applyCurrentUser(nextUser)
+    currentView.value = 'home'
+    authOpen.value = false
+    profileMenuOpen.value = false
+    notificationsOpen.value = false
+  } catch (error) {
+    authError.value = error instanceof Error ? error.message : 'Не удалось выполнить вход.'
+  }
 }
 
-function logout() {
+async function logout() {
+  await authService.logout()
   currentView.value = 'landing'
   profileMenuOpen.value = false
   notificationsOpen.value = false
@@ -1042,6 +1112,9 @@ function logout() {
   previewDraftEvent.value = null
   coverPickerOpen.value = false
   createAchievementPopover.value = null
+  authCode.value = ''
+  authEmail.value = ''
+  authError.value = ''
 }
 
 function toggleNotifications() {
@@ -1708,6 +1781,7 @@ function createEventFromForm() {
     startsAt: safeStartsAt,
     endsAt: safeEndsAt,
     role: currentUser.role,
+    organizerId: currentUser.id,
     organizerName: hostName,
     organizerInitials: hostInitials,
     organizerTone: '#ffd166,#41d3bd',
@@ -1746,7 +1820,7 @@ function createEventFromForm() {
   return newEvent
 }
 
-function saveEvent() {
+async function saveEvent() {
   enforceCreateDateTimeRules()
   if (!canSaveEvent.value) return
 
@@ -1766,6 +1840,7 @@ function saveEvent() {
 
     eventService.updateEvent(updated)
     homeEvents.value = eventService.getHomeEvents()
+    await participantService.joinEventAsParticipant(updated.id, updated.organizerName, 'organizer')
     activeTab.value = updated.status
     editingEventId.value = null
     createEventOpen.value = false
@@ -1788,6 +1863,7 @@ function saveEvent() {
   const nextEvent = createEventFromForm()
   eventService.createEvent(nextEvent)
   homeEvents.value = eventService.getHomeEvents()
+  await participantService.joinEventAsParticipant(nextEvent.id, nextEvent.organizerName, 'organizer')
   expandedEvents.value = new Set()
   activeTab.value = nextEvent.status
   activeAchievement.value = null
@@ -3214,7 +3290,7 @@ function saveEvent() {
           </label>
           <label>
             Имя участника
-            <input type="text" placeholder="Например, Аня" autocomplete="name" />
+            <input v-model="authGuestName" type="text" placeholder="Например, Аня" autocomplete="name" />
           </label>
           <button class="primary-button full" type="submit">Войти как гость</button>
         </template>
@@ -3222,15 +3298,16 @@ function saveEvent() {
         <template v-else>
           <label>
             Email
-            <input type="email" placeholder="student@example.ru" autocomplete="email" />
+            <input v-model="authEmail" type="email" placeholder="student@example.ru" autocomplete="email" />
           </label>
           <label>
-            Пароль
-            <input type="password" placeholder="••••••••" autocomplete="current-password" />
+            Код подтверждения
+            <input v-model="authCode" type="text" placeholder="000000" autocomplete="one-time-code" />
           </label>
           <button class="primary-button full" type="submit">Войти в профиль</button>
         </template>
       </form>
+      <p v-if="authError" class="auth-subtitle">{{ authError }}</p>
     </section>
   </div>
 

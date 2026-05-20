@@ -73,6 +73,7 @@ export type GalleryEvent = {
   startsAt: string
   endsAt: string
   role: EventRole
+  organizerId?: string
   organizerName: string
   organizerInitials: string
   organizerTone: string
