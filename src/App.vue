@@ -5,6 +5,7 @@ import { buildEventStatus } from './data/mockEvents'
 import { authService } from './services/authService'
 import { eventService } from './services/eventService'
 import { participantService } from './services/participantService'
+import { photoService } from './services/photoService'
 import type {
   AchievementMode,
   AchievementScope,
@@ -603,10 +604,19 @@ function getSavedPhotos(event: GalleryEvent) {
   return event.photos.filter((photo) => photo.saved)
 }
 
+function getPhotoImageSource(photo: GalleryPhoto) {
+  return photo.imageUrl ?? photo.src ?? ''
+}
+
+function getPhotoLikesCount(photo: GalleryPhoto) {
+  return Number(photo.likesCount ?? photo.likes ?? 0) || 0
+}
+
 function getPhotoStyle(photo: GalleryPhoto) {
-  if (photo.src) {
+  const imageSource = getPhotoImageSource(photo)
+  if (imageSource) {
     return {
-      backgroundImage: `url("${photo.src}")`,
+      backgroundImage: `url("${imageSource}")`,
       backgroundSize: 'cover',
       backgroundPosition: 'center',
     }
@@ -708,6 +718,7 @@ const profileEditorAvatarUrl = ref<string | null>(null)
 const profileEditorError = ref('')
 
 void initializeCurrentUser()
+void syncAllEventPhotosFromService()
 
 const rsvpStatusLabels: Record<RsvpStatus, string> = {
   going: 'Пойду',
@@ -1464,6 +1475,27 @@ function getEventById(eventId: string) {
   return homeEvents.value.find((event) => event.id === eventId) ?? null
 }
 
+async function syncEventPhotosFromService(eventId: string) {
+  const event = getEventById(eventId)
+  if (!event) return null
+
+  const photos = await photoService.getEventPhotos(eventId)
+  const nextEvent = {
+    ...event,
+    photos,
+  }
+  syncEventSavedCount(nextEvent)
+  eventService.updateEvent(nextEvent)
+  homeEvents.value = eventService.getHomeEvents()
+  return nextEvent
+}
+
+async function syncAllEventPhotosFromService() {
+  for (const event of homeEvents.value) {
+    await syncEventPhotosFromService(event.id)
+  }
+}
+
 function updateEventInList(eventId: string, updater: (event: GalleryEvent) => GalleryEvent) {
   const event = getEventById(eventId)
   if (!event) return null
@@ -1558,13 +1590,12 @@ async function sendEventChatMessage() {
   eventChatDraft.value = ''
 }
 
-function togglePhotoSaved(eventId: string, photoId: string) {
+async function togglePhotoSaved(eventId: string, photoId: string) {
+  const updatedPhoto = await photoService.togglePhotoSaved(photoId)
   updateEventInList(eventId, (current) => {
     const nextEvent = {
       ...current,
-      photos: current.photos.map((photo) =>
-        photo.id === photoId ? { ...photo, saved: !photo.saved } : photo,
-      ),
+      photos: current.photos.map((photo) => (photo.id === photoId ? updatedPhoto : photo)),
     }
     syncEventSavedCount(nextEvent)
     return nextEvent
@@ -1835,14 +1866,15 @@ async function addEventPhoto(eventId: string, file: File, source: 'album' | 'cha
   const participant = currentParticipant.value ?? (await ensureCurrentParticipant(event))
   if (!participant) return
 
-  const src = window.URL.createObjectURL(file)
-  const photo: GalleryPhoto = {
-    id: createId('photo'),
-    tone: '#ffffff,#d9e8ff,#5b8def',
-    likes: 0,
-    src,
-    saved: false,
-  }
+  const imageUrl = await readFileAsDataUrl(file)
+  const photo = await photoService.addEventPhoto({
+    eventId,
+    userId: currentUser.id,
+    participantId: participant.id,
+    authorName: participant.displayName,
+    authorAvatarUrl: currentUser.avatarUrl,
+    imageUrl,
+  })
 
   updateEventInList(eventId, (current) => {
     const nextEvent = {
@@ -1896,7 +1928,7 @@ function handleAlbumPhotoUpload(nativeEvent: Event) {
   const file = (nativeEvent.target as HTMLInputElement).files?.[0]
   const eventId = pendingAlbumEventId.value ?? activeEventId.value
   if (file && eventId) {
-    addEventPhoto(eventId, file, 'album')
+    void addEventPhoto(eventId, file, 'album')
   }
   pendingAlbumEventId.value = null
   ;(nativeEvent.target as HTMLInputElement).value = ''
@@ -1905,7 +1937,7 @@ function handleAlbumPhotoUpload(nativeEvent: Event) {
 function handleChatPhotoUpload(nativeEvent: Event) {
   const file = (nativeEvent.target as HTMLInputElement).files?.[0]
   if (file && activeEventId.value) {
-    addEventPhoto(activeEventId.value, file, 'chat')
+    void addEventPhoto(activeEventId.value, file, 'chat')
   }
   ;(nativeEvent.target as HTMLInputElement).value = ''
 }
@@ -2675,7 +2707,10 @@ async function saveEvent() {
                     <strong>{{ message.authorName }}</strong>
                     <p>{{ message.text }}</p>
                     <button
-                      v-if="getEventPhotoById(eventPageData, message.photoId)"
+                      v-if="
+                        getEventPhotoById(eventPageData, message.photoId) &&
+                        getPhotoImageSource(getEventPhotoById(eventPageData, message.photoId)!)
+                      "
                       class="event-chat-photo-link"
                       type="button"
                       @click="
@@ -2687,7 +2722,7 @@ async function saveEvent() {
                       "
                     >
                       <img
-                        :src="getEventPhotoById(eventPageData, message.photoId)!.src"
+                        :src="getPhotoImageSource(getEventPhotoById(eventPageData, message.photoId)!)"
                         alt="Фото из чата"
                         decoding="async"
                       />
@@ -3724,7 +3759,7 @@ async function saveEvent() {
         <span>{{ activePhotoEntry.event.title }}</span>
         <h3>Фото из события</h3>
         <p>
-          {{ activePhotoEntry.photo.likes }} лайков · {{ formatEventDateLabel(activePhotoEntry.event.startsAt) }}
+          {{ getPhotoLikesCount(activePhotoEntry.photo) }} лайков · {{ formatEventDateLabel(activePhotoEntry.event.startsAt) }}
         </p>
       </div>
       <div class="viewer-actions">

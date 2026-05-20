@@ -863,3 +863,59 @@ npm run build
 ### Next step
 
 Extract auth/profile UI into smaller components or start building an Appwrite-backed adapter for `authService` and avatar storage one layer at a time.
+
+## Step 15 - 2026-05-20
+
+### Goal
+
+Extract event photo operations into a separate `photoService` while keeping the current UI and mock/localStorage mode intact.
+
+### What was added
+
+1. Created `src/services/photoService.ts`.
+2. Added a dedicated photo storage layer on top of `localStorage` with key `event-gallery:photos`.
+3. Added backward-compatible photo normalization:
+   - old mock photos from `event.photos` still render;
+   - first access can migrate seed photos from event mock data into the new photo storage;
+   - compatibility fields like `src`, `likes`, and `saved` are preserved.
+4. New event photos are now created with explicit linkage to:
+   - `eventId`;
+   - `userId`;
+   - `participantId`;
+   - `authorName`;
+   - `authorAvatarUrl`.
+5. Photo actions were prepared for future backend logic:
+   - like toggling uses `userId` and `likedBy`;
+   - save toggling is handled by `photoService`;
+   - badges can be added or removed in the service layer;
+   - `storageFileId` is reserved for future Appwrite Storage integration.
+6. `App.vue` was updated minimally:
+   - photo upload now goes through `photoService.addEventPhoto()`;
+   - saved state goes through `photoService.togglePhotoSaved()`;
+   - photo rendering now supports both legacy `src` and future-facing `imageUrl`.
+
+### Files changed
+
+- `src/types/photo.ts`
+- `src/services/photoService.ts`
+- `src/data/mockEvents.ts`
+- `src/App.vue`
+- `docs/development-log.md`
+
+### Architecture notes
+
+- Photo metadata is now separated from the visual screen logic.
+- Storage is still local and temporary.
+- `imageUrl` currently stores mock URLs or base64 data.
+- `storageFileId` is kept optional for a later Appwrite Storage adapter.
+- This makes `photoService` the next clean candidate for backend replacement without rewriting the screens.
+
+### Verification
+
+```bash
+npm run build
+```
+
+### Next step
+
+Either extract `achievementService`, or prepare an Appwrite adapter for `photoService` so uploaded images can move from `localStorage` to Storage + Database metadata.

@@ -474,8 +474,16 @@ export function normalizeSeedAchievement(seedAchievement: SeedAchievement): Even
 export function normalizeGalleryEvent(event: GalleryEvent): GalleryEvent {
   const photos = (event.photos ?? []).map((photo) => ({
     ...photo,
+    eventId: photo.eventId ?? event.id,
+    authorName: photo.authorName ?? event.organizerName,
+    imageUrl: photo.imageUrl ?? photo.src,
+    likesCount: Number(photo.likesCount ?? photo.likes) || 0,
+    likedBy: Array.isArray(photo.likedBy) ? photo.likedBy : [],
+    badges: Array.isArray(photo.badges) ? photo.badges : [],
+    createdAt: photo.createdAt ?? event.startsAt,
     likes: Number(photo.likes) || 0,
     saved: Boolean(photo.saved),
+    src: photo.src ?? photo.imageUrl,
   }))
 
   return {
