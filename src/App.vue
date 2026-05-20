@@ -1,8 +1,8 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed, ref } from 'vue'
 
 type AuthMode = 'guest' | 'profile'
-type ViewMode = 'landing' | 'home'
+type ViewMode = 'landing' | 'home' | 'create'
 type EventTab = 'current' | 'upcoming' | 'past'
 
 type EventTheme = {
@@ -35,6 +35,7 @@ type EventInfoBlockType =
 type EventInfoBlock = {
   id: string
   type: EventInfoBlockType
+  icon: string
   title: string
   description: string
   link: string
@@ -70,6 +71,7 @@ type GalleryEvent = {
   organizerName: string
   organizerInitials: string
   organizerTone: string
+  organizerAvatarSrc?: string
   description?: string
   location: string
   savedCount: number
@@ -108,22 +110,29 @@ type AchievementTemplate = {
 
 type CreateEventForm = {
   title: string
+  titleStyle: string
   description: string
   startsAt: string
   endsAt: string
+  hostAlias: string
   location: string
-  coverThemeId: string
-  backgroundThemeId: string
-  allowGuestInvites: boolean
-  participantLimitEnabled: boolean
   participantLimit: string
+  costPerPerson: string
+  coverAssetId: string
+  backgroundAssetId: string
+  avatarAssetId: string
+  uploadedCoverUrl: null | string
+  uploadedBackgroundUrl: null | string
+  uploadedAvatarUrl: null | string
   infoBlocks: EventInfoBlock[]
-  needsPayment: boolean
-  paymentAmount: string
   paymentDestination: string
   paymentComment: string
+  allowGuestInvites: boolean
+  rsvpStyle: string
+  automaticExpanded: boolean
   automaticTemplateIds: string[]
-  selectedTemplateIds: string[]
+  selectedPersonalTemplateIds: string[]
+  selectedGroupTemplateIds: string[]
   localAchievements: EventAchievement[]
 }
 
@@ -134,6 +143,13 @@ type MedalForm = {
   icon: string
   tone: string
   saveAsTemplate: boolean
+}
+
+type AssetOption = {
+  id: string
+  kind: 'image' | 'video'
+  label: string
+  src: string
 }
 
 const themes: EventTheme[] = [
@@ -196,21 +212,21 @@ const homeEventSeeds = [
         id: 'paparazzi',
         title: 'Папарацци',
         description: 'Выдается участнику, который добавил больше всех фото в общий альбом.',
-        icon: '◉',
+        icon: '📸',
         tone: '#ff4d6d,#ffd166',
       },
       {
         id: 'first-frame',
         title: 'Первый кадр',
         description: 'Получает участник, который первым загрузил фото после открытия альбома.',
-        icon: '◇',
+        icon: '🥇',
         tone: '#41d3bd,#5b8def',
       },
       {
         id: 'group-shot',
         title: 'Общий кадр',
         description: 'Групповое достижение события: в альбоме появился снимок всей компании.',
-        icon: '△',
+        icon: '👥',
         tone: '#8a5cf6,#ffb703',
       },
     ],
@@ -248,14 +264,14 @@ const homeEventSeeds = [
         id: 'album-favorite',
         title: 'Любимец альбома',
         description: 'Выдается автору фото, которое собрало больше всего лайков.',
-        icon: '◎',
+        icon: '❤️',
         tone: '#5b8def,#f7f06d',
       },
       {
         id: 'collector',
         title: 'Коллекционер',
         description: 'Получает участник, который сохранил фото из разных частей события.',
-        icon: '□',
+        icon: '🗂️',
         tone: '#00c2a8,#ffffff',
       },
     ],
@@ -290,7 +306,7 @@ const homeEventSeeds = [
         id: 'warm-frame',
         title: 'Теплый кадр',
         description: 'Автоматическая медаль за фото, которое добавили в избранное несколько гостей.',
-        icon: '○',
+        icon: '☀️',
         tone: '#ffd166,#ff7a59',
       },
     ],
@@ -324,14 +340,14 @@ const homeEventSeeds = [
         id: 'after-defense',
         title: 'После защиты',
         description: 'Групповое достижение для события, где собрались участники после защиты проекта.',
-        icon: '△',
+        icon: '👥',
         tone: '#5b8def,#ff4d6d',
       },
       {
         id: 'top-like',
         title: 'Топ лайков',
         description: 'Выдается за фотографию, которая стала самой популярной в альбоме.',
-        icon: '◎',
+        icon: '⭐',
         tone: '#ffb703,#ffffff',
       },
     ],
@@ -367,7 +383,7 @@ const homeEventSeeds = [
         id: 'nature-story',
         title: 'История дня',
         description: 'Достижение события за серию фотографий, которая показывает весь день.',
-        icon: '◇',
+        icon: '🌿',
         tone: '#41d3bd,#f7f06d',
       },
     ],
@@ -400,7 +416,7 @@ const homeEventSeeds = [
         id: 'night-light',
         title: 'Ночной свет',
         description: 'Медаль за лучший кадр вечернего события по лайкам гостей.',
-        icon: '◉',
+        icon: '🌙',
         tone: '#151515,#8a5cf6',
       },
     ],
@@ -433,14 +449,14 @@ const homeEventSeeds = [
         id: 'route-done',
         title: 'Маршрут пройден',
         description: 'Групповое достижение события: команда дошла до финальной точки.',
-        icon: '△',
+        icon: '🧭',
         tone: '#8a5cf6,#ffb703',
       },
       {
         id: 'active-guest',
         title: 'Активный гость',
         description: 'Выдается гостю, который чаще других реагировал на фото и сообщения.',
-        icon: '○',
+        icon: '⚡',
         tone: '#41d3bd,#8a5cf6',
       },
     ],
@@ -475,14 +491,14 @@ const homeEventSeeds = [
         id: 'photo-wave',
         title: 'Фото-волна',
         description: 'Событие получило медаль за большое количество загруженных снимков.',
-        icon: '◇',
+        icon: '📷',
         tone: '#5b8def,#ffffff',
       },
       {
         id: 'memory-keeper',
         title: 'Хранитель',
         description: 'Личная медаль за сохранение большого числа фотографий из события.',
-        icon: '□',
+        icon: '🗂️',
         tone: '#41d3bd,#5b8def',
       },
     ],
@@ -518,7 +534,7 @@ const homeEventSeeds = [
         id: 'quiet-story',
         title: 'Тихая история',
         description: 'Достижение за камерное событие, где фотографии собраны в одну аккуратную историю.',
-        icon: '◎',
+        icon: '📚',
         tone: '#ffd166,#ffffff',
       },
     ],
@@ -548,7 +564,7 @@ const notifications = ref<HomeNotification[]>([
     id: 'n3',
     title: 'Ответ в чате',
     text: 'В выпускном вечере появился новый ответ на ваше сообщение.',
-    time: '1 ч',
+    time: '1 С‡',
   },
 ])
 
@@ -631,6 +647,24 @@ const infoBlockTypeOptions: Array<{ emoji: string; label: string; value: EventIn
   { value: 'other', label: 'Другое', emoji: '📝' },
 ]
 
+const quickInfoOptions = infoBlockTypeOptions.filter((option) =>
+  ['link', 'playlist', 'dress-code'].includes(option.value),
+)
+
+const rsvpStyleOptions = [
+  { id: 'icons', label: 'Icons', emoji: '👍' },
+  { id: 'bloom', label: 'Bloom', emoji: '🌷' },
+  { id: 'flirty', label: 'Flirty', emoji: '💋' },
+  { id: 'hearts', label: 'Hearts', emoji: '💖' },
+]
+
+const titleStyleOptions = [
+  { id: 'classic', label: 'Classic' },
+  { id: 'eclectic', label: 'Eclectic' },
+  { id: 'fancy', label: 'Fancy' },
+  { id: 'literary', label: 'Literary' },
+]
+
 const medalToneOptions = [
   '#ff7a59,#ffd166',
   '#41d3bd,#5b8def',
@@ -645,6 +679,53 @@ const currentUser = {
   name: 'Юрий',
   role: 'Организатор' as const,
 }
+
+const avatarAssetModules = import.meta.glob(
+  '../приеры страниц partiful/Ресурсы/Аватарки/*.{png,jpg,jpeg,jfif,avif,webp}',
+  {
+    eager: true,
+    import: 'default',
+  },
+) as Record<string, string>
+
+const coverAssetModules = import.meta.glob(
+  '../приеры страниц partiful/Ресурсы/Обложки/*.{png,jpg,jpeg,jfif,avif,webp}',
+  {
+    eager: true,
+    import: 'default',
+  },
+) as Record<string, string>
+
+const backgroundAssetModules = import.meta.glob(
+  '../приеры страниц partiful/Ресурсы/Фон/*.{png,jpg,jpeg,jfif,avif,webp,mp4,webm}',
+  {
+    eager: true,
+    import: 'default',
+  },
+) as Record<string, string>
+
+function buildAssetOptions(
+  assets: Record<string, string>,
+  kindResolver?: (path: string) => 'image' | 'video',
+) {
+  return Object.entries(assets)
+    .sort(([firstPath], [secondPath]) => firstPath.localeCompare(secondPath, 'ru'))
+    .map(([path, src], index) => {
+      const fileName = path.split('/').pop() ?? `asset-${index + 1}`
+      return {
+        id: `asset-${index + 1}`,
+        kind: kindResolver?.(path) ?? 'image',
+        label: fileName.replace(/\.[^.]+$/, ''),
+        src,
+      } satisfies AssetOption
+    })
+}
+
+const avatarAssetOptions = buildAssetOptions(avatarAssetModules)
+const coverAssetOptions = buildAssetOptions(coverAssetModules)
+const backgroundAssetOptions = buildAssetOptions(backgroundAssetModules, (path) =>
+  path.endsWith('.mp4') || path.endsWith('.webm') ? 'video' : 'image',
+)
 
 function createId(prefix: string) {
   return `${prefix}-${Math.random().toString(36).slice(2, 8)}-${Date.now().toString(36)}`
@@ -670,6 +751,7 @@ function createEmptyInfoBlock(): EventInfoBlock {
   return {
     id: createId('block'),
     type: 'dress-code',
+    icon: '👔',
     title: '',
     description: '',
     link: '',
@@ -679,22 +761,29 @@ function createEmptyInfoBlock(): EventInfoBlock {
 function createEmptyEventForm(): CreateEventForm {
   return {
     title: '',
+    titleStyle: titleStyleOptions[0].id,
     description: '',
     startsAt: buildDefaultDate(2, 19),
     endsAt: buildDefaultDate(2, 23),
+    hostAlias: currentUser.name,
     location: '',
-    coverThemeId: themes[0].id,
-    backgroundThemeId: themes[1].id,
-    allowGuestInvites: false,
-    participantLimitEnabled: false,
     participantLimit: '',
-    infoBlocks: [createEmptyInfoBlock()],
-    needsPayment: false,
-    paymentAmount: '',
+    costPerPerson: '',
+    coverAssetId: coverAssetOptions[0]?.id ?? '',
+    backgroundAssetId: backgroundAssetOptions[0]?.id ?? '',
+    avatarAssetId: avatarAssetOptions[0]?.id ?? '',
+    uploadedCoverUrl: null,
+    uploadedBackgroundUrl: null,
+    uploadedAvatarUrl: null,
+    infoBlocks: [],
     paymentDestination: '',
     paymentComment: '',
-    automaticTemplateIds: systemAchievementTemplates.map((template) => template.id),
-    selectedTemplateIds: [],
+    allowGuestInvites: false,
+    rsvpStyle: rsvpStyleOptions[2]?.id ?? rsvpStyleOptions[0].id,
+    automaticExpanded: false,
+    automaticTemplateIds: [],
+    selectedPersonalTemplateIds: [],
+    selectedGroupTemplateIds: [],
     localAchievements: [],
   }
 }
@@ -728,6 +817,26 @@ function formatEventDateLabel(startsAt: string) {
     hour: '2-digit',
     minute: '2-digit',
   })
+}
+
+function isAssetSource(value: string) {
+  return /\.(png|jpe?g|jfif|webp|avif|gif|mp4|webm)$/i.test(value)
+}
+
+function getCoverBackground(event: GalleryEvent) {
+  if (isAssetSource(event.coverStart)) {
+    return `linear-gradient(180deg, rgba(22, 22, 22, 0.08), rgba(22, 22, 22, 0.64)), url("${event.coverStart}")`
+  }
+
+  return `linear-gradient(180deg, rgba(22, 22, 22, 0.02), rgba(22, 22, 22, 0.62)), linear-gradient(135deg, ${event.coverStart}, ${event.coverEnd})`
+}
+
+function getBackgroundBackground(event: GalleryEvent) {
+  if (isAssetSource(event.backgroundStart)) {
+    return `linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(22, 22, 22, 0.12)), url("${event.backgroundStart}")`
+  }
+
+  return `linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(22, 22, 22, 0.08)), linear-gradient(135deg, ${event.backgroundStart}, ${event.backgroundEnd})`
 }
 
 function buildEventStatus(startsAt: string, endsAt: string) {
@@ -822,10 +931,11 @@ function normalizeSeedEvent(seed: {
     status: buildEventStatus(seed.startsAt, seed.endsAt),
     startsAt: seed.startsAt,
     endsAt: seed.endsAt,
-    role: seed.role === 'Организатор' ? 'Организатор' : 'Участник',
+    role: seed.role === 'Организатор' || seed.role === 'Организатор' ? 'Организатор' : 'Участник',
     organizerName: seed.organizerName,
     organizerInitials: seed.organizerInitials,
     organizerTone: seed.organizerTone,
+    organizerAvatarSrc: undefined,
     description: seed.description ?? '',
     location: seed.location,
     savedCount: seed.savedCount,
@@ -858,6 +968,8 @@ const activeAchievement = ref<string | null>(null)
 const createEventOpen = ref(false)
 const templatePickerOpen = ref(false)
 const medalBuilderOpen = ref(false)
+const achievementPickerScope = ref<AchievementScope>('personal')
+const guestPreviewOpen = ref(false)
 const createEventForm = ref<CreateEventForm>(createEmptyEventForm())
 const medalForm = ref<MedalForm>(createEmptyMedalForm())
 
@@ -895,18 +1007,73 @@ const allVisibleExpanded = computed(
     visibleEvents.value.every((event) => expandedEvents.value.has(event.id)),
 )
 
-const selectedCoverTheme = computed(() => getThemeById(createEventForm.value.coverThemeId))
-const selectedBackgroundTheme = computed(() => getThemeById(createEventForm.value.backgroundThemeId))
-const selectedCustomTemplates = computed(() =>
-  customAchievementTemplates.value.filter((template) =>
-    createEventForm.value.selectedTemplateIds.includes(template.id),
+function getAssetById(list: AssetOption[], id: string) {
+  return list.find((item) => item.id === id) ?? null
+}
+
+const selectedCoverAsset = computed(() =>
+  createEventForm.value.uploadedCoverUrl
+    ? {
+        id: 'uploaded-cover',
+        kind: 'image' as const,
+        label: 'Своя обложка',
+        src: createEventForm.value.uploadedCoverUrl,
+      }
+    : getAssetById(coverAssetOptions, createEventForm.value.coverAssetId),
+)
+
+const selectedBackgroundAsset = computed(() =>
+  createEventForm.value.uploadedBackgroundUrl
+    ? {
+        id: 'uploaded-background',
+        kind: 'image' as const,
+        label: 'Свой фон',
+        src: createEventForm.value.uploadedBackgroundUrl,
+      }
+    : getAssetById(backgroundAssetOptions, createEventForm.value.backgroundAssetId),
+)
+
+const selectedAvatarAsset = computed(() =>
+  createEventForm.value.uploadedAvatarUrl
+    ? {
+        id: 'uploaded-avatar',
+        kind: 'image' as const,
+        label: 'Свой аватар',
+        src: createEventForm.value.uploadedAvatarUrl,
+      }
+    : getAssetById(avatarAssetOptions, createEventForm.value.avatarAssetId),
+)
+
+const selectedPersonalTemplates = computed(() =>
+  customAchievementTemplates.value.filter(
+    (template) =>
+      template.scope === 'personal' &&
+      createEventForm.value.selectedPersonalTemplateIds.includes(template.id),
   ),
 )
+
+const selectedGroupTemplates = computed(() =>
+  customAchievementTemplates.value.filter(
+    (template) =>
+      template.scope === 'group' &&
+      createEventForm.value.selectedGroupTemplateIds.includes(template.id),
+  ),
+)
+
+const localPersonalAchievements = computed(() =>
+  createEventForm.value.localAchievements.filter((achievement) => achievement.scope === 'personal'),
+)
+
+const localGroupAchievements = computed(() =>
+  createEventForm.value.localAchievements.filter((achievement) => achievement.scope === 'group'),
+)
+
 const previewAchievements = computed(() => [
   ...systemAchievementTemplates.filter((template) =>
     createEventForm.value.automaticTemplateIds.includes(template.id),
   ),
-  ...selectedCustomTemplates.value,
+  ...selectedPersonalTemplates.value,
+  ...selectedGroupTemplates.value,
   ...createEventForm.value.localAchievements,
 ])
 
@@ -940,6 +1107,7 @@ function logout() {
   createEventOpen.value = false
   medalBuilderOpen.value = false
   templatePickerOpen.value = false
+  guestPreviewOpen.value = false
 }
 
 function toggleNotifications() {
@@ -959,17 +1127,21 @@ function toggleProfileMenu() {
 function openCreateEvent() {
   createEventForm.value = createEmptyEventForm()
   medalForm.value = createEmptyMedalForm()
+  currentView.value = 'create'
   createEventOpen.value = true
   templatePickerOpen.value = false
   medalBuilderOpen.value = false
+  guestPreviewOpen.value = false
   notificationsOpen.value = false
   profileMenuOpen.value = false
 }
 
 function closeCreateEvent() {
+  currentView.value = 'home'
   createEventOpen.value = false
   templatePickerOpen.value = false
   medalBuilderOpen.value = false
+  guestPreviewOpen.value = false
 }
 
 function addInfoBlock() {
@@ -982,18 +1154,37 @@ function removeInfoBlock(blockId: string) {
   )
 }
 
-function toggleTemplateSelection(templateId: string) {
-  const nextIds = new Set(createEventForm.value.selectedTemplateIds)
+function toggleTemplatePicker(scope: AchievementScope) {
+  if (templatePickerOpen.value && achievementPickerScope.value === scope) {
+    templatePickerOpen.value = false
+    return
+  }
+
+  achievementPickerScope.value = scope
+  templatePickerOpen.value = true
+}
+
+function toggleTemplateSelection(templateId: string, scope: AchievementScope) {
+  const sourceIds =
+    scope === 'group'
+      ? createEventForm.value.selectedGroupTemplateIds
+      : createEventForm.value.selectedPersonalTemplateIds
+  const nextIds = new Set(sourceIds)
   if (nextIds.has(templateId)) {
     nextIds.delete(templateId)
   } else {
     nextIds.add(templateId)
   }
-  createEventForm.value.selectedTemplateIds = [...nextIds]
+  if (scope === 'group') {
+    createEventForm.value.selectedGroupTemplateIds = [...nextIds]
+  } else {
+    createEventForm.value.selectedPersonalTemplateIds = [...nextIds]
+  }
 }
 
-function openMedalBuilder() {
+function openMedalBuilder(scope: AchievementScope) {
   medalForm.value = createEmptyMedalForm()
+  medalForm.value.scope = scope
   medalBuilderOpen.value = true
 }
 
@@ -1015,10 +1206,17 @@ function saveCustomMedal() {
 
   if (medalForm.value.saveAsTemplate) {
     customAchievementTemplates.value = [newTemplate, ...customAchievementTemplates.value]
-    createEventForm.value.selectedTemplateIds = [
-      ...createEventForm.value.selectedTemplateIds,
-      newTemplate.id,
-    ]
+    if (newTemplate.scope === 'group') {
+      createEventForm.value.selectedGroupTemplateIds = [
+        ...createEventForm.value.selectedGroupTemplateIds,
+        newTemplate.id,
+      ]
+    } else {
+      createEventForm.value.selectedPersonalTemplateIds = [
+        ...createEventForm.value.selectedPersonalTemplateIds,
+        newTemplate.id,
+      ]
+    }
   } else {
     createEventForm.value.localAchievements = [
       ...createEventForm.value.localAchievements,
@@ -1094,23 +1292,97 @@ function countAchievements(event: GalleryEvent, scope: AchievementScope) {
   return event.achievements.filter((achievement) => achievement.scope === scope).length
 }
 
+function removeSelectedAchievement(templateId: string, scope: AchievementScope) {
+  if (scope === 'group') {
+    createEventForm.value.selectedGroupTemplateIds =
+      createEventForm.value.selectedGroupTemplateIds.filter((id) => id !== templateId)
+    return
+  }
+
+  createEventForm.value.selectedPersonalTemplateIds =
+    createEventForm.value.selectedPersonalTemplateIds.filter((id) => id !== templateId)
+}
+
+function removeLocalAchievement(achievementId: string) {
+  createEventForm.value.localAchievements = createEventForm.value.localAchievements.filter(
+    (achievement) => achievement.id !== achievementId,
+  )
+}
+
+function getTitleStyleClass(styleId: string) {
+  return `title-style-${styleId}`
+}
+
+function getRsvpStyleOption(styleId: string) {
+  return rsvpStyleOptions.find((option) => option.id === styleId) ?? rsvpStyleOptions[0]
+}
+
+function getRsvpPreviewSymbols(styleId: string) {
+  const symbolMap: Record<string, [string, string, string]> = {
+    bloom: ['🌷', '🌼', '🥀'],
+    flirty: ['😘', '💋', '🥵'],
+    hearts: ['💖', '🫶', '💔'],
+    icons: ['✓', '?', '×'],
+  }
+
+  return symbolMap[styleId] ?? symbolMap.icons
+}
+
+function scrollToCreateSection(sectionId: string) {
+  document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+function handleCoverUpload(event: Event) {
+  const file = (event.target as HTMLInputElement).files?.[0]
+  if (file) {
+    createEventForm.value.uploadedCoverUrl = window.URL.createObjectURL(file)
+  }
+}
+
+function handleAvatarUpload(event: Event) {
+  const file = (event.target as HTMLInputElement).files?.[0]
+  if (file) {
+    createEventForm.value.uploadedAvatarUrl = window.URL.createObjectURL(file)
+  }
+}
+
+function handleBackgroundUpload(event: Event) {
+  const file = (event.target as HTMLInputElement).files?.[0]
+  if (file) {
+    createEventForm.value.uploadedBackgroundUrl = window.URL.createObjectURL(file)
+  }
+}
+
 function createEventFromForm() {
-  const coverTheme = getThemeById(createEventForm.value.coverThemeId)
-  const backgroundTheme = getThemeById(createEventForm.value.backgroundThemeId)
+  const coverAsset = selectedCoverAsset.value
+  const backgroundAsset = selectedBackgroundAsset.value
+  const avatarAsset = selectedAvatarAsset.value
   const safeEndsAt = createEventForm.value.endsAt || createEventForm.value.startsAt
+  const hostName = createEventForm.value.hostAlias.trim() || currentUser.name
+  const hostInitials =
+    hostName
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((part) => part.slice(0, 1))
+      .join('')
+      .slice(0, 2)
+      .toUpperCase() || currentUser.initials
   const automaticAchievements = systemAchievementTemplates
     .filter((template) => createEventForm.value.automaticTemplateIds.includes(template.id))
     .map((template) => buildAchievementFromTemplate(template))
   const selectedTemplates = customAchievementTemplates.value
-    .filter((template) => createEventForm.value.selectedTemplateIds.includes(template.id))
+    .filter(
+      (template) =>
+        createEventForm.value.selectedPersonalTemplateIds.includes(template.id) ||
+        createEventForm.value.selectedGroupTemplateIds.includes(template.id),
+    )
     .map((template) => buildAchievementFromTemplate(template))
   const payment =
-    createEventForm.value.needsPayment &&
-    (createEventForm.value.paymentAmount ||
-      createEventForm.value.paymentDestination ||
-      createEventForm.value.paymentComment)
+    createEventForm.value.costPerPerson ||
+    createEventForm.value.paymentDestination ||
+    createEventForm.value.paymentComment
       ? {
-          amount: createEventForm.value.paymentAmount,
+          amount: createEventForm.value.costPerPerson,
           destination: createEventForm.value.paymentDestination,
           comment: createEventForm.value.paymentComment,
         }
@@ -1131,22 +1403,21 @@ function createEventFromForm() {
     startsAt: createEventForm.value.startsAt,
     endsAt: safeEndsAt,
     role: currentUser.role,
-    organizerName: currentUser.name,
-    organizerInitials: currentUser.initials,
-    organizerTone: `${coverTheme.mid},${coverTheme.end}`,
+    organizerName: hostName,
+    organizerInitials: hostInitials,
+    organizerTone: '#ffd166,#41d3bd',
+    organizerAvatarSrc: avatarAsset?.src,
     description: createEventForm.value.description.trim(),
     location: createEventForm.value.location.trim() || 'Место уточняется',
     savedCount: 0,
     totalCount: 0,
-    coverStart: coverTheme.start,
-    coverEnd: coverTheme.mid,
-    backgroundStart: backgroundTheme.start,
-    backgroundEnd: backgroundTheme.end,
-    accent: backgroundTheme.accent,
+    coverStart: coverAsset?.src ?? '#ff7a59',
+    coverEnd: coverAsset?.src ?? '#ffd166',
+    backgroundStart: backgroundAsset?.src ?? '#f8f7f2',
+    backgroundEnd: backgroundAsset?.src ?? '#ffffff',
+    accent: '#ff7a59',
     allowGuestInvites: createEventForm.value.allowGuestInvites,
-    participantLimit: createEventForm.value.participantLimitEnabled
-      ? Number(createEventForm.value.participantLimit) || null
-      : null,
+    participantLimit: Number(createEventForm.value.participantLimit) || null,
     infoBlocks: trimmedBlocks,
     payment,
     achievements: [
@@ -1171,6 +1442,8 @@ function saveEvent() {
   createEventOpen.value = false
   medalBuilderOpen.value = false
   templatePickerOpen.value = false
+  guestPreviewOpen.value = false
+  currentView.value = 'home'
   notifications.value = [
     {
       id: createId('notice'),
@@ -1355,7 +1628,7 @@ function saveEvent() {
     </section>
   </main>
 
-  <main v-else class="home-shell">
+  <main v-else-if="currentView === 'home'" class="home-shell">
     <header class="home-topbar" aria-label="Навигация личного кабинета">
       <a class="brand home-brand" href="#" aria-label="Event Gallery Home">
         <span class="brand-mark">EG</span>
@@ -1439,19 +1712,13 @@ function saveEvent() {
           :key="event.id"
           class="home-event-card"
           :class="{ expanded: isEventExpanded(event.id) }"
-          :style="{
-            '--cover-start': event.coverStart,
-            '--cover-end': event.coverEnd,
-            '--event-start': event.backgroundStart,
-            '--event-end': event.backgroundEnd,
-            '--event-accent': event.accent,
-            '--organizer-tone': event.organizerTone,
-          }"
+          :style="{ '--event-accent': event.accent, '--organizer-tone': event.organizerTone }"
         >
           <button
             v-if="!isEventExpanded(event.id)"
             class="event-compact"
             type="button"
+            :style="{ backgroundImage: getCoverBackground(event) }"
             @click="toggleEvent(event.id)"
           >
             <span class="event-role">{{ event.role }}</span>
@@ -1459,7 +1726,16 @@ function saveEvent() {
             <span class="event-sun" aria-hidden="true"></span>
             <span class="event-compact-title">{{ event.title }}</span>
             <span class="event-organizer">
-              <span class="organizer-avatar">{{ event.organizerInitials }}</span>
+              <span
+                class="organizer-avatar"
+                :style="
+                  event.organizerAvatarSrc
+                    ? { backgroundImage: `url(${event.organizerAvatarSrc})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+                    : undefined
+                "
+              >
+                <template v-if="!event.organizerAvatarSrc">{{ event.organizerInitials }}</template>
+              </span>
               {{ event.organizerName }}
             </span>
             <span class="event-badge-summary">
@@ -1468,7 +1744,7 @@ function saveEvent() {
             </span>
           </button>
 
-          <div v-else class="event-expanded">
+          <div v-else class="event-expanded" :style="{ backgroundImage: getBackgroundBackground(event) }">
             <div class="expanded-achievements" aria-label="Достижения события">
               <button
                 v-for="achievement in event.achievements"
@@ -1524,376 +1800,612 @@ function saveEvent() {
       </section>
     </section>
   </main>
+  <main v-else class="create-page-shell">
+    <div
+      class="create-page-background"
+      :style="selectedBackgroundAsset?.kind === 'image' ? { backgroundImage: `url(${selectedBackgroundAsset.src})` } : undefined"
+    >
+      <video
+        v-if="selectedBackgroundAsset?.kind === 'video'"
+        class="create-background-video"
+        :src="selectedBackgroundAsset.src"
+        autoplay
+        muted
+        loop
+        playsinline
+      ></video>
+      <div class="create-page-glass"></div>
+    </div>
 
-  <div v-if="createEventOpen" class="create-event-backdrop" @click.self="closeCreateEvent">
-    <section class="create-event-dialog" aria-modal="true" role="dialog" aria-labelledby="create-event-title">
-      <button class="close-button create-close-button" type="button" aria-label="Закрыть" @click="closeCreateEvent">
-        ×
-      </button>
-
-      <div class="create-event-layout">
-        <form class="create-event-form" @submit.prevent="saveEvent">
-          <div class="create-section-head">
-            <p class="eyebrow">Новое событие</p>
-            <h2 id="create-event-title">Создать событие</h2>
-            <p class="create-event-copy">
-              Собираем только то, что нужно для MVP: карточка события, фон, доступ,
-              дополнительные блоки и достижения.
-            </p>
-          </div>
-
-          <section class="create-section">
-            <div class="section-title-row">
-              <h3>1. Основное</h3>
-            </div>
-            <div class="form-field-grid">
-              <label class="field-block field-span-2">
-                <span>Название события *</span>
-                <input v-model="createEventForm.title" type="text" placeholder="Например, Выпускной вечер" required />
-              </label>
-              <label class="field-block field-span-2">
-                <span>Описание</span>
-                <textarea
-                  v-model="createEventForm.description"
-                  rows="3"
-                  placeholder="Коротко о настроении и формате события"
-                ></textarea>
-              </label>
-              <label class="field-block">
-                <span>Дата и время начала *</span>
-                <input v-model="createEventForm.startsAt" type="datetime-local" required />
-              </label>
-              <label class="field-block">
-                <span>Дата и время окончания</span>
-                <input v-model="createEventForm.endsAt" type="datetime-local" />
-              </label>
-              <label class="field-block field-span-2">
-                <span>Место проведения</span>
-                <input v-model="createEventForm.location" type="text" placeholder="Лофт, аудитория, парк" />
-              </label>
-            </div>
-          </section>
-
-          <section class="create-section">
-            <div class="section-title-row">
-              <h3>2. Внешний вид</h3>
-            </div>
-            <div class="appearance-grid">
-              <div class="appearance-card">
-                <strong>Обложка события</strong>
-                <p>Используется в квадратной карточке на Home.</p>
-                <div class="theme-option-row">
-                  <button
-                    v-for="theme in themes"
-                    :key="`cover-${theme.id}`"
-                    class="theme-option"
-                    :class="{ active: createEventForm.coverThemeId === theme.id }"
-                    type="button"
-                    @click="createEventForm.coverThemeId = theme.id"
-                  >
-                    <span
-                      class="theme-option-swatch"
-                      :style="{ background: `linear-gradient(135deg, ${theme.start}, ${theme.end})` }"
-                    ></span>
-                    {{ theme.name }}
-                  </button>
-                </div>
-              </div>
-
-              <div class="appearance-card">
-                <strong>Фон события</strong>
-                <p>Используется в раскрытом блоке, просмотрщике фото и странице события.</p>
-                <div class="theme-option-row">
-                  <button
-                    v-for="theme in themes"
-                    :key="`background-${theme.id}`"
-                    class="theme-option"
-                    :class="{ active: createEventForm.backgroundThemeId === theme.id }"
-                    type="button"
-                    @click="createEventForm.backgroundThemeId = theme.id"
-                  >
-                    <span
-                      class="theme-option-swatch"
-                      :style="{ background: `linear-gradient(135deg, ${theme.start}, ${theme.end})` }"
-                    ></span>
-                    {{ theme.name }}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <section class="create-section">
-            <div class="section-title-row">
-              <h3>3. Доступ</h3>
-            </div>
-            <div class="toggle-grid">
-              <label class="toggle-card">
-                <input v-model="createEventForm.allowGuestInvites" type="checkbox" />
-                <span>Гости могут приглашать других</span>
-              </label>
-              <label class="toggle-card">
-                <input v-model="createEventForm.participantLimitEnabled" type="checkbox" />
-                <span>Ограничить число участников</span>
-              </label>
-            </div>
-            <label v-if="createEventForm.participantLimitEnabled" class="field-block narrow-field">
-              <span>Лимит участников</span>
-              <input v-model="createEventForm.participantLimit" type="number" min="1" placeholder="20" />
-            </label>
-            <p class="subtle-note">Событие остается приватным: ссылка и код будут генерироваться автоматически.</p>
-          </section>
-
-          <section class="create-section">
-            <div class="section-title-row">
-              <h3>4. Информация для гостей</h3>
-              <button class="secondary-button compact-action" type="button" @click="addInfoBlock">
-                + Добавить блок
-              </button>
-            </div>
-            <div class="info-block-list">
-              <article v-for="block in createEventForm.infoBlocks" :key="block.id" class="info-block-card">
-                <div class="info-block-toolbar">
-                  <label class="field-block">
-                    <span>Тип блока</span>
-                    <select v-model="block.type">
-                      <option v-for="option in infoBlockTypeOptions" :key="option.value" :value="option.value">
-                        {{ option.emoji }} {{ option.label }}
-                      </option>
-                    </select>
-                  </label>
-                  <button class="ghost-inline-button" type="button" @click="removeInfoBlock(block.id)">
-                    Удалить
-                  </button>
-                </div>
-                <div class="form-field-grid">
-                  <label class="field-block">
-                    <span>Заголовок</span>
-                    <input v-model="block.title" type="text" placeholder="Например, Дресс-код" />
-                  </label>
-                  <label class="field-block">
-                    <span>Ссылка</span>
-                    <input v-model="block.link" type="url" placeholder="https://..." />
-                  </label>
-                  <label class="field-block field-span-2">
-                    <span>Описание</span>
-                    <textarea
-                      v-model="block.description"
-                      rows="2"
-                      placeholder="Что нужно знать гостям"
-                    ></textarea>
-                  </label>
-                </div>
-              </article>
-            </div>
-          </section>
-
-          <section class="create-section">
-            <div class="section-title-row">
-              <h3>5. Сбор денег</h3>
-            </div>
-            <label class="toggle-card">
-              <input v-model="createEventForm.needsPayment" type="checkbox" />
-              <span>Нужно скинуться</span>
-            </label>
-            <div v-if="createEventForm.needsPayment" class="form-field-grid payment-grid">
-              <label class="field-block">
-                <span>Сумма с человека</span>
-                <input v-model="createEventForm.paymentAmount" type="text" placeholder="300 ₽" />
-              </label>
-              <label class="field-block">
-                <span>Куда переводить</span>
-                <input v-model="createEventForm.paymentDestination" type="text" placeholder="Сбер, +7..." />
-              </label>
-              <label class="field-block field-span-2">
-                <span>Комментарий</span>
-                <textarea
-                  v-model="createEventForm.paymentComment"
-                  rows="2"
-                  placeholder="Например, за еду и аренду"
-                ></textarea>
-              </label>
-            </div>
-          </section>
-
-          <section class="create-section">
-            <div class="section-title-row">
-              <h3>6. Достижения</h3>
-            </div>
-            <div class="achievement-builder-block">
-              <div class="achievement-column">
-                <strong>Автоматические достижения</strong>
-                <label v-for="template in systemAchievementTemplates" :key="template.id" class="toggle-card">
-                  <input v-model="createEventForm.automaticTemplateIds" type="checkbox" :value="template.id" />
-                  <span>{{ template.icon }} {{ template.title }}</span>
-                </label>
-              </div>
-
-              <div class="achievement-column">
-                <strong>Кастомные медали</strong>
-                <div class="achievement-action-row">
-                  <button class="secondary-button compact-action" type="button" @click="openMedalBuilder">
-                    + Создать медаль
-                  </button>
-                  <button class="ghost-button compact-action" type="button" @click="templatePickerOpen = !templatePickerOpen">
-                    + Выбрать из шаблонов
-                  </button>
-                </div>
-
-                <div v-if="selectedCustomTemplates.length || createEventForm.localAchievements.length" class="selected-achievement-list">
-                  <span v-for="template in selectedCustomTemplates" :key="template.id" class="selected-achievement-pill">
-                    {{ template.icon }} {{ template.title }}
-                  </span>
-                  <span
-                    v-for="achievement in createEventForm.localAchievements"
-                    :key="achievement.id"
-                    class="selected-achievement-pill local"
-                  >
-                    {{ achievement.icon }} {{ achievement.title }}
-                  </span>
-                </div>
-
-                <div v-if="templatePickerOpen" class="template-picker">
-                  <article
-                    v-for="template in customAchievementTemplates"
-                    :key="template.id"
-                    class="template-picker-card"
-                    :class="{ active: createEventForm.selectedTemplateIds.includes(template.id) }"
-                  >
-                    <div>
-                      <strong>{{ template.icon }} {{ template.title }}</strong>
-                      <p>{{ template.description }}</p>
-                    </div>
-                    <button class="secondary-button compact-action" type="button" @click="toggleTemplateSelection(template.id)">
-                      {{ createEventForm.selectedTemplateIds.includes(template.id) ? 'Убрать' : 'Выбрать' }}
-                    </button>
-                  </article>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <div class="create-actions">
-            <button class="secondary-button" type="button" @click="closeCreateEvent">Отмена</button>
-            <button class="primary-button" type="submit">Создать событие</button>
-          </div>
-        </form>
-
-        <aside class="create-preview-panel" aria-label="Предпросмотр события">
-          <div class="preview-label-row">
-            <span>Предпросмотр</span>
-            <strong>{{ previewAchievements.length }} медалей</strong>
-          </div>
-
-          <article
-            class="create-preview-card"
-            :style="{
-              '--cover-start': selectedCoverTheme.start,
-              '--cover-end': selectedCoverTheme.end,
-              '--preview-accent': selectedBackgroundTheme.accent,
-            }"
-          >
-            <span class="event-role">Организатор</span>
-            <span class="event-date">{{ createEventForm.startsAt ? formatEventDateLabel(createEventForm.startsAt) : 'Дата' }}</span>
-            <span class="event-sun" aria-hidden="true"></span>
-            <strong class="event-compact-title">
-              {{ createEventForm.title || 'Название события' }}
-            </strong>
-            <span class="event-organizer">
-              <span class="organizer-avatar">{{ currentUser.initials }}</span>
-              {{ currentUser.name }}
-            </span>
-            <span class="event-badge-summary">
-              <span>🏆 {{ previewAchievements.filter((achievement) => achievement.scope === 'group').length }}</span>
-              <span>🏅 {{ previewAchievements.filter((achievement) => achievement.scope === 'personal').length }}</span>
-            </span>
-          </article>
-
-          <article
-            class="create-background-preview"
-            :style="{ background: `linear-gradient(135deg, ${selectedBackgroundTheme.start}, ${selectedBackgroundTheme.end})` }"
-          >
-            <div class="background-preview-copy">
-              <strong>Фон события</strong>
-              <p>{{ selectedBackgroundTheme.name }} · {{ selectedBackgroundTheme.mood }}</p>
-            </div>
-          </article>
-
-          <div class="preview-meta-grid">
-            <div>
-              <span>Блоков для гостей</span>
-              <strong>{{ createEventForm.infoBlocks.filter((block) => block.title || block.description || block.link).length }}</strong>
-            </div>
-            <div>
-              <span>Сбор денег</span>
-              <strong>{{ createEventForm.needsPayment ? 'Включен' : 'Нет' }}</strong>
-            </div>
-          </div>
-        </aside>
+    <header class="create-topbar" aria-label="Создание события">
+      <a class="brand home-brand" href="#" aria-label="Event Gallery Create" @click.prevent="closeCreateEvent">
+        <span class="brand-mark">EG</span>
+        <span>Event Gallery</span>
+      </a>
+      <div class="create-topbar-actions">
+        <button class="secondary-button compact-action" type="button" @click="closeCreateEvent">Home</button>
       </div>
+    </header>
 
-      <div v-if="medalBuilderOpen" class="medal-builder-overlay" @click.self="medalBuilderOpen = false">
-        <section class="medal-builder-dialog" aria-modal="true" role="dialog" aria-labelledby="medal-builder-title">
-          <div class="section-title-row">
-            <h3 id="medal-builder-title">Создать медаль</h3>
-            <button class="ghost-inline-button" type="button" @click="medalBuilderOpen = false">Закрыть</button>
+    <section class="create-canvas">
+      <form class="create-stream" @submit.prevent="saveEvent">
+        <section id="create-core" class="create-primary-card">
+          <input
+            v-model="createEventForm.title"
+            class="title-input"
+            :class="getTitleStyleClass(createEventForm.titleStyle)"
+            type="text"
+            placeholder="Untitled Event"
+            required
+          />
+          <div class="title-style-row">
+            <button
+              v-for="option in titleStyleOptions"
+              :key="option.id"
+              class="title-style-chip"
+              :class="{ active: createEventForm.titleStyle === option.id }"
+              type="button"
+              @click="createEventForm.titleStyle = option.id"
+            >
+              {{ option.label }}
+            </button>
           </div>
 
-          <div class="form-field-grid">
-            <label class="field-block field-span-2">
-              <span>Название *</span>
-              <input v-model="medalForm.title" type="text" placeholder="Например, Душа компании" />
+          <div class="create-core-stack">
+            <label class="stream-field">
+              <span>Set a date...</span>
+              <input v-model="createEventForm.startsAt" type="datetime-local" required />
             </label>
-            <label class="field-block field-span-2">
-              <span>Описание *</span>
-              <textarea v-model="medalForm.description" rows="3" placeholder="За что выдается эта медаль"></textarea>
+            <label class="stream-field optional-field">
+              <span>End time</span>
+              <input v-model="createEventForm.endsAt" type="datetime-local" />
             </label>
-            <label class="field-block">
-              <span>Тип</span>
-              <select v-model="medalForm.scope">
-                <option value="personal">Личное</option>
-                <option value="group">Групповое</option>
-              </select>
+            <label class="stream-field host-field">
+              <span>Hosted by</span>
+              <div class="stream-inline-row">
+                <div class="stream-avatar-card">
+                  <span
+                    class="stream-avatar"
+                    :style="selectedAvatarAsset ? { backgroundImage: `url(${selectedAvatarAsset.src})` } : undefined"
+                  >
+                    <template v-if="!selectedAvatarAsset">{{ currentUser.initials }}</template>
+                  </span>
+                </div>
+                <input v-model="createEventForm.hostAlias" type="text" placeholder="host nickname" />
+              </div>
             </label>
-            <label class="field-block">
-              <span>Emoji</span>
-              <input v-model="medalForm.icon" type="text" maxlength="2" placeholder="🏅" />
+            <label class="stream-field">
+              <span>Location</span>
+              <input v-model="createEventForm.location" type="text" placeholder="Where will it happen?" />
             </label>
-          </div>
-
-          <div class="medal-tone-row">
-            <span>Фон медали</span>
-            <div class="tone-swatch-row">
-              <button
-                v-for="tone in medalToneOptions"
-                :key="tone"
-                class="tone-swatch"
-                :class="{ active: medalForm.tone === tone }"
-                :style="{ background: `linear-gradient(135deg, ${tone})` }"
-                type="button"
-                @click="medalForm.tone = tone"
-              ></button>
-            </div>
-          </div>
-
-          <label class="toggle-card">
-            <input v-model="medalForm.saveAsTemplate" type="checkbox" />
-            <span>Сохранить как шаблон для будущих событий</span>
-          </label>
-
-          <div class="create-actions">
-            <button class="secondary-button" type="button" @click="medalBuilderOpen = false">Отмена</button>
-            <button class="primary-button" type="button" @click="saveCustomMedal">Сохранить медаль</button>
+            <label class="stream-field">
+              <span>Maximum spots</span>
+              <input
+                v-model="createEventForm.participantLimit"
+                type="number"
+                min="1"
+                placeholder="Unlimited spots"
+              />
+            </label>
+            <label class="stream-field">
+              <span>Cost per person</span>
+              <input v-model="createEventForm.costPerPerson" type="text" placeholder="300 ₽" />
+            </label>
           </div>
         </section>
-      </div>
-    </section>
-  </div>
 
+        <section id="create-links" class="create-panel-shell">
+          <div class="quick-tag-row">
+            <button
+              v-for="option in quickInfoOptions"
+              :key="option.value"
+              class="quick-tag-chip"
+              type="button"
+              @click="
+                createEventForm.infoBlocks = [
+                  ...createEventForm.infoBlocks,
+                  { id: createId('block'), type: option.value, icon: option.emoji, title: option.label, description: '', link: '' },
+                ]
+              "
+            >
+              + {{ option.label }}
+            </button>
+            <button
+              class="quick-tag-chip"
+              type="button"
+              @click="
+                createEventForm.infoBlocks = [
+                  ...createEventForm.infoBlocks,
+                  { id: createId('block'), type: 'other', icon: '📝', title: '', description: '', link: '' },
+                ]
+              "
+            >
+              + Свой тег
+            </button>
+          </div>
+
+          <div v-if="createEventForm.infoBlocks.length" class="inline-info-editor">
+            <article v-for="block in createEventForm.infoBlocks" :key="block.id" class="inline-tag-card">
+              <div class="inline-tag-head">
+                <span class="tag-icon">{{ block.icon }}</span>
+                <template v-if="block.type === 'other'">
+                  <input v-model="block.title" type="text" placeholder="Название тега" />
+                </template>
+                <strong v-else>{{ block.title }}</strong>
+                <button class="ghost-inline-button" type="button" @click="removeInfoBlock(block.id)">×</button>
+              </div>
+              <input v-model="block.link" type="url" placeholder="Вставьте ссылку" />
+            </article>
+          </div>
+        </section>
+
+        <section id="create-description" class="create-panel-shell create-panel-soft">
+          <label class="description-area">
+            <textarea
+              v-model="createEventForm.description"
+              rows="4"
+              placeholder="Add a description of your event"
+            ></textarea>
+          </label>
+
+          <div class="payment-meta-row">
+            <label class="stream-inline-toggle">
+              <input v-model="createEventForm.allowGuestInvites" type="checkbox" />
+              <span>Guests can invite others</span>
+            </label>
+            <input
+              v-model="createEventForm.paymentDestination"
+              class="meta-input"
+              type="text"
+              placeholder="Куда переводить"
+            />
+            <input
+              v-model="createEventForm.paymentComment"
+              class="meta-input"
+              type="text"
+              placeholder="Комментарий к оплате"
+            />
+          </div>
+        </section>
+
+        <section id="create-achievements" class="create-panel-shell achievement-stream-section">
+          <button
+            class="accordion-button"
+            type="button"
+            @click="createEventForm.automaticExpanded = !createEventForm.automaticExpanded"
+          >
+            Автоматические достижения
+          </button>
+          <div v-if="createEventForm.automaticExpanded" class="automatic-grid">
+            <label
+              v-for="template in systemAchievementTemplates"
+              :key="template.id"
+              class="achievement-selection-card automatic-selection-card"
+              :style="{ '--medal-tone': template.tone }"
+            >
+              <input v-model="createEventForm.automaticTemplateIds" type="checkbox" :value="template.id" />
+              <span class="achievement-selection-icon">{{ template.icon }}</span>
+              <div class="achievement-selection-copy">
+                <strong>{{ template.title }}</strong>
+                <p>{{ template.description }}</p>
+              </div>
+            </label>
+          </div>
+
+          <div class="achievement-groups">
+            <article class="achievement-group-panel">
+              <div class="section-title-row">
+                <strong>Личные медали</strong>
+                <div class="mini-action-row">
+                  <button class="secondary-button compact-action" type="button" @click="toggleTemplatePicker('personal')">
+                    Из шаблонов
+                  </button>
+                  <button class="ghost-button compact-action" type="button" @click="openMedalBuilder('personal')">
+                    Создать
+                  </button>
+                </div>
+              </div>
+
+              <div class="selected-achievement-grid">
+                <button
+                  v-for="template in selectedPersonalTemplates"
+                  :key="template.id"
+                  class="achievement-selection-card interactive-achievement-card"
+                  :style="{ '--medal-tone': template.tone }"
+                  type="button"
+                  @click="removeSelectedAchievement(template.id, 'personal')"
+                >
+                  <span class="achievement-selection-icon">{{ template.icon }}</span>
+                  <div class="achievement-selection-copy">
+                    <strong>{{ template.title }}</strong>
+                    <p>{{ template.description }}</p>
+                  </div>
+                </button>
+                <button
+                  v-for="achievement in localPersonalAchievements"
+                  :key="achievement.id"
+                  class="achievement-selection-card interactive-achievement-card"
+                  :style="{ '--medal-tone': achievement.tone }"
+                  type="button"
+                  @click="removeLocalAchievement(achievement.id)"
+                >
+                  <span class="achievement-selection-icon">{{ achievement.icon }}</span>
+                  <div class="achievement-selection-copy">
+                    <strong>{{ achievement.title }}</strong>
+                    <p>{{ achievement.description }}</p>
+                  </div>
+                </button>
+                <p
+                  v-if="!selectedPersonalTemplates.length && !localPersonalAchievements.length"
+                  class="achievement-empty-note"
+                >
+                  Пока пусто. Добавленные медали будут появляться здесь и удаляться по клику.
+                </p>
+              </div>
+
+              <div v-if="templatePickerOpen && achievementPickerScope === 'personal'" class="floating-template-picker">
+                <article
+                  v-for="template in customAchievementTemplates.filter((template) => template.scope === 'personal')"
+                  :key="template.id"
+                  class="template-picker-card"
+                  :class="{ active: createEventForm.selectedPersonalTemplateIds.includes(template.id) }"
+                >
+                  <div class="template-achievement-preview">
+                    <span class="template-achievement-icon" :style="{ '--medal-tone': template.tone }">
+                      {{ template.icon }}
+                    </span>
+                    <div>
+                      <strong>{{ template.title }}</strong>
+                      <p>{{ template.description }}</p>
+                    </div>
+                  </div>
+                  <button
+                    class="secondary-button compact-action"
+                    type="button"
+                    @click="toggleTemplateSelection(template.id, 'personal')"
+                  >
+                    {{ createEventForm.selectedPersonalTemplateIds.includes(template.id) ? 'Убрать' : 'Выбрать' }}
+                  </button>
+                </article>
+              </div>
+            </article>
+
+            <article class="achievement-group-panel">
+              <div class="section-title-row">
+                <strong>Групповые медали</strong>
+                <div class="mini-action-row">
+                  <button class="secondary-button compact-action" type="button" @click="toggleTemplatePicker('group')">
+                    Из шаблонов
+                  </button>
+                  <button class="ghost-button compact-action" type="button" @click="openMedalBuilder('group')">
+                    Создать
+                  </button>
+                </div>
+              </div>
+
+              <div class="selected-achievement-grid">
+                <button
+                  v-for="template in selectedGroupTemplates"
+                  :key="template.id"
+                  class="achievement-selection-card interactive-achievement-card"
+                  :style="{ '--medal-tone': template.tone }"
+                  type="button"
+                  @click="removeSelectedAchievement(template.id, 'group')"
+                >
+                  <span class="achievement-selection-icon">{{ template.icon }}</span>
+                  <div class="achievement-selection-copy">
+                    <strong>{{ template.title }}</strong>
+                    <p>{{ template.description }}</p>
+                  </div>
+                </button>
+                <button
+                  v-for="achievement in localGroupAchievements"
+                  :key="achievement.id"
+                  class="achievement-selection-card interactive-achievement-card"
+                  :style="{ '--medal-tone': achievement.tone }"
+                  type="button"
+                  @click="removeLocalAchievement(achievement.id)"
+                >
+                  <span class="achievement-selection-icon">{{ achievement.icon }}</span>
+                  <div class="achievement-selection-copy">
+                    <strong>{{ achievement.title }}</strong>
+                    <p>{{ achievement.description }}</p>
+                  </div>
+                </button>
+                <p v-if="!selectedGroupTemplates.length && !localGroupAchievements.length" class="achievement-empty-note">
+                  Здесь будут медали для всей компании.
+                </p>
+              </div>
+
+              <div v-if="templatePickerOpen && achievementPickerScope === 'group'" class="floating-template-picker">
+                <article
+                  v-for="template in customAchievementTemplates.filter((template) => template.scope === 'group')"
+                  :key="template.id"
+                  class="template-picker-card"
+                  :class="{ active: createEventForm.selectedGroupTemplateIds.includes(template.id) }"
+                >
+                  <div class="template-achievement-preview">
+                    <span class="template-achievement-icon" :style="{ '--medal-tone': template.tone }">
+                      {{ template.icon }}
+                    </span>
+                    <div>
+                      <strong>{{ template.title }}</strong>
+                      <p>{{ template.description }}</p>
+                    </div>
+                  </div>
+                  <button
+                    class="secondary-button compact-action"
+                    type="button"
+                    @click="toggleTemplateSelection(template.id, 'group')"
+                  >
+                    {{ createEventForm.selectedGroupTemplateIds.includes(template.id) ? 'Убрать' : 'Выбрать' }}
+                  </button>
+                </article>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <div class="create-submit-row">
+          <button class="secondary-button" type="button" @click="closeCreateEvent">Назад</button>
+          <button class="primary-button" type="submit">Добавить событие</button>
+        </div>
+      </form>
+
+      <aside class="create-side-stage">
+        <section id="create-cover" class="cover-stage">
+          <button class="cover-change-button" type="button">
+            <template v-if="selectedCoverAsset?.kind === 'image'">
+              <img class="cover-stage-image" :src="selectedCoverAsset.src" :alt="selectedCoverAsset.label" />
+            </template>
+            <span v-else class="cover-stage-fallback">Выбери обложку</span>
+          </button>
+
+          <div class="asset-strip">
+            <button
+              v-for="asset in coverAssetOptions"
+              :key="asset.id"
+              class="asset-thumb"
+              :class="{ active: createEventForm.coverAssetId === asset.id && !createEventForm.uploadedCoverUrl }"
+              type="button"
+              @click="createEventForm.coverAssetId = asset.id; createEventForm.uploadedCoverUrl = null"
+            >
+              <img :src="asset.src" :alt="asset.label" />
+            </button>
+          </div>
+          <label class="upload-chip">
+            Своя обложка
+            <input
+              type="file"
+              accept="image/*"
+              hidden
+              @change="handleCoverUpload"
+            />
+          </label>
+        </section>
+
+        <section id="create-rsvp" class="rsvp-panel">
+          <div class="rsvp-panel-head">
+            <strong>RSVP Options</strong>
+          </div>
+          <div class="rsvp-style-row">
+            <button
+              v-for="option in rsvpStyleOptions"
+              :key="option.id"
+              class="rsvp-style-chip"
+              :class="{ active: createEventForm.rsvpStyle === option.id }"
+              type="button"
+              @click="createEventForm.rsvpStyle = option.id"
+            >
+              <span>{{ option.emoji }}</span>
+              {{ option.label }}
+            </button>
+          </div>
+          <div class="rsvp-preview-row" :data-style="createEventForm.rsvpStyle">
+            <div
+              v-for="(symbol, index) in getRsvpPreviewSymbols(createEventForm.rsvpStyle)"
+              :key="`${createEventForm.rsvpStyle}-${index}`"
+              class="rsvp-preview-bubble"
+            >
+              {{ symbol }}
+            </div>
+          </div>
+          <div class="rsvp-label-row">
+            <span>Going</span>
+            <span>Maybe</span>
+            <span>Can't Go</span>
+          </div>
+        </section>
+
+        <section id="create-assets" class="asset-browser">
+          <div class="asset-browser-group">
+            <strong>Аватар</strong>
+            <div class="asset-strip avatars">
+              <button
+                v-for="asset in avatarAssetOptions"
+                :key="asset.id"
+                class="asset-thumb avatar-thumb"
+                :class="{ active: createEventForm.avatarAssetId === asset.id && !createEventForm.uploadedAvatarUrl }"
+                type="button"
+                @click="createEventForm.avatarAssetId = asset.id; createEventForm.uploadedAvatarUrl = null"
+              >
+                <img :src="asset.src" :alt="asset.label" />
+              </button>
+            </div>
+            <label class="upload-chip small">
+              Свой аватар
+              <input
+                type="file"
+                accept="image/*"
+                hidden
+                @change="handleAvatarUpload"
+              />
+            </label>
+          </div>
+
+          <div class="asset-browser-group">
+            <strong>Фон страницы</strong>
+            <div class="asset-strip backgrounds">
+              <button
+                v-for="asset in backgroundAssetOptions"
+                :key="asset.id"
+                class="asset-thumb background-thumb"
+                :class="{ active: createEventForm.backgroundAssetId === asset.id && !createEventForm.uploadedBackgroundUrl }"
+                type="button"
+                @click="createEventForm.backgroundAssetId = asset.id; createEventForm.uploadedBackgroundUrl = null"
+              >
+                <template v-if="asset.kind === 'image'">
+                  <img :src="asset.src" :alt="asset.label" />
+                </template>
+                <template v-else>
+                  <video :src="asset.src" muted autoplay loop playsinline></video>
+                </template>
+              </button>
+            </div>
+            <label class="upload-chip small">
+              Свой фон
+              <input
+                type="file"
+                accept="image/*"
+                hidden
+                @change="handleBackgroundUpload"
+              />
+            </label>
+          </div>
+        </section>
+      </aside>
+
+      <nav class="create-side-bar" aria-label="Быстрые действия">
+        <button class="side-action-button" type="button" @click="scrollToCreateSection('create-cover')">
+          <span>🖼</span>
+          <small>Cover</small>
+        </button>
+        <button class="side-action-button" type="button" @click="scrollToCreateSection('create-assets')">
+          <span>🎬</span>
+          <small>Theme</small>
+        </button>
+        <button class="side-action-button" type="button" @click="scrollToCreateSection('create-rsvp')">
+          <span>{{ getRsvpStyleOption(createEventForm.rsvpStyle).emoji }}</span>
+          <small>RSVP</small>
+        </button>
+        <button class="side-action-button" type="button" @click="guestPreviewOpen = true">
+          <span>👁</span>
+          <small>Preview</small>
+        </button>
+      </nav>
+    </section>
+
+    <div v-if="guestPreviewOpen" class="guest-preview-overlay" @click.self="guestPreviewOpen = false">
+      <section class="guest-preview-sheet" aria-modal="true" role="dialog" aria-labelledby="guest-preview-title">
+        <div class="guest-preview-background">
+          <video
+            v-if="selectedBackgroundAsset?.kind === 'video'"
+            class="guest-preview-video"
+            :src="selectedBackgroundAsset.src"
+            autoplay
+            muted
+            loop
+            playsinline
+          ></video>
+        </div>
+        <button class="ghost-inline-button preview-close-button" type="button" @click="guestPreviewOpen = false">
+          ×
+        </button>
+        <div class="guest-preview-cover">
+          <img
+            v-if="selectedCoverAsset?.kind === 'image'"
+            :src="selectedCoverAsset.src"
+            :alt="selectedCoverAsset.label"
+          />
+        </div>
+        <div class="guest-preview-copy">
+          <p class="eyebrow">Preview</p>
+          <h2 id="guest-preview-title" class="guest-preview-title" :class="getTitleStyleClass(createEventForm.titleStyle)">
+            {{ createEventForm.title || 'Untitled Event' }}
+          </h2>
+          <p>{{ formatEventDateLabel(createEventForm.startsAt) }} · {{ createEventForm.location || 'Location' }}</p>
+          <p v-if="createEventForm.description">{{ createEventForm.description }}</p>
+        </div>
+        <div v-if="createEventForm.infoBlocks.length" class="guest-preview-tags">
+          <span v-for="block in createEventForm.infoBlocks" :key="block.id" class="guest-preview-tag">
+            {{ block.icon }} {{ block.title || 'Ссылка' }}
+          </span>
+        </div>
+        <div class="guest-preview-rsvp">
+          <div
+            v-for="(symbol, index) in getRsvpPreviewSymbols(createEventForm.rsvpStyle)"
+            :key="`preview-${index}`"
+            class="rsvp-preview-bubble"
+          >
+            {{ symbol }}
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div v-if="medalBuilderOpen" class="medal-builder-overlay" @click.self="medalBuilderOpen = false">
+      <section class="medal-builder-dialog" aria-modal="true" role="dialog" aria-labelledby="medal-builder-title">
+        <div class="section-title-row">
+          <h3 id="medal-builder-title">{{ medalForm.scope === 'group' ? 'Групповая медаль' : 'Личная медаль' }}</h3>
+          <button class="ghost-inline-button" type="button" @click="medalBuilderOpen = false">Закрыть</button>
+        </div>
+
+        <div class="form-field-grid">
+          <label class="field-block field-span-2">
+            <span>Название *</span>
+            <input v-model="medalForm.title" type="text" placeholder="Например, Лучший образ" />
+          </label>
+          <label class="field-block field-span-2">
+            <span>Описание *</span>
+            <textarea v-model="medalForm.description" rows="3" placeholder="За что выдается эта медаль"></textarea>
+          </label>
+          <label class="field-block">
+            <span>Emoji</span>
+            <input v-model="medalForm.icon" type="text" maxlength="2" placeholder="🏅" />
+          </label>
+        </div>
+
+        <div class="medal-preview-row">
+          <span class="medal-card-preview" :style="{ '--medal-tone': medalForm.tone }">
+            {{ medalForm.icon || '🏅' }}
+          </span>
+          <div class="medal-preview-copy">
+            <strong>{{ medalForm.title || 'Название медали' }}</strong>
+            <p>{{ medalForm.description || 'Описание появится здесь.' }}</p>
+          </div>
+        </div>
+
+        <div class="medal-tone-row">
+          <span>Фон медали</span>
+          <div class="tone-swatch-row">
+            <button
+              v-for="tone in medalToneOptions"
+              :key="tone"
+              class="tone-swatch"
+              :class="{ active: medalForm.tone === tone }"
+              :style="{ background: `linear-gradient(135deg, ${tone})` }"
+              type="button"
+              @click="medalForm.tone = tone"
+            ></button>
+          </div>
+        </div>
+
+        <label class="toggle-card">
+          <input v-model="medalForm.saveAsTemplate" type="checkbox" />
+          <span>Сохранить как шаблон для будущих событий</span>
+        </label>
+
+        <div class="create-actions">
+          <button class="secondary-button" type="button" @click="medalBuilderOpen = false">Отмена</button>
+          <button class="primary-button" type="button" @click="saveCustomMedal">Сохранить медаль</button>
+        </div>
+      </section>
+    </div>
+  </main>
   <div v-if="authOpen" class="auth-backdrop" @click.self="authOpen = false">
     <section class="auth-dialog" aria-modal="true" role="dialog" aria-labelledby="auth-title">
       <button class="close-button" type="button" aria-label="Закрыть" @click="authOpen = false">
-        ×
+        Г—
       </button>
 
       <p class="eyebrow">Event Gallery</p>
@@ -1963,7 +2475,7 @@ function saveEvent() {
     @click.self="closePhoto"
   >
     <section class="photo-viewer-card" aria-label="Просмотр фото">
-      <button class="viewer-close" type="button" aria-label="Закрыть" @click="closePhoto">×</button>
+      <button class="viewer-close" type="button" aria-label="Закрыть" @click="closePhoto">Г—</button>
       <div class="viewer-photo"></div>
       <div class="viewer-info">
         <span>{{ activePhotoEntry.event.title }}</span>
@@ -1979,3 +2491,4 @@ function saveEvent() {
     </section>
   </div>
 </template>
+
