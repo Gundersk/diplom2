@@ -28,6 +28,7 @@ import type {
   RsvpStatus,
   TimezoneOption,
 } from './types/event'
+import type { EventParticipant } from './types/participant'
 import type { GalleryPhoto } from './types/photo'
 import type { CurrentUser } from './types/user'
 
@@ -849,6 +850,7 @@ const allVisibleExpanded = computed(
 const activeEvent = computed(
   () => homeEvents.value.find((event) => event.id === activeEventId.value) ?? null,
 )
+const currentParticipant = ref<EventParticipant | null>(null)
 
 const eventPageData = computed(() => {
   if (currentView.value === 'preview') return previewDraftEvent.value
@@ -1222,6 +1224,19 @@ watch(medalBuilderOpen, (isOpen) => {
   }
 })
 
+watch(
+  [activeEvent, () => currentUser.id, () => currentUser.displayName, currentView],
+  async ([event, userId, , view]) => {
+    if (view !== 'event' || !event || !userId) {
+      currentParticipant.value = null
+      return
+    }
+
+    await ensureCurrentParticipant(event)
+  },
+  { immediate: true },
+)
+
 function saveCustomMedal() {
   const trimmedTitle = medalForm.value.title.trim()
   const trimmedDescription = medalForm.value.description.trim()
@@ -1293,13 +1308,79 @@ function getEventById(eventId: string) {
 }
 
 function updateEventInList(eventId: string, updater: (event: GalleryEvent) => GalleryEvent) {
-  homeEvents.value = homeEvents.value.map((event) => (event.id === eventId ? updater(event) : event))
+  const event = getEventById(eventId)
+  if (!event) return null
+
+  const nextEvent = updater(event)
+  eventService.updateEvent(nextEvent)
+  homeEvents.value = eventService.getHomeEvents()
+  return nextEvent
 }
 
-function sendEventChatMessage() {
+function getPreferredParticipantDisplayName() {
+  return currentUser.displayName?.trim() || currentUser.name || 'Гость'
+}
+
+function getCurrentParticipantRole(event: GalleryEvent) {
+  return event.organizerId === currentUser.id ||
+    (!event.organizerId && event.role === 'Организатор' && event.organizerName === currentUser.name)
+    ? 'organizer'
+    : 'guest'
+}
+
+async function ensureCurrentParticipant(event: GalleryEvent | null) {
+  if (!event || !currentUser.id) {
+    currentParticipant.value = null
+    return null
+  }
+
+  const participant = await participantService.joinEventAsParticipant(
+    event.id,
+    getPreferredParticipantDisplayName(),
+    getCurrentParticipantRole(event),
+  )
+
+  currentParticipant.value = participant
+  return participant
+}
+
+async function addCurrentParticipantPoints(points: number) {
+  if (!currentParticipant.value || points === 0) return null
+
+  const updatedParticipant = await participantService.addParticipantPoints(currentParticipant.value.id, points)
+  currentParticipant.value = updatedParticipant
+  return updatedParticipant
+}
+
+function getRsvpEntryDisplayName(entry: EventRsvpEntry) {
+  return entry.displayName || entry.userName || 'Гость'
+}
+
+function getRsvpEntryInitials(entry: EventRsvpEntry) {
+  return entry.userInitials || buildUserInitials(getRsvpEntryDisplayName(entry))
+}
+
+function getMessageAuthorInitials(message: EventChatMessage) {
+  return message.authorInitials || buildUserInitials(message.authorName)
+}
+
+function isCurrentUserOrganizer(event: GalleryEvent | null) {
+  if (!event) return false
+
+  return (
+    currentParticipant.value?.role === 'organizer' ||
+    event.organizerId === currentUser.id ||
+    (event.role === 'Организатор' && event.organizerName === currentUser.name)
+  )
+}
+
+async function sendEventChatMessage() {
   const event = activeEvent.value
   const text = eventChatDraft.value.trim()
   if (!event || !text) return
+
+  const participant = currentParticipant.value ?? (await ensureCurrentParticipant(event))
+  if (!participant) return
 
   updateEventInList(event.id, (current) => ({
     ...current,
@@ -1307,8 +1388,11 @@ function sendEventChatMessage() {
       ...current.chatMessages,
       {
         id: createId('chat'),
-        authorName: currentUser.name,
-        authorInitials: currentUser.initials,
+        eventId: current.id,
+        userId: currentUser.id,
+        participantId: participant.id,
+        authorName: participant.displayName,
+        authorInitials: buildUserInitials(participant.displayName),
         text,
         createdAt: new Date().toISOString(),
       },
@@ -1513,47 +1597,72 @@ function closeRsvpSheet() {
   rsvpSheetMessage.value = ''
 }
 
-function submitRsvpResponse() {
+async function submitRsvpResponse() {
   const event = activeEvent.value
   const status = rsvpSheetStatus.value
   if (!event || !status) return
 
+  const participant = currentParticipant.value ?? (await ensureCurrentParticipant(event))
+  if (!participant) return
+
   const message = rsvpSheetMessage.value.trim()
   const statusLabel = rsvpStatusLabels[status]
   const chatText = message
-    ? `${currentUser.name} отметил(а) «${statusLabel}»: ${message}`
-    : `${currentUser.name} отметил(а) «${statusLabel}».`
+    ? `${participant.displayName} отметил(а) «${statusLabel}»: ${message}`
+    : `${participant.displayName} отметил(а) «${statusLabel}».`
 
-  updateEventInList(event.id, (current) => ({
-    ...current,
-    guestRsvps: [
-      ...current.guestRsvps.filter((entry) => entry.userName !== currentUser.name),
-      {
-        id: createId('rsvp'),
-        userName: currentUser.name,
-        userInitials: currentUser.initials,
-        status,
-        message: message || undefined,
-        createdAt: new Date().toISOString(),
-      },
-    ],
-    chatMessages: [
-      ...current.chatMessages,
-      {
-        id: createId('chat'),
-        authorName: currentUser.name,
-        authorInitials: currentUser.initials,
-        text: chatText,
-        createdAt: new Date().toISOString(),
-      },
-    ],
-  }))
+  updateEventInList(event.id, (current) => {
+    const existingRsvp = current.guestRsvps.find(
+      (entry) =>
+        (entry.eventId ? entry.eventId === current.id : true) &&
+        ((entry.participantId && entry.participantId === participant.id) ||
+          (!entry.participantId && entry.userId === currentUser.id) ||
+          (!entry.participantId &&
+            !entry.userId &&
+            getRsvpEntryDisplayName(entry) === participant.displayName)),
+    )
+
+    return {
+      ...current,
+      guestRsvps: [
+        ...current.guestRsvps.filter((entry) => entry.id !== existingRsvp?.id),
+        {
+          id: existingRsvp?.id ?? createId('rsvp'),
+          eventId: current.id,
+          userId: currentUser.id,
+          participantId: participant.id,
+          displayName: participant.displayName,
+          userName: participant.displayName,
+          userInitials: buildUserInitials(participant.displayName),
+          status,
+          message: message || undefined,
+          createdAt: existingRsvp?.createdAt ?? new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ],
+      chatMessages: [
+        ...current.chatMessages,
+        {
+          id: createId('chat'),
+          eventId: current.id,
+          userId: currentUser.id,
+          participantId: participant.id,
+          authorName: participant.displayName,
+          authorInitials: buildUserInitials(participant.displayName),
+          text: chatText,
+          createdAt: new Date().toISOString(),
+        },
+      ],
+    }
+  })
+
+  await addCurrentParticipantPoints(1)
 
   notifications.value = [
     {
       id: createId('notice'),
       title: 'Ответ на приглашение',
-      text: `${currentUser.name} ${getRsvpStatusVerb(status)} на «${event.title}»${message ? `: ${message}` : '.'}`,
+      text: `${participant.displayName} ${getRsvpStatusVerb(status)} на «${event.title}»${message ? `: ${message}` : '.'}`,
       time: 'сейчас',
     },
     ...notifications.value,
@@ -1562,9 +1671,12 @@ function submitRsvpResponse() {
   closeRsvpSheet()
 }
 
-function addEventPhoto(eventId: string, file: File, source: 'album' | 'chat') {
+async function addEventPhoto(eventId: string, file: File, source: 'album' | 'chat') {
   const event = getEventById(eventId)
   if (!event) return
+
+  const participant = currentParticipant.value ?? (await ensureCurrentParticipant(event))
+  if (!participant) return
 
   const src = window.URL.createObjectURL(file)
   const photo: GalleryPhoto = {
@@ -1585,8 +1697,11 @@ function addEventPhoto(eventId: string, file: File, source: 'album' | 'chat') {
               ...current.chatMessages,
               {
                 id: createId('chat'),
-                authorName: currentUser.name,
-                authorInitials: currentUser.initials,
+                eventId: current.id,
+                userId: currentUser.id,
+                participantId: participant.id,
+                authorName: participant.displayName,
+                authorInitials: buildUserInitials(participant.displayName),
                 text: 'добавил(а) фото',
                 createdAt: new Date().toISOString(),
                 photoId: photo.id,
@@ -1597,6 +1712,8 @@ function addEventPhoto(eventId: string, file: File, source: 'album' | 'chat') {
     syncEventSavedCount(nextEvent)
     return nextEvent
   })
+
+  await addCurrentParticipantPoints(10)
 
   notifications.value = [
     {
@@ -2275,10 +2392,10 @@ async function saveEvent() {
       </div>
       <div v-else class="event-page-top-actions">
         <button
-          v-if="activeEvent?.role === 'Организатор'"
+          v-if="isCurrentUserOrganizer(activeEvent)"
           class="secondary-button compact-action"
           type="button"
-          @click="openEditEvent(activeEvent.id)"
+          @click="activeEvent ? openEditEvent(activeEvent.id) : undefined"
         >
           Изменить
         </button>
@@ -2345,9 +2462,9 @@ async function saveEvent() {
                   v-for="entry in eventPageData.guestRsvps.slice(0, 6)"
                   :key="entry.id"
                   class="guest-avatar-chip"
-                  :title="`${entry.userName}: ${rsvpStatusLabels[entry.status]}`"
+                  :title="`${getRsvpEntryDisplayName(entry)}: ${rsvpStatusLabels[entry.status]}`"
                 >
-                  {{ entry.userInitials }}
+                  {{ getRsvpEntryInitials(entry) }}
                 </span>
               </div>
             </section>
@@ -2394,7 +2511,7 @@ async function saveEvent() {
               </div>
               <div class="event-chat-feed">
                 <article v-for="message in eventPageData.chatMessages" :key="message.id" class="event-chat-item">
-                  <span class="guest-avatar-chip">{{ message.authorInitials }}</span>
+                  <span class="guest-avatar-chip">{{ getMessageAuthorInitials(message) }}</span>
                   <div class="event-chat-copy">
                     <strong>{{ message.authorName }}</strong>
                     <p>{{ message.text }}</p>
@@ -3338,8 +3455,10 @@ async function saveEvent() {
 
       <div class="rsvp-sheet-user">
         <span class="rsvp-sheet-user-label">Отвечаете как</span>
-        <span class="guest-avatar-chip">{{ currentUser.initials }}</span>
-        <strong>{{ currentUser.name }}</strong>
+        <span class="guest-avatar-chip">{{
+          currentParticipant ? buildUserInitials(currentParticipant.displayName) : currentUser.initials
+        }}</span>
+        <strong>{{ currentParticipant?.displayName || currentUser.name }}</strong>
       </div>
 
       <label class="rsvp-sheet-message">

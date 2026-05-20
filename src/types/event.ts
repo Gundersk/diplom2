@@ -18,8 +18,11 @@ export type EventTheme = {
 
 export type EventChatMessage = {
   id: string
+  eventId?: string
+  userId?: string
+  participantId?: string
   authorName: string
-  authorInitials: string
+  authorInitials?: string
   text: string
   createdAt: string
   photoId?: string
@@ -29,11 +32,16 @@ export type RsvpStatus = 'going' | 'maybe' | 'cant_go'
 
 export type EventRsvpEntry = {
   id: string
-  userName: string
-  userInitials: string
+  eventId?: string
+  userId?: string
+  participantId?: string
+  displayName?: string
+  userName?: string
+  userInitials?: string
   status: RsvpStatus
   message?: string
   createdAt: string
+  updatedAt?: string
 }
 
 export type RsvpChoice = {
