@@ -1,3 +1,5 @@
+// TODO: add Appwrite implementation when VITE_DATA_MODE=appwrite
+
 import { getMockHomeEvents, normalizeGalleryEvent } from '../data/mockEvents'
 import type { GalleryEvent } from '../types/event'
 

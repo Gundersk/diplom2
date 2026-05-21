@@ -1,3 +1,5 @@
+// TODO: add Appwrite implementation when VITE_DATA_MODE=appwrite
+
 import { authService } from './authService'
 import type { EventParticipant } from '../types/participant'
 

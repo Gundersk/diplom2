@@ -1,3 +1,5 @@
+// TODO: add Appwrite implementation when VITE_DATA_MODE=appwrite
+
 import type { CurrentUser } from '../types/user'
 
 const CURRENT_USER_STORAGE_KEY = 'event-gallery:current-user'

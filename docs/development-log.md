@@ -1026,3 +1026,72 @@ npm run build
 ### Next step
 
 Prepare Appwrite adapters for `authService`, `eventService`, `participantService`, `photoService`, `achievementService`, `rsvpService`, and `chatService` one layer at a time, or extract any remaining direct UI data mutations into their own services first.
+
+## Step 18 - 2026-05-21
+
+### Goal
+
+Prepare the runtime infrastructure for future Appwrite integration without switching the current services away from localStorage.
+
+### What was added
+
+1. Created `src/config/runtime.ts`.
+2. Added `DataMode = 'local' | 'appwrite'`.
+3. Added a safe `runtimeConfig` reader based on `import.meta.env`.
+4. Added `src/lib/appwrite.ts` with prepared Appwrite SDK exports:
+   - `appwriteClient`;
+   - `appwriteAccount`;
+   - `appwriteDatabases`;
+   - `appwriteStorage`;
+   - `appwriteId`;
+   - `appwriteQuery`.
+5. Added `src/services/adapters/dataMode.ts` with helpers:
+   - `getDataMode()`;
+   - `isLocalMode()`;
+   - `isAppwriteMode()`.
+6. Added `.env.example` entries for:
+   - `VITE_DATA_MODE`;
+   - `VITE_APPWRITE_ENDPOINT`;
+   - `VITE_APPWRITE_PROJECT_ID`;
+   - `VITE_APPWRITE_DATABASE_ID`;
+   - `VITE_APPWRITE_BUCKET_ID`.
+7. Installed the `appwrite` frontend SDK dependency.
+8. Kept the current localStorage/mock mode unchanged.
+9. Added TODO markers in the current services so Appwrite implementations can be introduced one layer at a time later.
+
+### Files changed
+
+- `package.json`
+- `package-lock.json`
+- `.env.example`
+- `README.md`
+- `src/env.d.ts`
+- `src/config/runtime.ts`
+- `src/lib/appwrite.ts`
+- `src/services/adapters/dataMode.ts`
+- `src/services/authService.ts`
+- `src/services/participantService.ts`
+- `src/services/eventService.ts`
+- `src/services/photoService.ts`
+- `src/services/achievementService.ts`
+- `src/services/rsvpService.ts`
+- `src/services/chatService.ts`
+- `docs/development-log.md`
+
+### Architecture notes
+
+- `local` remains the default and fully working mode.
+- `appwrite` mode is only infrastructure for now; services are not switched yet.
+- Missing Appwrite env values do not crash the app at import time.
+- This keeps the UI stable while making the project ready for gradual backend migration.
+
+### Verification
+
+```bash
+npm install
+npm run build
+```
+
+### Next step
+
+Start connecting Appwrite one service at a time, most likely beginning with `authService` or `eventService`, while keeping `VITE_DATA_MODE=local` as the fallback development path.

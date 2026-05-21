@@ -1,3 +1,6 @@
+// TODO: add Appwrite implementation when VITE_DATA_MODE=appwrite
+// TODO: replace localStorage imageUrl with Appwrite Storage fileId.
+
 import { eventService } from './eventService'
 import type { GalleryPhoto } from '../types/photo'
 

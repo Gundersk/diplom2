@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "appwrite": "^25.1.1",
     "emoji-picker-element": "^1.29.1",
     "vue": "^3.5.13"
   },
