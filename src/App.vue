@@ -317,6 +317,12 @@ async function loadHomeEvents() {
   return homeEvents.value
 }
 
+function upsertHomeEvent(event: GalleryEvent) {
+  homeEvents.value = homeEvents.value.some((item) => item.id === event.id)
+    ? homeEvents.value.map((item) => (item.id === event.id ? event : item))
+    : [...homeEvents.value, event]
+}
+
 function readInviteCodeFromLocation() {
   if (typeof window === 'undefined') {
     return ''
@@ -396,8 +402,16 @@ async function resolveInviteFlow() {
 
   inviteErrorMessage.value = ''
   pendingInviteEventId.value = event.id
+  upsertHomeEvent(event)
   activeTab.value = event.status
-  openEventPage(event.id)
+  openEventPage(event.id, event)
+
+  if (hasRealAuthenticatedUser()) {
+    const participant = await ensureCurrentParticipant(event)
+    if (participant) {
+      await loadHomeEvents()
+    }
+  }
 }
 
 function getThemeById(themeId: string) {
@@ -1456,9 +1470,9 @@ function closeGuestPreview() {
   previewDraftEvent.value = null
 }
 
-function openEventPage(eventId: string) {
-  const event = getEventById(eventId)
-  replaceInviteCodeInUrl(event?.inviteCode ?? null)
+function openEventPage(eventId: string, eventOverride?: GalleryEvent | null) {
+  const event = eventOverride ?? getEventById(eventId)
+  replaceInviteCodeInUrl(event?.inviteCode ?? pendingInviteCode.value ?? null)
   activeEventId.value = eventId
   void syncEventRsvpsFromService(eventId)
   void syncEventMessagesFromService(eventId)
