@@ -1347,10 +1347,6 @@ function readFileAsDataUrl(file: File) {
   })
 }
 
-function isBlobUrl(value: string | null | undefined) {
-  return Boolean(value?.startsWith('blob:'))
-}
-
 function clearPendingEventVisualFiles() {
   uploadedCoverFile.value = null
   uploadedBackgroundFile.value = null
@@ -2423,7 +2419,7 @@ async function persistEventVisualUploads(event: GalleryEvent, existingEvent?: Ga
     backgroundFileId: existingEvent?.backgroundFileId,
   }
 
-  if (uploadedCoverFile.value && isBlobUrl(createEventForm.value.uploadedCoverUrl)) {
+  if (uploadedCoverFile.value) {
     const uploadedCover = await storageService.uploadEventVisual(uploadedCoverFile.value, 'cover')
     nextEvent.coverFileId = uploadedCover.fileId
     nextEvent.coverStart = uploadedCover.previewUrl
@@ -2444,7 +2440,7 @@ async function persistEventVisualUploads(event: GalleryEvent, existingEvent?: Ga
   nextEvent.backgroundMode = 'asset'
   nextEvent.backgroundColor = createEventForm.value.backgroundColor
 
-  if (uploadedBackgroundFile.value && isBlobUrl(createEventForm.value.uploadedBackgroundUrl)) {
+  if (uploadedBackgroundFile.value) {
     const uploadedBackground = await storageService.uploadEventVisual(uploadedBackgroundFile.value, 'background')
     nextEvent.backgroundFileId = uploadedBackground.fileId
     nextEvent.backgroundStart = uploadedBackground.previewUrl
