@@ -17,3 +17,12 @@
 - The first real Appwrite adapters already exist for `authService`, `eventService`, and `participantService`.
 - `profiles` is strongly recommended as the next collection for storing displayName, avatarUrl, and mode. If it is missing, auth still works and falls back to lightweight local cache for profile extras.
 - `photoService`, `savedPhotoService`, `photoCommentService`, `achievementService`, `rsvpService`, and `chatService` still use localStorage for now.
+
+## Multi-user Test
+
+1. Set `VITE_DATA_MODE=appwrite`.
+2. Start the app and create an event in the first browser window.
+3. Open the event page and copy the invite link.
+4. Open the link in a second browser or an incognito window.
+5. Sign in as a guest.
+6. Check the `participants` collection in Appwrite Console: a second participant should appear with a different `userId`.

@@ -1325,3 +1325,39 @@ npm run build
 ### Next step
 
 Connect a real Appwrite Email OTP flow for `authService`, or start the Appwrite adapter for the photo stack once the `profiles` collection is ready.
+
+---
+
+## 2026-05-21 - Invite flow for first multi-user scenario
+
+### What changed
+
+1. Added stable `inviteCode` generation and lookup for events.
+2. Added `getEventByInviteCode()` to `eventService` for both local and appwrite modes.
+3. Added invite-link helper support so an event can be reopened directly from the browser URL.
+4. Connected the app startup flow to read `?event=INVITE_CODE`, open the target event, and continue guest login when needed.
+5. Added a working “copy invite link” action to the event flow so the first multi-user scenario can be tested without adding a router or QR library.
+
+### Files changed
+
+- `src/services/eventService.ts`
+- `src/App.vue`
+- `src/style.css`
+- `README.md`
+- `docs/development-log.md`
+
+### Notes
+
+- Local mode is preserved and still works as before.
+- In appwrite mode, another anonymous guest can now open the invite link and become a participant of the same event.
+- Photos, comments, achievements, RSVP, and chat still remain on localStorage for now.
+
+### Verification
+
+```bash
+npm run build
+```
+
+### Next step
+
+Move the next shared event actions to Appwrite one by one, most likely RSVP/chat or the photo stack after Storage collections are ready.

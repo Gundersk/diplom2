@@ -5,12 +5,13 @@ import { buildEventStatus } from './data/mockEvents'
 import { authService } from './services/authService'
 import { achievementService } from './services/achievementService'
 import { chatService } from './services/chatService'
-import { eventService } from './services/eventService'
+import { eventService, getEventInviteUrl } from './services/eventService'
 import { participantService } from './services/participantService'
 import { photoCommentService } from './services/photoCommentService'
 import { photoService } from './services/photoService'
 import { rsvpService } from './services/rsvpService'
 import { savedPhotoService } from './services/savedPhotoService'
+import { isAppwriteMode } from './services/adapters/dataMode'
 import type {
   AchievementScope,
   AchievementTemplate,
@@ -221,6 +222,10 @@ const currentUser = reactive<CurrentUserView>({
   role: 'Организатор',
 })
 
+function hasRealAuthenticatedUser() {
+  return !isAppwriteMode() || currentUser.mode !== 'demo'
+}
+
 const coverAssetModules = import.meta.glob(
   '../приеры страниц partiful/Ресурсы/Обложки/**/*.{png,jpg,jpeg,jfif,avif,webp,gif}',
   {
@@ -291,13 +296,15 @@ function buildRuntimeDemoUser(): CurrentUser {
 
 async function initializeCurrentUser() {
   const storedUser = await authService.getCurrentUser()
-  const nextUser = storedUser ?? (await authService.createDemoUser('Юрий'))
+  const nextUser =
+    storedUser ?? (isAppwriteMode() ? buildRuntimeDemoUser() : await authService.createDemoUser('Юрий'))
   applyCurrentUser(nextUser)
   await loadHomeEvents()
   await syncAllEventPhotosFromService()
   await syncAllEventRsvpsFromService()
   await syncAllEventMessagesFromService()
   await syncAllEventAchievementsFromService()
+  await resolveInviteFlow()
 }
 
 async function loadAchievementTemplates() {
@@ -307,6 +314,89 @@ async function loadAchievementTemplates() {
 async function loadHomeEvents() {
   homeEvents.value = await eventService.getHomeEvents()
   return homeEvents.value
+}
+
+function readInviteCodeFromLocation() {
+  if (typeof window === 'undefined') {
+    return ''
+  }
+
+  const url = new URL(window.location.href)
+  return url.searchParams.get('event')?.trim().toUpperCase() ?? ''
+}
+
+function replaceInviteCodeInUrl(inviteCode: string | null) {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  const url = new URL(window.location.href)
+  if (inviteCode) {
+    url.searchParams.set('event', inviteCode)
+  } else {
+    url.searchParams.delete('event')
+  }
+
+  window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
+}
+
+async function copyInviteLink(event: GalleryEvent) {
+  const inviteUrl = getEventInviteUrl(event)
+
+  try {
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(inviteUrl)
+      inviteLinkStatus.value = 'Ссылка скопирована'
+    } else {
+      inviteLinkStatus.value = inviteUrl
+    }
+  } catch {
+    inviteLinkStatus.value = inviteUrl
+  }
+
+  notifications.value = [
+    {
+      id: createId('notice'),
+      title: 'Ссылка-приглашение',
+      text: inviteLinkStatus.value === 'Ссылка скопирована' ? inviteUrl : `Скопируйте ссылку: ${inviteUrl}`,
+      time: 'сейчас',
+    },
+    ...notifications.value,
+  ]
+}
+
+async function resolveInviteFlow() {
+  const inviteCode = readInviteCodeFromLocation()
+  if (!inviteCode) {
+    pendingInviteCode.value = null
+    pendingInviteEventId.value = null
+    inviteErrorMessage.value = ''
+    return
+  }
+
+  pendingInviteCode.value = inviteCode
+
+  if (isAppwriteMode() && !hasRealAuthenticatedUser()) {
+    inviteErrorMessage.value = ''
+    authMode.value = 'guest'
+    authGuestName.value = ''
+    authError.value = ''
+    authOpen.value = true
+    return
+  }
+
+  const event = await eventService.getEventByInviteCode(inviteCode)
+  if (!event) {
+    pendingInviteEventId.value = null
+    inviteErrorMessage.value = `Событие с кодом ${inviteCode} не найдено.`
+    currentView.value = hasRealAuthenticatedUser() ? 'home' : 'landing'
+    return
+  }
+
+  inviteErrorMessage.value = ''
+  pendingInviteEventId.value = event.id
+  activeTab.value = event.status
+  openEventPage(event.id)
 }
 
 function getThemeById(themeId: string) {
@@ -670,6 +760,10 @@ const activeAchievement = ref<string | null>(null)
 const createEventOpen = ref(false)
 const medalBuilderOpen = ref(false)
 const activeEventId = ref<string | null>(null)
+const pendingInviteCode = ref<string | null>(null)
+const pendingInviteEventId = ref<string | null>(null)
+const inviteErrorMessage = ref('')
+const inviteLinkStatus = ref('')
 const previewDraftEvent = ref<GalleryEvent | null>(null)
 const eventChatDraft = ref('')
 const editingEventId = ref<string | null>(null)
@@ -1135,10 +1229,13 @@ async function completeAuth() {
     await syncAllEventRsvpsFromService()
     await syncAllEventMessagesFromService()
     await syncAllEventAchievementsFromService()
-    currentView.value = 'home'
     authOpen.value = false
     profileMenuOpen.value = false
     notificationsOpen.value = false
+    await resolveInviteFlow()
+    if (currentView.value !== 'event') {
+      currentView.value = 'home'
+    }
   } catch (error) {
     authError.value = error instanceof Error ? error.message : 'Не удалось выполнить вход.'
   }
@@ -1167,6 +1264,11 @@ async function logout() {
   authGuestName.value = ''
   authEmailCodeRequested.value = false
   authError.value = ''
+  pendingInviteCode.value = null
+  pendingInviteEventId.value = null
+  inviteErrorMessage.value = ''
+  inviteLinkStatus.value = ''
+  replaceInviteCodeInUrl(null)
 }
 
 function toggleNotifications() {
@@ -1306,6 +1408,8 @@ function openCreateEvent() {
   createAchievementPopover.value = null
   notificationsOpen.value = false
   profileMenuOpen.value = false
+  inviteLinkStatus.value = ''
+  replaceInviteCodeInUrl(null)
 }
 
 function closeCreateEvent() {
@@ -1335,6 +1439,8 @@ function closeGuestPreview() {
 }
 
 function openEventPage(eventId: string) {
+  const event = getEventById(eventId)
+  replaceInviteCodeInUrl(event?.inviteCode ?? null)
   activeEventId.value = eventId
   void syncEventRsvpsFromService(eventId)
   void syncEventMessagesFromService(eventId)
@@ -1345,6 +1451,7 @@ function openEventPage(eventId: string) {
   profileMenuOpen.value = false
   notificationsOpen.value = false
   selectedPhoto.value = null
+  inviteLinkStatus.value = ''
   closeRsvpSheet()
 }
 
@@ -1352,6 +1459,9 @@ function closeEventPage() {
   currentView.value = 'home'
   activeEventId.value = null
   eventChatDraft.value = ''
+  pendingInviteEventId.value = null
+  inviteLinkStatus.value = ''
+  replaceInviteCodeInUrl(null)
   closeRsvpSheet()
 }
 
@@ -2404,6 +2514,11 @@ async function saveEvent() {
       </div>
     </section>
 
+    <section v-if="inviteErrorMessage" class="invite-alert" aria-live="polite">
+      <strong>Не удалось открыть приглашение</strong>
+      <p>{{ inviteErrorMessage }}</p>
+    </section>
+
     <section id="flow" class="flow-section" aria-labelledby="flow-title">
       <div class="section-heading">
         <p class="eyebrow">Основной сценарий</p>
@@ -2556,6 +2671,11 @@ async function saveEvent() {
         </button>
       </div>
 
+      <section v-if="inviteErrorMessage" class="invite-alert invite-alert-dark" aria-live="polite">
+        <strong>Ссылка приглашения не сработала</strong>
+        <p>{{ inviteErrorMessage }}</p>
+      </section>
+
       <div class="event-tabs" aria-label="Фильтр событий">
         <button
           type="button"
@@ -2657,6 +2777,9 @@ async function saveEvent() {
                 <button class="secondary-button compact-action" type="button" @click="openEventPage(event.id)">
                   Открыть событие
                 </button>
+                <button class="secondary-button compact-action" type="button" @click="copyInviteLink(event)">
+                  Скопировать ссылку
+                </button>
                 <button class="collapse-event-button" type="button" @click="toggleEventExpanded(event.id)">
                   Свернуть
                 </button>
@@ -2746,6 +2869,20 @@ async function saveEvent() {
             <span>Проводит {{ eventPageData.organizerName }}</span>
           </div>
           <p v-if="eventPageData.description" class="event-page-description">{{ eventPageData.description }}</p>
+
+          <section v-if="currentView !== 'preview'" class="event-page-section event-page-invite-card">
+            <div class="event-page-section-head">
+              <strong>Приглашение</strong>
+              <button class="secondary-button compact-action" type="button" @click="copyInviteLink(eventPageData)">
+                Скопировать ссылку
+              </button>
+            </div>
+            <p class="event-page-section-copy">
+              Код приглашения: <strong>{{ eventPageData.inviteCode }}</strong>
+            </p>
+            <code class="event-invite-link">{{ getEventInviteUrl(eventPageData) }}</code>
+            <p v-if="inviteLinkStatus" class="event-invite-status">{{ inviteLinkStatus }}</p>
+          </section>
 
           <ul v-if="eventPageData.infoBlocks?.length" class="event-info-list">
             <li v-for="block in eventPageData.infoBlocks" :key="block.id" class="event-info-item">
@@ -3708,6 +3845,7 @@ async function saveEvent() {
       <p class="eyebrow">Event Gallery</p>
       <h2 id="auth-title">Вход</h2>
       <p class="auth-subtitle">Гостевой вход остается самым быстрым сценарием, а профиль можно привязать через email-код.</p>
+      <p v-if="pendingInviteCode" class="auth-hint">Вы заходите по приглашению <strong>{{ pendingInviteCode }}</strong>.</p>
 
       <div class="auth-tabs" role="tablist" aria-label="Способ входа">
         <button

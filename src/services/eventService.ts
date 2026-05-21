@@ -8,6 +8,7 @@ import { authService } from './authService'
 import type { EventInfoBlock, EventPaymentInfo, EventRole, GalleryEvent } from '../types/event'
 
 const HOME_EVENTS_STORAGE_KEY = 'event-gallery.home-events'
+const INVITE_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 
 type EventDocument = Models.Document & {
   title: string
@@ -45,6 +46,39 @@ type ParticipantRoleDocument = Models.Document & {
 
 function canUseLocalStorage() {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined'
+}
+
+function randomInviteChunk(length = 4) {
+  return Array.from({ length }, () => INVITE_CODE_CHARS[Math.floor(Math.random() * INVITE_CODE_CHARS.length)]).join('')
+}
+
+function formatInviteCode(code?: string) {
+  return code?.trim().toUpperCase() || ''
+}
+
+export function generateInviteCode(startsAt?: string) {
+  const date = startsAt ? new Date(startsAt) : null
+  const month = date
+    ? date
+        .toLocaleString('en-US', { month: 'short' })
+        .replace(/[^A-Za-z]/g, '')
+        .slice(0, 3)
+        .toUpperCase()
+    : 'EVT'
+  const day = date && !Number.isNaN(date.getTime()) ? String(date.getDate()).padStart(2, '0') : ''
+  return `${month}${day ? `-${day}` : ''}-${randomInviteChunk(4)}`
+}
+
+export function getEventInviteUrl(event: GalleryEvent) {
+  const inviteCode = formatInviteCode(event.inviteCode || event.id)
+  if (typeof window === 'undefined') {
+    return `/?event=${encodeURIComponent(inviteCode)}`
+  }
+
+  const url = new URL(window.location.href)
+  url.searchParams.set('event', inviteCode)
+  url.hash = ''
+  return url.toString()
 }
 
 function persistHomeEvents(events: GalleryEvent[]) {
@@ -143,6 +177,52 @@ function normalizeLocalEvents(events: GalleryEvent[]) {
   return events.map((event) => normalizeGalleryEvent(event))
 }
 
+async function findExistingInviteCodeInAppwrite(inviteCode: string) {
+  const response = await appwriteDatabases.listDocuments<EventDocument>(
+    APPWRITE_DATABASE_ID,
+    APPWRITE_COLLECTIONS.events,
+    [
+      appwriteQuery.equal('inviteCode', inviteCode),
+      appwriteQuery.limit(1),
+    ],
+  )
+
+  return response.documents[0] ?? null
+}
+
+async function ensureInviteCode(event: GalleryEvent) {
+  const existingInviteCode = formatInviteCode(event.inviteCode)
+  if (existingInviteCode) {
+    return existingInviteCode
+  }
+
+  if (!isAppwriteMode()) {
+    const usedCodes = new Set(
+      getLocalHomeEvents()
+        .map((item) => formatInviteCode(item.inviteCode))
+        .filter(Boolean),
+    )
+
+    let nextCode = generateInviteCode(event.startsAt)
+    while (usedCodes.has(nextCode)) {
+      nextCode = generateInviteCode(event.startsAt)
+    }
+    return nextCode
+  }
+
+  assertAppwriteReady('ensureInviteCode')
+
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const nextCode = generateInviteCode(event.startsAt)
+    const existing = await findExistingInviteCodeInAppwrite(nextCode)
+    if (!existing) {
+      return nextCode
+    }
+  }
+
+  return generateInviteCode(event.startsAt)
+}
+
 function toAppwriteEventPayload(event: GalleryEvent) {
   const normalizedEvent = normalizeGalleryEvent(event)
 
@@ -158,7 +238,7 @@ function toAppwriteEventPayload(event: GalleryEvent) {
     organizerInitials: normalizedEvent.organizerInitials,
     organizerTone: normalizedEvent.organizerTone,
     organizerAvatarSrc: normalizedEvent.organizerAvatarSrc ?? '',
-    inviteCode: normalizedEvent.inviteCode ?? normalizedEvent.id,
+    inviteCode: formatInviteCode(normalizedEvent.inviteCode) || normalizedEvent.id,
     location: normalizedEvent.location ?? '',
     coverStart: normalizedEvent.coverStart,
     coverEnd: normalizedEvent.coverEnd,
@@ -283,6 +363,15 @@ async function getLocalEventById(eventId: string) {
   return getLocalHomeEvents().find((event) => event.id === eventId) ?? null
 }
 
+async function getLocalEventByInviteCode(inviteCode: string) {
+  const normalizedCode = formatInviteCode(inviteCode)
+  if (!normalizedCode) return null
+
+  return (
+    getLocalHomeEvents().find((event) => formatInviteCode(event.inviteCode || event.id) === normalizedCode) ?? null
+  )
+}
+
 async function getAppwriteEventById(eventId: string) {
   assertAppwriteReady('getEventById')
 
@@ -308,6 +397,48 @@ async function getAppwriteEventById(eventId: string) {
   return event
 }
 
+async function getAppwriteEventByInviteCode(inviteCode: string) {
+  assertAppwriteReady('getEventByInviteCode')
+
+  const normalizedCode = formatInviteCode(inviteCode)
+  if (!normalizedCode) {
+    return null
+  }
+
+  const participantMap = await getCurrentUserParticipantMap()
+  const response = await appwriteDatabases.listDocuments<EventDocument>(
+    APPWRITE_DATABASE_ID,
+    APPWRITE_COLLECTIONS.events,
+    [
+      appwriteQuery.equal('inviteCode', normalizedCode),
+      appwriteQuery.limit(2),
+    ],
+  )
+
+  if (response.documents.length > 1) {
+    console.warn(`[eventService] Multiple events found for inviteCode=${normalizedCode}. Using the first document.`)
+  }
+
+  const document = response.documents[0]
+  if (!document) {
+    return null
+  }
+
+  const event = fromAppwriteEventDocument(
+    document,
+    participantMap.rolesByEventId.get(document.$id),
+    participantMap.currentUserId,
+  )
+
+  const cachedEvents = readStoredHomeEvents() ?? []
+  const nextEvents = cachedEvents.some((item) => item.id === event.id)
+    ? cachedEvents.map((item) => (item.id === event.id ? event : item))
+    : [...cachedEvents, event]
+  persistHomeEvents(nextEvents)
+
+  return event
+}
+
 export const eventService = {
   async getHomeEvents(): Promise<GalleryEvent[]> {
     return isAppwriteMode() ? getHomeEventsFromAppwrite() : getLocalHomeEvents()
@@ -317,8 +448,17 @@ export const eventService = {
     return isAppwriteMode() ? getAppwriteEventById(eventId) : getLocalEventById(eventId)
   },
 
+  async getEventByInviteCode(inviteCode: string): Promise<GalleryEvent | null> {
+    return isAppwriteMode()
+      ? getAppwriteEventByInviteCode(inviteCode)
+      : getLocalEventByInviteCode(inviteCode)
+  },
+
   async createEvent(event: GalleryEvent): Promise<GalleryEvent> {
-    const normalizedEvent = normalizeGalleryEvent(event)
+    const normalizedEvent = normalizeGalleryEvent({
+      ...event,
+      inviteCode: await ensureInviteCode(event),
+    })
 
     if (!isAppwriteMode()) {
       const nextEvents = [...getLocalHomeEvents(), normalizedEvent]
@@ -343,7 +483,10 @@ export const eventService = {
   },
 
   async updateEvent(event: GalleryEvent): Promise<GalleryEvent> {
-    const normalizedEvent = normalizeGalleryEvent(event)
+    const normalizedEvent = normalizeGalleryEvent({
+      ...event,
+      inviteCode: await ensureInviteCode(event),
+    })
 
     if (!isAppwriteMode()) {
       const existingEvents = getLocalHomeEvents()
