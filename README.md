@@ -18,6 +18,30 @@
 - `profiles` is strongly recommended as the next collection for storing displayName, avatarUrl, and mode. If it is missing, auth still works and falls back to lightweight local cache for profile extras.
 - `photoService`, `savedPhotoService`, `photoCommentService`, `achievementService`, `rsvpService`, and `chatService` still use localStorage for now.
 
+## Appwrite Schema Setup
+
+1. Copy `.env.setup.example` to `.env.setup`.
+2. Fill in:
+   - `APPWRITE_ENDPOINT`
+   - `APPWRITE_PROJECT_ID`
+   - `APPWRITE_DATABASE_ID`
+   - `APPWRITE_API_KEY`
+3. Run:
+
+```bash
+npm run setup:appwrite
+```
+
+Notes:
+
+- `.env.setup` is local-only and ignored by git.
+- The setup script is idempotent: existing collections, attributes, and indexes are skipped.
+- The script currently creates the first backend collections used by the app:
+  - `profiles`
+  - `events`
+  - `participants`
+- The current frontend still uses Appwrite only for `authService`, `eventService`, and `participantService` in `VITE_DATA_MODE=appwrite`.
+
 ## Multi-user Test
 
 1. Set `VITE_DATA_MODE=appwrite`.

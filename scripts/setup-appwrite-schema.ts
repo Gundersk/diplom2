@@ -1,0 +1,545 @@
+import { readFile } from 'node:fs/promises'
+import path from 'node:path'
+import process from 'node:process'
+import {
+  AppwriteException,
+  Client,
+  Databases,
+  DatabasesIndexType,
+  OrderBy,
+  Permission,
+  Role,
+  type Models,
+} from 'node-appwrite'
+
+type CollectionSchema = {
+  id: string
+  name: string
+  permissions: string[]
+  documentSecurity: boolean
+  attributes: AttributeSchema[]
+  indexes: IndexSchema[]
+}
+
+type AttributeSchema =
+  | {
+      kind: 'string'
+      key: string
+      size: number
+      required: boolean
+    }
+  | {
+      kind: 'boolean'
+      key: string
+      required: boolean
+    }
+  | {
+      kind: 'integer'
+      key: string
+      required: boolean
+    }
+
+type IndexSchema = {
+  key: string
+  type: DatabasesIndexType
+  attributes: string[]
+  orders?: OrderBy[]
+}
+
+type ExistingAttribute = {
+  type?: string
+  required?: boolean
+  status?: string
+  error?: string
+  size?: number
+}
+
+const ENV_FILE = path.resolve(process.cwd(), '.env.setup')
+const ATTRIBUTE_POLL_ATTEMPTS = 30
+const INDEX_POLL_ATTEMPTS = 30
+const POLL_DELAY_MS = 1000
+
+function logStep(message: string) {
+  console.log(`[setup:appwrite] ${message}`)
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function normalizeEnvValue(value: string) {
+  const trimmed = value.trim()
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    return trimmed.slice(1, -1)
+  }
+
+  return trimmed
+}
+
+async function loadSetupEnv(filePath: string) {
+  const fileContents = await readFile(filePath, 'utf8')
+  const env: Record<string, string> = {}
+
+  for (const rawLine of fileContents.split(/\r?\n/)) {
+    const line = rawLine.trim()
+    if (!line || line.startsWith('#')) {
+      continue
+    }
+
+    const separatorIndex = line.indexOf('=')
+    if (separatorIndex === -1) {
+      continue
+    }
+
+    const key = line.slice(0, separatorIndex).trim()
+    const value = normalizeEnvValue(line.slice(separatorIndex + 1))
+
+    if (key) {
+      env[key] = value
+      process.env[key] = value
+    }
+  }
+
+  return env
+}
+
+function requireEnv(key: string, env: Record<string, string>) {
+  const value = env[key] ?? process.env[key]
+  if (!value?.trim()) {
+    throw new Error(`Missing required ${key} in ${ENV_FILE}`)
+  }
+
+  return value.trim()
+}
+
+function getErrorCode(error: unknown) {
+  if (error instanceof AppwriteException) {
+    return error.code
+  }
+
+  if (typeof error === 'object' && error !== null && 'code' in error) {
+    const code = (error as { code?: unknown }).code
+    return typeof code === 'number' ? code : undefined
+  }
+
+  return undefined
+}
+
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) {
+    return error.message
+  }
+
+  return String(error)
+}
+
+function isNotFoundError(error: unknown) {
+  return getErrorCode(error) === 404
+}
+
+function isConflictError(error: unknown) {
+  return getErrorCode(error) === 409 || /already exists/i.test(getErrorMessage(error))
+}
+
+async function getCollectionOrNull(databases: Databases, databaseId: string, collectionId: string) {
+  try {
+    return await databases.getCollection({ databaseId, collectionId })
+  } catch (error) {
+    if (isNotFoundError(error)) {
+      return null
+    }
+
+    throw error
+  }
+}
+
+async function getAttributeOrNull(
+  databases: Databases,
+  databaseId: string,
+  collectionId: string,
+  key: string,
+) {
+  try {
+    return await databases.getAttribute({ databaseId, collectionId, key })
+  } catch (error) {
+    if (isNotFoundError(error)) {
+      return null
+    }
+
+    throw error
+  }
+}
+
+async function getIndexOrNull(databases: Databases, databaseId: string, collectionId: string, key: string) {
+  try {
+    return await databases.getIndex({ databaseId, collectionId, key })
+  } catch (error) {
+    if (isNotFoundError(error)) {
+      return null
+    }
+
+    throw error
+  }
+}
+
+async function waitForAttributeReady(
+  databases: Databases,
+  databaseId: string,
+  collectionId: string,
+  key: string,
+) {
+  for (let attempt = 1; attempt <= ATTRIBUTE_POLL_ATTEMPTS; attempt += 1) {
+    const attribute = await getAttributeOrNull(databases, databaseId, collectionId, key)
+    const status = attribute?.status?.toLowerCase()
+
+    if (!attribute) {
+      await sleep(POLL_DELAY_MS)
+      continue
+    }
+
+    if (status === 'available') {
+      return attribute
+    }
+
+    if (status === 'failed' || status === 'stuck') {
+      throw new Error(
+        `Attribute ${collectionId}.${key} failed to become available: ${attribute.error || status}`,
+      )
+    }
+
+    await sleep(POLL_DELAY_MS)
+  }
+
+  throw new Error(`Timed out while waiting for attribute ${collectionId}.${key} to become available`)
+}
+
+async function waitForIndexReady(
+  databases: Databases,
+  databaseId: string,
+  collectionId: string,
+  key: string,
+) {
+  for (let attempt = 1; attempt <= INDEX_POLL_ATTEMPTS; attempt += 1) {
+    const index = await getIndexOrNull(databases, databaseId, collectionId, key)
+    const status = index?.status?.toLowerCase()
+
+    if (!index) {
+      await sleep(POLL_DELAY_MS)
+      continue
+    }
+
+    if (status === 'available') {
+      return index
+    }
+
+    if (status === 'failed' || status === 'stuck') {
+      throw new Error(`Index ${collectionId}.${key} failed to become available: ${index.error || status}`)
+    }
+
+    await sleep(POLL_DELAY_MS)
+  }
+
+  throw new Error(`Timed out while waiting for index ${collectionId}.${key} to become available`)
+}
+
+function attributeMatches(existing: ExistingAttribute, expected: AttributeSchema) {
+  const typeMatches = existing.type === expected.kind
+  const requiredMatches = Boolean(existing.required) === expected.required
+
+  if (!typeMatches || !requiredMatches) {
+    return false
+  }
+
+  if (expected.kind === 'string') {
+    return Number(existing.size ?? 0) === expected.size
+  }
+
+  return true
+}
+
+function indexMatches(existing: Models.Index, expected: IndexSchema) {
+  const sameType = existing.type === expected.type
+  const sameAttributes = JSON.stringify(existing.attributes ?? []) === JSON.stringify(expected.attributes)
+  const sameOrders = JSON.stringify(existing.orders ?? []) === JSON.stringify(expected.orders ?? [])
+  return sameType && sameAttributes && sameOrders
+}
+
+async function ensureCollection(
+  databases: Databases,
+  databaseId: string,
+  schema: CollectionSchema,
+) {
+  const existing = await getCollectionOrNull(databases, databaseId, schema.id)
+  if (existing) {
+    logStep(`Collection ${schema.id} already exists, skipping creation.`)
+    return existing
+  }
+
+  try {
+    logStep(`Creating collection ${schema.id}...`)
+    return await databases.createCollection({
+      databaseId,
+      collectionId: schema.id,
+      name: schema.name,
+      permissions: schema.permissions,
+      documentSecurity: schema.documentSecurity,
+      enabled: true,
+    })
+  } catch (error) {
+    if (isConflictError(error)) {
+      logStep(`Collection ${schema.id} already exists, skipping creation.`)
+      return await databases.getCollection({ databaseId, collectionId: schema.id })
+    }
+
+    throw error
+  }
+}
+
+async function ensureAttribute(
+  databases: Databases,
+  databaseId: string,
+  collectionId: string,
+  attribute: AttributeSchema,
+) {
+  const existing = await getAttributeOrNull(databases, databaseId, collectionId, attribute.key)
+  if (existing) {
+    if (!attributeMatches(existing, attribute)) {
+      logStep(
+        `Attribute ${collectionId}.${attribute.key} already exists with a different shape. Leaving it unchanged.`,
+      )
+    } else {
+      logStep(`Attribute ${collectionId}.${attribute.key} already exists, skipping.`)
+    }
+
+    if (existing.status?.toLowerCase() !== 'available') {
+      await waitForAttributeReady(databases, databaseId, collectionId, attribute.key)
+    }
+    return
+  }
+
+  try {
+    logStep(`Creating attribute ${collectionId}.${attribute.key}...`)
+
+    if (attribute.kind === 'string') {
+      await databases.createStringAttribute({
+        databaseId,
+        collectionId,
+        key: attribute.key,
+        size: attribute.size,
+        required: attribute.required,
+      })
+    } else if (attribute.kind === 'boolean') {
+      await databases.createBooleanAttribute({
+        databaseId,
+        collectionId,
+        key: attribute.key,
+        required: attribute.required,
+      })
+    } else {
+      await databases.createIntegerAttribute({
+        databaseId,
+        collectionId,
+        key: attribute.key,
+        required: attribute.required,
+      })
+    }
+  } catch (error) {
+    if (!isConflictError(error)) {
+      throw error
+    }
+
+    logStep(`Attribute ${collectionId}.${attribute.key} already exists, skipping.`)
+  }
+
+  await waitForAttributeReady(databases, databaseId, collectionId, attribute.key)
+}
+
+async function ensureIndex(
+  databases: Databases,
+  databaseId: string,
+  collectionId: string,
+  index: IndexSchema,
+) {
+  const existing = await getIndexOrNull(databases, databaseId, collectionId, index.key)
+  if (existing) {
+    if (!indexMatches(existing, index)) {
+      logStep(`Index ${collectionId}.${index.key} already exists with a different shape. Leaving it unchanged.`)
+    } else {
+      logStep(`Index ${collectionId}.${index.key} already exists, skipping.`)
+    }
+
+    if (existing.status?.toLowerCase() !== 'available') {
+      await waitForIndexReady(databases, databaseId, collectionId, index.key)
+    }
+    return
+  }
+
+  try {
+    logStep(`Creating index ${collectionId}.${index.key}...`)
+    await databases.createIndex({
+      databaseId,
+      collectionId,
+      key: index.key,
+      type: index.type,
+      attributes: index.attributes,
+      orders: index.orders,
+    })
+  } catch (error) {
+    if (!isConflictError(error)) {
+      throw error
+    }
+
+    logStep(`Index ${collectionId}.${index.key} already exists, skipping.`)
+  }
+
+  await waitForIndexReady(databases, databaseId, collectionId, index.key)
+}
+
+const collectionSchemas: CollectionSchema[] = [
+  {
+    id: 'profiles',
+    name: 'Profiles',
+    permissions: [Permission.create(Role.users())],
+    documentSecurity: true,
+    attributes: [
+      { kind: 'string', key: 'userId', size: 64, required: true },
+      { kind: 'string', key: 'displayName', size: 128, required: true },
+      { kind: 'string', key: 'mode', size: 32, required: true },
+      { kind: 'string', key: 'email', size: 255, required: false },
+      { kind: 'string', key: 'avatarUrl', size: 4096, required: false },
+      { kind: 'string', key: 'avatarEmoji', size: 32, required: false },
+      { kind: 'string', key: 'createdAt', size: 64, required: true },
+      { kind: 'string', key: 'updatedAt', size: 64, required: false },
+    ],
+    indexes: [
+      {
+        key: 'userId',
+        type: DatabasesIndexType.Unique,
+        attributes: ['userId'],
+        orders: [OrderBy.Asc],
+      },
+    ],
+  },
+  {
+    id: 'events',
+    name: 'Events',
+    permissions: [Permission.create(Role.users()), Permission.read(Role.users())],
+    documentSecurity: true,
+    attributes: [
+      { kind: 'string', key: 'title', size: 255, required: true },
+      { kind: 'string', key: 'description', size: 10000, required: false },
+      { kind: 'string', key: 'startsAt', size: 64, required: false },
+      { kind: 'string', key: 'endsAt', size: 64, required: false },
+      { kind: 'string', key: 'timezone', size: 64, required: false },
+      { kind: 'string', key: 'location', size: 512, required: false },
+      { kind: 'string', key: 'organizerId', size: 64, required: true },
+      { kind: 'string', key: 'inviteCode', size: 32, required: true },
+      { kind: 'string', key: 'coverUrl', size: 4096, required: false },
+      { kind: 'string', key: 'themeColor', size: 64, required: false },
+      { kind: 'boolean', key: 'guestsCanInvite', required: false },
+      { kind: 'integer', key: 'maxParticipants', required: false },
+      { kind: 'boolean', key: 'isPaid', required: false },
+      { kind: 'string', key: 'costPerPerson', size: 64, required: false },
+      { kind: 'string', key: 'paymentDetails', size: 1024, required: false },
+      { kind: 'string', key: 'paymentComment', size: 1024, required: false },
+      { kind: 'string', key: 'createdAt', size: 64, required: true },
+      { kind: 'string', key: 'updatedAt', size: 64, required: false },
+    ],
+    indexes: [
+      {
+        key: 'organizerId',
+        type: DatabasesIndexType.Key,
+        attributes: ['organizerId'],
+        orders: [OrderBy.Asc],
+      },
+      {
+        key: 'inviteCode',
+        type: DatabasesIndexType.Unique,
+        attributes: ['inviteCode'],
+        orders: [OrderBy.Asc],
+      },
+      {
+        key: 'startsAt',
+        type: DatabasesIndexType.Key,
+        attributes: ['startsAt'],
+        orders: [OrderBy.Asc],
+      },
+    ],
+  },
+  {
+    id: 'participants',
+    name: 'Participants',
+    permissions: [Permission.create(Role.users()), Permission.read(Role.users())],
+    documentSecurity: true,
+    attributes: [
+      { kind: 'string', key: 'eventId', size: 64, required: true },
+      { kind: 'string', key: 'userId', size: 64, required: true },
+      { kind: 'string', key: 'displayName', size: 128, required: true },
+      { kind: 'string', key: 'role', size: 32, required: true },
+      { kind: 'integer', key: 'points', required: true },
+      { kind: 'string', key: 'joinedAt', size: 64, required: true },
+      { kind: 'string', key: 'updatedAt', size: 64, required: false },
+    ],
+    indexes: [
+      {
+        key: 'eventId',
+        type: DatabasesIndexType.Key,
+        attributes: ['eventId'],
+        orders: [OrderBy.Asc],
+      },
+      {
+        key: 'userId',
+        type: DatabasesIndexType.Key,
+        attributes: ['userId'],
+        orders: [OrderBy.Asc],
+      },
+      {
+        key: 'eventId_userId',
+        type: DatabasesIndexType.Unique,
+        attributes: ['eventId', 'userId'],
+        orders: [OrderBy.Asc, OrderBy.Asc],
+      },
+    ],
+  },
+]
+
+async function main() {
+  const env = await loadSetupEnv(ENV_FILE)
+  const endpoint = requireEnv('APPWRITE_ENDPOINT', env)
+  const projectId = requireEnv('APPWRITE_PROJECT_ID', env)
+  const databaseId = requireEnv('APPWRITE_DATABASE_ID', env)
+  const apiKey = requireEnv('APPWRITE_API_KEY', env)
+
+  const client = new Client().setEndpoint(endpoint).setProject(projectId).setKey(apiKey)
+  const databases = new Databases(client)
+
+  try {
+    await databases.get({ databaseId })
+  } catch (error) {
+    throw new Error(
+      `Cannot access database ${databaseId}. Check APPWRITE_ENDPOINT / APPWRITE_PROJECT_ID / APPWRITE_API_KEY. Original error: ${getErrorMessage(error)}`,
+    )
+  }
+
+  for (const collectionSchema of collectionSchemas) {
+    await ensureCollection(databases, databaseId, collectionSchema)
+
+    for (const attribute of collectionSchema.attributes) {
+      await ensureAttribute(databases, databaseId, collectionSchema.id, attribute)
+    }
+
+    for (const index of collectionSchema.indexes) {
+      await ensureIndex(databases, databaseId, collectionSchema.id, index)
+    }
+  }
+
+  logStep('Schema setup finished successfully.')
+}
+
+main().catch((error) => {
+  console.error(`[setup:appwrite] ${getErrorMessage(error)}`)
+  process.exitCode = 1
+})

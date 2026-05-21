@@ -1361,3 +1361,46 @@ npm run build
 ### Next step
 
 Move the next shared event actions to Appwrite one by one, most likely RSVP/chat or the photo stack after Storage collections are ready.
+
+---
+
+## 2026-05-21 - Local Appwrite schema setup script
+
+### What changed
+
+1. Added a dedicated `scripts/setup-appwrite-schema.ts` bootstrap script for local Appwrite.
+2. Added `.env.setup.example` and ignored `.env.setup` in git so the API key stays local.
+3. Added `npm run setup:appwrite` using `tsx`.
+4. Added `node-appwrite` as the server SDK for schema creation with API key access.
+5. Implemented idempotent setup for the first three collections:
+   - `profiles`
+   - `events`
+   - `participants`
+6. The script now skips already existing collections, attributes, and indexes instead of failing.
+
+### Files changed
+
+- `scripts/setup-appwrite-schema.ts`
+- `.env.setup.example`
+- `.gitignore`
+- `package.json`
+- `package-lock.json`
+- `README.md`
+- `docs/development-log.md`
+
+### Notes
+
+- The script reads `APPWRITE_ENDPOINT`, `APPWRITE_PROJECT_ID`, `APPWRITE_DATABASE_ID`, and `APPWRITE_API_KEY` from `.env.setup`.
+- It was intentionally not executed automatically.
+- UI and frontend service wiring were not changed.
+- `photoService`, `savedPhotoService`, `photoCommentService`, `achievementService`, `rsvpService`, and `chatService` still remain localStorage-based.
+
+### Verification
+
+```bash
+npm run build
+```
+
+### Next step
+
+Run `npm run setup:appwrite` after filling `.env.setup`, then verify the generated collections in Appwrite Console before moving the next data services to Appwrite.
