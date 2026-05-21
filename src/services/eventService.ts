@@ -13,29 +13,22 @@ const INVITE_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 type EventDocument = Models.Document & {
   title: string
   description?: string
-  startsAt: string
-  endsAt: string
+  startsAt?: string
+  endsAt?: string
+  timezone?: string
+  location?: string
   createdAt?: string
   updatedAt?: string
-  organizerId?: string
-  organizerName: string
-  organizerInitials: string
-  organizerTone: string
-  organizerAvatarSrc?: string
-  inviteCode?: string
-  location?: string
-  coverStart?: string
-  coverEnd?: string
-  backgroundStart?: string
-  backgroundEnd?: string
-  accent?: string
-  allowGuestInvites?: boolean
-  participantLimit?: number | null
-  infoBlocksJson?: string
-  paymentJson?: string
-  timezoneLabel?: string
-  titleStyle?: string
-  rsvpStyle?: string
+  organizerId: string
+  inviteCode: string
+  coverUrl?: string
+  themeColor?: string
+  guestsCanInvite?: boolean
+  maxParticipants?: number | null
+  isPaid?: boolean
+  costPerPerson?: string
+  paymentDetails?: string
+  paymentComment?: string
 }
 
 type ParticipantRoleDocument = Models.Document & {
@@ -140,10 +133,10 @@ function parsePayment(value?: string): EventPaymentInfo | null {
 
 function getFallbackRole(event: GalleryEvent, currentUserId?: string, participantRole?: 'organizer' | 'guest'): EventRole {
   if (participantRole === 'organizer' || (currentUserId && event.organizerId === currentUserId)) {
-    return 'Организатор'
+    return 'РћСЂРіР°РЅРёР·Р°С‚РѕСЂ' as EventRole
   }
 
-  return 'Участник'
+  return 'РЈС‡Р°СЃС‚РЅРёРє' as EventRole
 }
 
 function getCachedEventUiState(eventId: string) {
@@ -225,33 +218,34 @@ async function ensureInviteCode(event: GalleryEvent) {
 
 function toAppwriteEventPayload(event: GalleryEvent) {
   const normalizedEvent = normalizeGalleryEvent(event)
+  const payment = normalizedEvent.payment ?? null
+  const coverUrl = normalizedEvent.coverStart.startsWith('#') ? '' : normalizedEvent.coverStart
+  const themeColor =
+    normalizedEvent.backgroundStart.startsWith('#') && normalizedEvent.backgroundEnd.startsWith('#')
+      ? normalizedEvent.backgroundStart
+      : normalizedEvent.accent
 
+  // organizerName is intentionally not stored in the events collection.
+  // Organizer display data should come from participants/profiles or cached UI state.
   return {
     title: normalizedEvent.title,
     description: normalizedEvent.description ?? '',
-    startsAt: normalizedEvent.startsAt,
-    endsAt: normalizedEvent.endsAt,
+    startsAt: normalizedEvent.startsAt || '',
+    endsAt: normalizedEvent.endsAt || '',
+    timezone: normalizedEvent.timezoneLabel ?? '',
+    location: normalizedEvent.location ?? '',
+    organizerId: normalizedEvent.organizerId ?? '',
+    inviteCode: formatInviteCode(normalizedEvent.inviteCode) || normalizedEvent.id,
+    coverUrl,
+    themeColor,
+    guestsCanInvite: Boolean(normalizedEvent.allowGuestInvites),
+    maxParticipants: normalizedEvent.participantLimit ?? null,
+    isPaid: Boolean(payment?.amount || payment?.destination || payment?.comment),
+    costPerPerson: payment?.amount ?? '',
+    paymentDetails: payment?.destination ?? '',
+    paymentComment: payment?.comment ?? '',
     createdAt: normalizedEvent.createdAt ?? normalizedEvent.startsAt,
     updatedAt: normalizedEvent.updatedAt ?? new Date().toISOString(),
-    organizerId: normalizedEvent.organizerId ?? '',
-    organizerName: normalizedEvent.organizerName,
-    organizerInitials: normalizedEvent.organizerInitials,
-    organizerTone: normalizedEvent.organizerTone,
-    organizerAvatarSrc: normalizedEvent.organizerAvatarSrc ?? '',
-    inviteCode: formatInviteCode(normalizedEvent.inviteCode) || normalizedEvent.id,
-    location: normalizedEvent.location ?? '',
-    coverStart: normalizedEvent.coverStart,
-    coverEnd: normalizedEvent.coverEnd,
-    backgroundStart: normalizedEvent.backgroundStart,
-    backgroundEnd: normalizedEvent.backgroundEnd,
-    accent: normalizedEvent.accent,
-    allowGuestInvites: Boolean(normalizedEvent.allowGuestInvites),
-    participantLimit: normalizedEvent.participantLimit ?? null,
-    infoBlocksJson: JSON.stringify(normalizedEvent.infoBlocks ?? []),
-    paymentJson: JSON.stringify(normalizedEvent.payment ?? null),
-    timezoneLabel: normalizedEvent.timezoneLabel ?? '',
-    titleStyle: normalizedEvent.titleStyle ?? 'classic',
-    rsvpStyle: normalizedEvent.rsvpStyle ?? 'icons',
   }
 }
 
@@ -260,37 +254,92 @@ function fromAppwriteEventDocument(
   participantRole?: 'organizer' | 'guest',
   currentUserId?: string,
 ) {
+  const cachedEvent = getCachedEventUiState(document.$id)
+  const organizerFallbackName =
+    cachedEvent?.organizerName ||
+    (document.organizerId === currentUserId ? 'Вы' : '') ||
+    document.organizerId ||
+    'Организатор'
+  const organizerFallbackInitials =
+    cachedEvent?.organizerInitials ||
+    organizerFallbackName
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase() ?? '')
+      .join('') ||
+    'OR'
+  const accent = cachedEvent?.accent ?? document.themeColor ?? '#ff7a59'
+  const coverStart = cachedEvent?.coverStart ?? document.coverUrl ?? accent
+  const coverEnd = cachedEvent?.coverEnd ?? document.coverUrl ?? accent
+  const backgroundStart = cachedEvent?.backgroundStart ?? document.themeColor ?? coverStart
+  const backgroundEnd = cachedEvent?.backgroundEnd ?? '#ffffff'
+
   const baseEvent: GalleryEvent = {
     id: document.$id,
     title: document.title,
     status: 'upcoming',
-    startsAt: document.startsAt,
-    endsAt: document.endsAt,
-    createdAt: document.createdAt ?? document.startsAt,
+    startsAt: document.startsAt ?? document.$createdAt,
+    endsAt: document.endsAt ?? document.startsAt ?? document.$createdAt,
+    createdAt: document.createdAt ?? document.$createdAt,
     updatedAt: document.updatedAt ?? document.$updatedAt ?? document.$createdAt,
-    role: 'Участник',
+    role: getFallbackRole(
+      {
+        id: document.$id,
+        title: document.title,
+        status: 'upcoming',
+        startsAt: document.startsAt ?? document.$createdAt,
+        endsAt: document.endsAt ?? document.startsAt ?? document.$createdAt,
+        role: cachedEvent?.role ?? 'Участник',
+        organizerId: document.organizerId || undefined,
+        organizerName: organizerFallbackName,
+        organizerInitials: organizerFallbackInitials,
+        organizerTone: cachedEvent?.organizerTone ?? '#ffd166,#41d3bd',
+        organizerAvatarSrc: cachedEvent?.organizerAvatarSrc,
+        location: document.location ?? '',
+        savedCount: 0,
+        totalCount: 0,
+        coverStart,
+        coverEnd,
+        backgroundStart,
+        backgroundEnd,
+        accent,
+        achievements: [],
+        photos: [],
+        chatMessages: [],
+        guestRsvps: [],
+      } as GalleryEvent,
+      currentUserId,
+      participantRole,
+    ),
     organizerId: document.organizerId || undefined,
-    organizerName: document.organizerName ?? 'Организатор',
-    organizerInitials: document.organizerInitials ?? document.organizerName?.slice(0, 1) ?? 'О',
-    organizerTone: document.organizerTone ?? '#ffd166,#41d3bd',
-    organizerAvatarSrc: document.organizerAvatarSrc || undefined,
+    organizerName: organizerFallbackName,
+    organizerInitials: organizerFallbackInitials,
+    organizerTone: cachedEvent?.organizerTone ?? '#ffd166,#41d3bd',
+    organizerAvatarSrc: cachedEvent?.organizerAvatarSrc || undefined,
     inviteCode: document.inviteCode || document.$id,
     description: document.description ?? '',
     location: document.location ?? '',
     savedCount: 0,
     totalCount: 0,
-    coverStart: document.coverStart ?? '#ff7a59',
-    coverEnd: document.coverEnd ?? document.coverStart ?? '#ffd166',
-    backgroundStart: document.backgroundStart ?? document.coverStart ?? '#ff7a59',
-    backgroundEnd: document.backgroundEnd ?? document.coverEnd ?? document.coverStart ?? '#ffd166',
-    accent: document.accent ?? '#ff7a59',
-    allowGuestInvites: Boolean(document.allowGuestInvites),
-    participantLimit: document.participantLimit ?? null,
-    infoBlocks: parseInfoBlocks(document.infoBlocksJson),
-    payment: parsePayment(document.paymentJson),
-    timezoneLabel: document.timezoneLabel ?? 'Екатеринбург (UTC+5)',
-    titleStyle: document.titleStyle ?? 'classic',
-    rsvpStyle: document.rsvpStyle ?? 'icons',
+    coverStart,
+    coverEnd,
+    backgroundStart,
+    backgroundEnd,
+    accent,
+    allowGuestInvites: Boolean(document.guestsCanInvite),
+    participantLimit: document.maxParticipants ?? null,
+    infoBlocks: cachedEvent?.infoBlocks ?? [],
+    payment: document.isPaid
+      ? {
+          amount: document.costPerPerson ?? '',
+          destination: document.paymentDetails ?? '',
+          comment: document.paymentComment ?? '',
+        }
+      : cachedEvent?.payment ?? null,
+    timezoneLabel: document.timezone ?? cachedEvent?.timezoneLabel ?? 'Екатеринбург (UTC+5)',
+    titleStyle: cachedEvent?.titleStyle ?? 'classic',
+    rsvpStyle: cachedEvent?.rsvpStyle ?? 'icons',
     achievements: [],
     photos: [],
     chatMessages: [],
@@ -555,3 +604,4 @@ export const eventService = {
     persistHomeEvents(cachedEvents.filter((event) => event.id !== eventId))
   },
 }
+
