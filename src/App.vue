@@ -7,6 +7,7 @@ import { achievementService } from './services/achievementService'
 import { chatService } from './services/chatService'
 import { eventService } from './services/eventService'
 import { participantService } from './services/participantService'
+import { photoCommentService } from './services/photoCommentService'
 import { photoService } from './services/photoService'
 import { rsvpService } from './services/rsvpService'
 import { savedPhotoService } from './services/savedPhotoService'
@@ -32,6 +33,7 @@ import type {
 } from './types/event'
 import type { EventParticipant } from './types/participant'
 import type { GalleryPhoto } from './types/photo'
+import type { PhotoComment } from './types/photoComment'
 import type { EventChatMessage } from './types/chat'
 import type { EventRsvpEntry } from './types/rsvp'
 import type { CurrentUser } from './types/user'
@@ -553,6 +555,14 @@ function getPhotoLikesCount(photo: GalleryPhoto) {
   return Number(photo.likesCount ?? photo.likes ?? 0) || 0
 }
 
+function getPhotoCommentCountLabel(count: number) {
+  if (count % 10 === 1 && count % 100 !== 11) return `${count} комментарий`
+  if (count % 10 >= 2 && count % 10 <= 4 && (count % 100 < 12 || count % 100 > 14)) {
+    return `${count} комментария`
+  }
+  return `${count} комментариев`
+}
+
 function getPhotoStyle(photo: GalleryPhoto) {
   const imageSource = getPhotoImageSource(photo)
   if (imageSource) {
@@ -644,6 +654,9 @@ const profileMenuOpen = ref(false)
 const notificationsOpen = ref(false)
 const expandedEvents = ref<Set<string>>(new Set())
 const selectedPhoto = ref<{ eventId: string; photoId: string } | null>(null)
+const selectedPhotoComments = ref<PhotoComment[]>([])
+const photoCommentDraft = ref('')
+const photoCommentError = ref('')
 const activeAchievement = ref<string | null>(null)
 const createEventOpen = ref(false)
 const medalBuilderOpen = ref(false)
@@ -1067,6 +1080,8 @@ const activePhotoEntry = computed(() => {
       entry.photo.id === selectedPhoto.value?.photoId,
   )
 })
+
+const canWritePhotoComments = computed(() => currentView.value === 'event' && Boolean(activePhotoEntry.value))
 
 function openAuth(mode: AuthMode) {
   authMode.value = mode
@@ -1613,6 +1628,10 @@ function isCurrentUserOrganizer(event: GalleryEvent | null) {
   )
 }
 
+async function loadSelectedPhotoComments(photoId: string) {
+  selectedPhotoComments.value = await photoCommentService.getPhotoComments(photoId)
+}
+
 async function sendEventChatMessage() {
   const event = activeEvent.value
   const text = eventChatDraft.value.trim()
@@ -1677,11 +1696,17 @@ function isPhotoSaved(eventId: string, photoId: string) {
 function openPhoto(event: GalleryEvent, photo: GalleryPhoto, useAlbum = false) {
   photoViewerUsesAlbum.value = useAlbum
   selectedPhoto.value = { eventId: event.id, photoId: photo.id }
+  photoCommentDraft.value = ''
+  photoCommentError.value = ''
+  void loadSelectedPhotoComments(photo.id)
 }
 
 function closePhoto() {
   selectedPhoto.value = null
   photoViewerUsesAlbum.value = false
+  selectedPhotoComments.value = []
+  photoCommentDraft.value = ''
+  photoCommentError.value = ''
 }
 
 function stepPhoto(direction: number) {
@@ -1695,6 +1720,39 @@ function stepPhoto(direction: number) {
   const nextIndex = (currentIndex + direction + flatPhotos.value.length) % flatPhotos.value.length
   const next = flatPhotos.value[nextIndex]
   selectedPhoto.value = { eventId: next.event.id, photoId: next.photo.id }
+  photoCommentDraft.value = ''
+  photoCommentError.value = ''
+  void loadSelectedPhotoComments(next.photo.id)
+}
+
+async function submitPhotoComment() {
+  const activeEntry = activePhotoEntry.value
+  if (!activeEntry || currentView.value !== 'event') return
+
+  const participant =
+    currentParticipant.value?.eventId === activeEntry.event.id
+      ? currentParticipant.value
+      : await ensureCurrentParticipant(activeEntry.event)
+  if (!participant) return
+
+  try {
+    photoCommentError.value = ''
+    const nextComment = await photoCommentService.addPhotoComment({
+      photoId: activeEntry.photo.id,
+      eventId: activeEntry.event.id,
+      userId: currentUser.id,
+      participantId: participant.id,
+      authorName: participant.displayName,
+      authorAvatarUrl: currentUser.avatarUrl,
+      text: photoCommentDraft.value,
+    })
+
+    selectedPhotoComments.value = [...selectedPhotoComments.value, nextComment]
+    photoCommentDraft.value = ''
+  } catch (error) {
+    photoCommentError.value =
+      error instanceof Error ? error.message : 'Не удалось добавить комментарий.'
+  }
 }
 
 function getAchievementKey(event: GalleryEvent, achievement: EventAchievement) {
@@ -3815,7 +3873,7 @@ async function saveEvent() {
         <span>{{ activePhotoEntry.event.title }}</span>
         <h3>Фото из события</h3>
         <p>
-          {{ getPhotoLikesCount(activePhotoEntry.photo) }} лайков · {{ formatEventDateLabel(activePhotoEntry.event.startsAt) }}
+          {{ getPhotoCommentCountLabel(selectedPhotoComments.length) }} · {{ formatEventDateLabel(activePhotoEntry.event.startsAt) }}
         </p>
       </div>
       <div class="viewer-actions">
@@ -3829,6 +3887,52 @@ async function saveEvent() {
         <button class="secondary-button" type="button" @click="stepPhoto(-1)">Назад</button>
         <button class="primary-button" type="button" @click="stepPhoto(1)">Дальше</button>
       </div>
+      <section class="viewer-comments" aria-label="Комментарии к фото">
+        <div class="viewer-comments-head">
+          <strong>Комментарии</strong>
+          <span>{{ getPhotoCommentCountLabel(selectedPhotoComments.length) }}</span>
+        </div>
+        <div v-if="selectedPhotoComments.length" class="viewer-comments-list">
+          <article v-for="comment in selectedPhotoComments" :key="comment.id" class="viewer-comment-item">
+            <span
+              class="guest-avatar-chip viewer-comment-avatar"
+              :class="{ filled: Boolean(comment.authorAvatarUrl) }"
+              :style="getAvatarStyle(comment.authorAvatarUrl)"
+            >
+              {{ comment.authorAvatarUrl ? '' : buildUserInitials(comment.authorName) }}
+            </span>
+            <div class="viewer-comment-copy">
+              <strong>{{ comment.authorName }}</strong>
+              <p>{{ comment.text }}</p>
+            </div>
+          </article>
+        </div>
+        <p v-else class="viewer-comments-empty">Пока без комментариев. Здесь можно сохранить шутки и контекст события.</p>
+
+        <form v-if="canWritePhotoComments" class="viewer-comment-form" @submit.prevent="submitPhotoComment">
+          <input v-model="photoCommentDraft" type="text" placeholder="Написать комментарий к фото..." />
+          <button class="primary-button compact-action" type="submit">Отправить</button>
+        </form>
+        <p v-if="photoCommentError" class="viewer-comments-error">{{ photoCommentError }}</p>
+
+        <div v-if="!canWritePhotoComments" class="viewer-comments-note">
+          <span>
+            {{
+              currentView === 'home'
+                ? 'Комментарии доступны в событии и не копируются в личную галерею.'
+                : 'Комментарии станут доступны после сохранения события.'
+            }}
+          </span>
+          <button
+            v-if="currentView === 'home'"
+            class="secondary-button compact-action"
+            type="button"
+            @click="openEventPage(activePhotoEntry.event.id)"
+          >
+            Открыть в событии
+          </button>
+        </div>
+      </section>
     </section>
   </div>
 </template>

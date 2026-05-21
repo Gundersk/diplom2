@@ -1156,3 +1156,63 @@ npm run build
 ### Next step
 
 Either extract photo likes into a dedicated `photoLikeService`, or start the first real Appwrite adapter for the photo stack using `photos`, `event_photos`, and `saved_photos`.
+
+## Step 20 - 2026-05-21
+
+### Goal
+
+Replace photo-like emphasis in the MVP with photo comments, while keeping the current UI style and localStorage mode intact.
+
+### What was added
+
+1. Accepted the product decision not to develop likes as an MVP mechanic.
+2. Added `src/types/photoComment.ts`.
+3. Added `src/services/photoCommentService.ts`.
+4. Connected photo comments to the existing photo viewer flow:
+   - comments load per `photoId`;
+   - comments are tied to `eventId`, `userId`, and `participantId`;
+   - new comments appear immediately after submit.
+5. Kept old like fields only as legacy fallback:
+   - `likesCount`;
+   - `likedBy`;
+   - `togglePhotoLike(...)`.
+6. Updated the photo viewer so comments are shown in the event context.
+7. Personal gallery still does not copy either photos or comments:
+   - saved gallery keeps only `savedPhoto` links;
+   - comments remain attached to the original `photoId` and `eventId`.
+8. Prepared automatic achievement support for comment-based metrics by allowing `conditionType: 'most_photo_comments'`.
+9. Updated orphan cleanup so that comments are deleted only when the physical photo is truly removed as an orphan.
+
+### Files changed
+
+- `src/types/photo.ts`
+- `src/types/achievement.ts`
+- `src/types/photoComment.ts`
+- `src/services/achievementService.ts`
+- `src/services/photoService.ts`
+- `src/services/photoCommentService.ts`
+- `src/App.vue`
+- `src/style.css`
+- `docs/development-log.md`
+
+### Architecture notes
+
+- MVP now treats comments as the primary social interaction around photos instead of likes.
+- Appwrite collections later should include:
+  - `photos`
+  - `event_photos`
+  - `saved_photos`
+  - `photo_comments`
+- Photo file stays single-instance.
+- Comments are stored separately and linked by `photoId + eventId`.
+- Personal gallery does not duplicate files and does not duplicate comments.
+
+### Verification
+
+```bash
+npm run build
+```
+
+### Next step
+
+Either prepare the Appwrite collection schema for `photos`, `event_photos`, `saved_photos`, and `photo_comments`, or start the first real Appwrite adapter for the photo stack.

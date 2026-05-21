@@ -1,4 +1,4 @@
-// TODO: add Appwrite implementation when VITE_DATA_MODE=appwrite
+﻿// TODO: add Appwrite implementation when VITE_DATA_MODE=appwrite
 
 import { eventService } from './eventService'
 import type {
@@ -17,9 +17,9 @@ const defaultTemplates: AchievementTemplate[] = [
   {
     id: 'first-frame',
     scope: 'automatic',
-    title: 'Первый кадр',
-    description: 'Выдается участнику, который первым загрузил фото в общий альбом события.',
-    icon: '📸',
+    title: 'РџРµСЂРІС‹Р№ РєР°РґСЂ',
+    description: 'Р’С‹РґР°РµС‚СЃСЏ СѓС‡Р°СЃС‚РЅРёРєСѓ, РєРѕС‚РѕСЂС‹Р№ РїРµСЂРІС‹Рј Р·Р°РіСЂСѓР·РёР» С„РѕС‚Рѕ РІ РѕР±С‰РёР№ Р°Р»СЊР±РѕРј СЃРѕР±С‹С‚РёСЏ.',
+    icon: 'рџ“ё',
     tone: '#41d3bd,#5b8def',
     conditionType: 'first_photo',
     createdAt: defaultNow(),
@@ -29,9 +29,9 @@ const defaultTemplates: AchievementTemplate[] = [
   {
     id: 'paparazzi',
     scope: 'automatic',
-    title: 'Папарацци',
-    description: 'Выдается участнику, который добавил больше всех фото в общий альбом.',
-    icon: '📷',
+    title: 'РџР°РїР°СЂР°С†С†Рё',
+    description: 'Р’С‹РґР°РµС‚СЃСЏ СѓС‡Р°СЃС‚РЅРёРєСѓ, РєРѕС‚РѕСЂС‹Р№ РґРѕР±Р°РІРёР» Р±РѕР»СЊС€Рµ РІСЃРµС… С„РѕС‚Рѕ РІ РѕР±С‰РёР№ Р°Р»СЊР±РѕРј.',
+    icon: 'рџ“·',
     tone: '#ff7a59,#ffd166',
     conditionType: 'most_photos',
     createdAt: defaultNow(),
@@ -39,13 +39,13 @@ const defaultTemplates: AchievementTemplate[] = [
     isSystem: true,
   },
   {
-    id: 'king-of-likes',
+    id: 'photo-hype',
     scope: 'automatic',
-    title: 'Король лайков',
-    description: 'Выдается участнику, чьи фотографии собрали больше всех лайков.',
-    icon: '⭐',
-    tone: '#ffb703,#ffffff',
-    conditionType: 'most_likes',
+    title: 'Хайпажор',
+    description: 'В будущем выдается участнику, чье фото собрало больше всего комментариев в событии.',
+    icon: '💬',
+    tone: '#ffb703,#ffd8ef',
+    conditionType: 'most_photo_comments',
     createdAt: defaultNow(),
     mode: 'automatic',
     isSystem: true,
@@ -53,9 +53,9 @@ const defaultTemplates: AchievementTemplate[] = [
   {
     id: 'template-best-look',
     scope: 'personal',
-    title: 'Лучший образ',
-    description: 'Организатор вручает участнику за самый выразительный образ события.',
-    icon: '💎',
+    title: 'Р›СѓС‡С€РёР№ РѕР±СЂР°Р·',
+    description: 'РћСЂРіР°РЅРёР·Р°С‚РѕСЂ РІСЂСѓС‡Р°РµС‚ СѓС‡Р°СЃС‚РЅРёРєСѓ Р·Р° СЃР°РјС‹Р№ РІС‹СЂР°Р·РёС‚РµР»СЊРЅС‹Р№ РѕР±СЂР°Р· СЃРѕР±С‹С‚РёСЏ.',
+    icon: 'рџ’Ћ',
     tone: '#ff4d6d,#ffffff',
     createdAt: defaultNow(),
     mode: 'manual',
@@ -65,9 +65,9 @@ const defaultTemplates: AchievementTemplate[] = [
   {
     id: 'template-soul',
     scope: 'personal',
-    title: 'Душа компании',
-    description: 'Организатор вручает участнику, который лучше всех поддерживал атмосферу.',
-    icon: '✨',
+    title: 'Р”СѓС€Р° РєРѕРјРїР°РЅРёРё',
+    description: 'РћСЂРіР°РЅРёР·Р°С‚РѕСЂ РІСЂСѓС‡Р°РµС‚ СѓС‡Р°СЃС‚РЅРёРєСѓ, РєРѕС‚РѕСЂС‹Р№ Р»СѓС‡С€Рµ РІСЃРµС… РїРѕРґРґРµСЂР¶РёРІР°Р» Р°С‚РјРѕСЃС„РµСЂСѓ.',
+    icon: 'вњЁ',
     tone: '#ffd166,#41d3bd',
     createdAt: defaultNow(),
     mode: 'manual',
@@ -77,9 +77,9 @@ const defaultTemplates: AchievementTemplate[] = [
   {
     id: 'template-everyone',
     scope: 'group',
-    title: 'Все отметились',
-    description: 'Групповая медаль события: все гости подтвердили участие и появились на фото.',
-    icon: '👥',
+    title: 'Р’СЃРµ РѕС‚РјРµС‚РёР»РёСЃСЊ',
+    description: 'Р“СЂСѓРїРїРѕРІР°СЏ РјРµРґР°Р»СЊ СЃРѕР±С‹С‚РёСЏ: РІСЃРµ РіРѕСЃС‚Рё РїРѕРґС‚РІРµСЂРґРёР»Рё СѓС‡Р°СЃС‚РёРµ Рё РїРѕСЏРІРёР»РёСЃСЊ РЅР° С„РѕС‚Рѕ.',
+    icon: 'рџ‘Ґ',
     tone: '#5b8def,#f7f06d',
     createdAt: defaultNow(),
     mode: 'manual',
@@ -97,7 +97,12 @@ function createId(prefix: string) {
 }
 
 function normalizeConditionType(value?: string): AchievementConditionType | undefined {
-  if (value === 'first_photo' || value === 'most_photos' || value === 'most_likes') {
+  if (
+    value === 'first_photo' ||
+    value === 'most_photos' ||
+    value === 'most_likes' ||
+    value === 'most_photo_comments'
+  ) {
     return value
   }
   return undefined
@@ -344,14 +349,14 @@ export const achievementService = {
     const template = templates.find((item) => item.id === templateId)
     if (!template) return
     if (template.scope === 'automatic' || template.isSystem) {
-      throw new Error('Автоматические шаблоны удалять нельзя.')
+      throw new Error('РђРІС‚РѕРјР°С‚РёС‡РµСЃРєРёРµ С€Р°Р±Р»РѕРЅС‹ СѓРґР°Р»СЏС‚СЊ РЅРµР»СЊР·СЏ.')
     }
 
     const isSelected = readStoredEventAchievements().some(
       (achievement) => getEventAchievementTemplateId(achievement) === templateId,
     )
     if (isSelected) {
-      throw new Error('Нельзя удалить шаблон, пока он выбран в событии.')
+      throw new Error('РќРµР»СЊР·СЏ СѓРґР°Р»РёС‚СЊ С€Р°Р±Р»РѕРЅ, РїРѕРєР° РѕРЅ РІС‹Р±СЂР°РЅ РІ СЃРѕР±С‹С‚РёРё.')
     }
 
     persistTemplates(templates.filter((item) => item.id !== templateId))
@@ -364,7 +369,7 @@ export const achievementService = {
     const templates = mergeTemplates()
     const existing = templates.find((template) => template.id === templateId)
     if (!existing) {
-      throw new Error('Шаблон достижения не найден.')
+      throw new Error('РЁР°Р±Р»РѕРЅ РґРѕСЃС‚РёР¶РµРЅРёСЏ РЅРµ РЅР°Р№РґРµРЅ.')
     }
 
     const nextTemplate = normalizeTemplate({
@@ -385,7 +390,7 @@ export const achievementService = {
     const achievements = readStoredEventAchievements()
     const existing = achievements.find((achievement) => achievement.id === input.eventAchievementId)
     if (!existing) {
-      throw new Error('Достижение события не найдено.')
+      throw new Error('Р”РѕСЃС‚РёР¶РµРЅРёРµ СЃРѕР±С‹С‚РёСЏ РЅРµ РЅР°Р№РґРµРЅРѕ.')
     }
 
     const nextAchievement = normalizeEventAchievement({
@@ -403,3 +408,4 @@ export const achievementService = {
     return nextAchievement
   },
 }
+

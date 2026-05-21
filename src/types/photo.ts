@@ -8,6 +8,7 @@ export type GalleryPhoto = {
   storageFileId?: string
   imageUrl?: string
   caption?: string
+  // likesCount/likedBy are legacy fallback fields. MVP uses photo comments instead of likes.
   likesCount?: number
   likedBy?: string[]
   // saved is UI-derived. Persistent personal gallery state lives in savedPhotoService.

@@ -3,6 +3,7 @@
 // saved is UI-derived. Persistent personal gallery state lives in savedPhotoService.
 
 import { eventService } from './eventService'
+import { photoCommentService } from './photoCommentService'
 import { savedPhotoService } from './savedPhotoService'
 import type { EventPhotoLink } from '../types/eventPhoto'
 import type { GalleryPhoto } from '../types/photo'
@@ -194,6 +195,7 @@ export const photoService = {
     await this.deletePhotoIfUnreferenced(photoId)
   },
 
+  // Legacy fallback: MVP now uses photo comments instead of building a like-based mechanic.
   async togglePhotoLike(photoId: string, userId: string): Promise<GalleryPhoto> {
     return updateStoredPhoto(photoId, (photo) => {
       const likedBy = new Set(uniqueStrings(photo.likedBy))
@@ -310,6 +312,7 @@ export const photoService = {
       return
     }
 
+    await photoCommentService.deleteCommentsForPhoto(photoId)
     const nextPhotos = readStoredPhotos().filter((photo) => photo.id !== photoId)
     persistPhotos(nextPhotos)
   },

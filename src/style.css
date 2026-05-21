@@ -1756,6 +1756,99 @@ a {
   justify-content: flex-end;
 }
 
+.viewer-comments {
+  display: grid;
+  grid-column: 2;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid rgba(22, 22, 22, 0.08);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.54);
+}
+
+.viewer-comments-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.viewer-comments-head strong {
+  font-size: 15px;
+}
+
+.viewer-comments-head span,
+.viewer-comments-empty,
+.viewer-comments-note span,
+.viewer-comments-error {
+  color: rgba(22, 22, 22, 0.62);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.viewer-comments-list {
+  display: grid;
+  gap: 10px;
+  max-height: 220px;
+  padding-right: 4px;
+  overflow: auto;
+}
+
+.viewer-comment-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.viewer-comment-avatar {
+  width: 38px;
+  height: 38px;
+  font-size: 12px;
+}
+
+.viewer-comment-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.viewer-comment-copy strong {
+  font-size: 13px;
+}
+
+.viewer-comment-copy p {
+  margin: 0;
+  color: rgba(22, 22, 22, 0.76);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.viewer-comment-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.viewer-comment-form input {
+  min-height: 40px;
+  border: 1px solid rgba(22, 22, 22, 0.12);
+  border-radius: 999px;
+  padding: 0 14px;
+  background: rgba(255, 255, 255, 0.78);
+  color: #161616;
+}
+
+.viewer-comment-form input::placeholder {
+  color: rgba(22, 22, 22, 0.42);
+}
+
+.viewer-comments-note {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
 @media (max-width: 1080px) {
   .home-hero,
   .home-grid,
@@ -1773,6 +1866,10 @@ a {
   }
 
   .viewer-actions {
+    grid-column: auto;
+  }
+
+  .viewer-comments {
     grid-column: auto;
   }
 }
@@ -1934,6 +2031,13 @@ a {
 
   .viewer-actions button {
     width: 100%;
+  }
+
+  .viewer-comment-form,
+  .viewer-comments-note {
+    grid-template-columns: 1fr;
+    flex-direction: column;
+    align-items: stretch;
   }
 }
 
