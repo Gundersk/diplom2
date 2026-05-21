@@ -5,6 +5,7 @@ import { hasAppwriteRuntimeConfig } from '../config/runtime'
 import { appwriteDatabases, appwriteId, appwriteQuery } from '../lib/appwrite'
 import { isAppwriteMode } from './adapters/dataMode'
 import { authService } from './authService'
+import { storageService } from './storageService'
 import type { EventInfoBlock, EventPaymentInfo, EventRole, GalleryEvent } from '../types/event'
 
 const HOME_EVENTS_STORAGE_KEY = 'event-gallery.home-events'
@@ -22,7 +23,14 @@ type EventDocument = Models.Document & {
   organizerId: string
   inviteCode: string
   coverUrl?: string
+  coverFileId?: string
+  backgroundFileId?: string
+  backgroundMode?: string
+  backgroundColor?: string
   themeColor?: string
+  accent?: string
+  titleStyle?: string
+  rsvpStyle?: string
   guestsCanInvite?: boolean
   maxParticipants?: number | null
   isPaid?: boolean
@@ -219,10 +227,19 @@ async function ensureInviteCode(event: GalleryEvent) {
 function toAppwriteEventPayload(event: GalleryEvent) {
   const normalizedEvent = normalizeGalleryEvent(event)
   const payment = normalizedEvent.payment ?? null
-  const coverUrl = normalizedEvent.coverStart.startsWith('#') ? '' : normalizedEvent.coverStart
+  const coverUrl =
+    normalizedEvent.coverFileId || normalizedEvent.coverStart.startsWith('#')
+      ? ''
+      : normalizedEvent.coverStart
+  const backgroundMode =
+    normalizedEvent.backgroundMode ?? (normalizedEvent.backgroundStart.startsWith('#') ? 'color' : 'asset')
+  const backgroundColor =
+    backgroundMode === 'color'
+      ? normalizedEvent.backgroundColor ?? normalizedEvent.backgroundStart
+      : normalizedEvent.backgroundColor ?? ''
   const themeColor =
-    normalizedEvent.backgroundStart.startsWith('#') && normalizedEvent.backgroundEnd.startsWith('#')
-      ? normalizedEvent.backgroundStart
+    backgroundMode === 'color'
+      ? backgroundColor || normalizedEvent.accent
       : normalizedEvent.accent
 
   // organizerName is intentionally not stored in the events collection.
@@ -237,7 +254,14 @@ function toAppwriteEventPayload(event: GalleryEvent) {
     organizerId: normalizedEvent.organizerId ?? '',
     inviteCode: formatInviteCode(normalizedEvent.inviteCode) || normalizedEvent.id,
     coverUrl,
+    coverFileId: normalizedEvent.coverFileId ?? '',
+    backgroundFileId: normalizedEvent.backgroundFileId ?? '',
+    backgroundMode,
+    backgroundColor,
     themeColor,
+    accent: normalizedEvent.accent ?? '',
+    titleStyle: normalizedEvent.titleStyle ?? 'classic',
+    rsvpStyle: normalizedEvent.rsvpStyle ?? 'icons',
     guestsCanInvite: Boolean(normalizedEvent.allowGuestInvites),
     maxParticipants: normalizedEvent.participantLimit ?? null,
     isPaid: Boolean(payment?.amount || payment?.destination || payment?.comment),
@@ -255,6 +279,12 @@ function fromAppwriteEventDocument(
   currentUserId?: string,
 ) {
   const cachedEvent = getCachedEventUiState(document.$id)
+  const coverPreviewUrl = document.coverFileId
+    ? storageService.getFilePreviewUrl(document.coverFileId, 'cover')
+    : ''
+  const backgroundPreviewUrl = document.backgroundFileId
+    ? storageService.getFilePreviewUrl(document.backgroundFileId, 'background')
+    : ''
   const organizerFallbackName =
     cachedEvent?.organizerName ||
     (document.organizerId === currentUserId ? 'Вы' : '') ||
@@ -269,11 +299,24 @@ function fromAppwriteEventDocument(
       .map((part) => part[0]?.toUpperCase() ?? '')
       .join('') ||
     'OR'
-  const accent = cachedEvent?.accent ?? document.themeColor ?? '#ff7a59'
-  const coverStart = cachedEvent?.coverStart ?? document.coverUrl ?? accent
-  const coverEnd = cachedEvent?.coverEnd ?? document.coverUrl ?? accent
-  const backgroundStart = cachedEvent?.backgroundStart ?? document.themeColor ?? coverStart
-  const backgroundEnd = cachedEvent?.backgroundEnd ?? '#ffffff'
+  const backgroundMode =
+    document.backgroundMode === 'color' || document.backgroundMode === 'asset'
+      ? document.backgroundMode
+      : cachedEvent?.backgroundMode ?? 'asset'
+  const backgroundColor =
+    document.backgroundColor ||
+    (backgroundMode === 'color' ? document.themeColor || cachedEvent?.backgroundColor : cachedEvent?.backgroundColor)
+  const accent = document.accent ?? cachedEvent?.accent ?? document.themeColor ?? '#ff7a59'
+  const coverStart = coverPreviewUrl || cachedEvent?.coverStart || document.coverUrl || accent
+  const coverEnd = coverPreviewUrl || cachedEvent?.coverEnd || document.coverUrl || accent
+  const backgroundStart =
+    backgroundMode === 'color'
+      ? backgroundColor || cachedEvent?.backgroundStart || document.themeColor || '#f3f0ff'
+      : backgroundPreviewUrl || cachedEvent?.backgroundStart || coverStart
+  const backgroundEnd =
+    backgroundMode === 'color'
+      ? cachedEvent?.backgroundEnd || '#fffaf6'
+      : backgroundPreviewUrl || cachedEvent?.backgroundEnd || '#ffffff'
 
   const baseEvent: GalleryEvent = {
     id: document.$id,
@@ -322,10 +365,14 @@ function fromAppwriteEventDocument(
     location: document.location ?? '',
     savedCount: 0,
     totalCount: 0,
+    coverFileId: document.coverFileId || undefined,
+    backgroundFileId: document.backgroundFileId || undefined,
     coverStart,
     coverEnd,
     backgroundStart,
     backgroundEnd,
+    backgroundMode,
+    backgroundColor: backgroundMode === 'color' ? backgroundColor || undefined : undefined,
     accent,
     allowGuestInvites: Boolean(document.guestsCanInvite),
     participantLimit: document.maxParticipants ?? null,
@@ -338,8 +385,8 @@ function fromAppwriteEventDocument(
         }
       : cachedEvent?.payment ?? null,
     timezoneLabel: document.timezone ?? cachedEvent?.timezoneLabel ?? 'Екатеринбург (UTC+5)',
-    titleStyle: cachedEvent?.titleStyle ?? 'classic',
-    rsvpStyle: cachedEvent?.rsvpStyle ?? 'icons',
+    titleStyle: document.titleStyle ?? cachedEvent?.titleStyle ?? 'classic',
+    rsvpStyle: document.rsvpStyle ?? cachedEvent?.rsvpStyle ?? 'icons',
     achievements: [],
     photos: [],
     chatMessages: [],

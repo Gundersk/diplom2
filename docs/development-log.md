@@ -9,6 +9,62 @@
 3. Добавлять команды для ручного повторения и проверки.
 4. После завершения большого шага делать `git commit` и `git push`.
 
+## 2026-05-21. Шаг: первый Appwrite Storage flow для визуала события
+
+### Цель
+
+Подготовить минимальный общий Storage flow только для обложки и фона события, чтобы custom visual больше не жил как локальный `blob:` URL в одном браузере.
+
+### Что сделано
+
+1. В setup-скрипт Appwrite добавлена проверка/создание bucket `event_gallery_photos`.
+2. В коллекцию `events` добавлены поля для shared visual state:
+   - `coverFileId`
+   - `backgroundFileId`
+   - `backgroundMode`
+   - `backgroundColor`
+   - `accent`
+   - `titleStyle`
+   - `rsvpStyle`
+3. Создан `src/services/storageService.ts`.
+4. Добавлен минимальный upload flow:
+   - custom cover upload -> Appwrite Storage -> `coverFileId`
+   - custom background upload -> Appwrite Storage -> `backgroundFileId`
+5. `eventService` теперь:
+   - сохраняет новые visual fields в Appwrite;
+   - восстанавливает shared cover/background через Storage URL;
+   - оставляет `coverUrl` / `themeColor` как fallback для старых документов.
+6. В `App.vue` добавлена связка формы создания/редактирования события с Storage upload без переделки интерфейса.
+
+### Что важно по архитектуре
+
+- на этом шаге в Storage уехали только cover/background события;
+- фотоальбом, saved photos, comments и avatars пока не переводились;
+- автоматического cleanup старых visual files пока нет;
+- это сделано специально, пока нет надежной проверки usage.
+
+### Как проверить вручную
+
+1. Заполнить `.env.setup` и, при необходимости, добавить `APPWRITE_BUCKET_ID=event_gallery_photos`.
+2. Выполнить:
+
+```bash
+npm run setup:appwrite
+```
+
+3. Убедиться в Appwrite Console, что:
+   - bucket `event_gallery_photos` существует;
+   - в коллекции `events` появились новые атрибуты visual state.
+4. Запустить приложение в `VITE_DATA_MODE=appwrite`.
+5. Создать событие с custom cover/background.
+6. Открыть invite link в другом браузере и проверить, что visual теперь читается из shared backend-состояния, а не только из local cache.
+
+### Проверка
+
+```bash
+npm run build
+```
+
 ## 2026-05-17. Шаг 1: старт frontend-прототипа главного окна
 
 ### Цель

@@ -4,10 +4,12 @@ import process from 'node:process'
 import {
   AppwriteException,
   Client,
+  Compression,
   Databases,
   DatabasesIndexType,
   Permission,
   Role,
+  Storage,
   type Models,
   type OrderBy,
 } from 'node-appwrite'
@@ -52,6 +54,20 @@ type ExistingAttribute = {
   status?: string
   error?: string
   size?: number
+}
+
+type BucketSchema = {
+  id: string
+  name: string
+  permissions: string[]
+  fileSecurity: boolean
+  enabled: boolean
+  maximumFileSize: number
+  allowedFileExtensions: string[]
+  compression: Compression
+  encryption: boolean
+  antivirus: boolean
+  transformations: boolean
 }
 
 const ENV_FILE = path.resolve(process.cwd(), '.env.setup')
@@ -176,6 +192,18 @@ async function getAttributeOrNull(
 async function getIndexOrNull(databases: Databases, databaseId: string, collectionId: string, key: string) {
   try {
     return await databases.getIndex({ databaseId, collectionId, key })
+  } catch (error) {
+    if (isNotFoundError(error)) {
+      return null
+    }
+
+    throw error
+  }
+}
+
+async function getBucketOrNull(storage: Storage, bucketId: string) {
+  try {
+    return await storage.getBucket({ bucketId })
   } catch (error) {
     if (isNotFoundError(error)) {
       return null
@@ -430,6 +458,55 @@ async function ensureIndex(
   await waitForIndexReady(databases, databaseId, collectionId, index.key)
 }
 
+async function ensureBucket(storage: Storage, schema: BucketSchema) {
+  const existing = await getBucketOrNull(storage, schema.id)
+  if (existing) {
+    logStep(`Bucket ${schema.id} already exists, skipping creation.`)
+    return existing
+  }
+
+  try {
+    logStep(`Creating bucket ${schema.id}...`)
+    return await storage.createBucket({
+      bucketId: schema.id,
+      name: schema.name,
+      permissions: schema.permissions,
+      fileSecurity: schema.fileSecurity,
+      enabled: schema.enabled,
+      maximumFileSize: schema.maximumFileSize,
+      allowedFileExtensions: schema.allowedFileExtensions,
+      compression: schema.compression,
+      encryption: schema.encryption,
+      antivirus: schema.antivirus,
+      transformations: schema.transformations,
+    })
+  } catch (error) {
+    if (isConflictError(error)) {
+      logStep(`Bucket ${schema.id} already exists, skipping creation.`)
+      return await storage.getBucket({ bucketId: schema.id })
+    }
+
+    throw error
+  }
+}
+
+const bucketSchema: BucketSchema = {
+  id: process.env.APPWRITE_BUCKET_ID?.trim() || 'event_gallery_photos',
+  name: 'Event Gallery Photos',
+  permissions: [
+    Permission.read(Role.users()),
+    Permission.create(Role.users()),
+  ],
+  fileSecurity: true,
+  enabled: true,
+  maximumFileSize: 20 * 1024 * 1024,
+  allowedFileExtensions: ['jpg', 'jpeg', 'png', 'webp', 'gif'],
+  compression: Compression.None,
+  encryption: true,
+  antivirus: true,
+  transformations: true,
+}
+
 const collectionSchemas: CollectionSchema[] = [
   {
     id: 'profiles',
@@ -470,7 +547,14 @@ const collectionSchemas: CollectionSchema[] = [
       { kind: 'string', key: 'organizerId', size: 64, required: true },
       { kind: 'string', key: 'inviteCode', size: 32, required: true },
       { kind: 'string', key: 'coverUrl', size: 4096, required: false },
+      { kind: 'string', key: 'coverFileId', size: 64, required: false },
+      { kind: 'string', key: 'backgroundFileId', size: 64, required: false },
+      { kind: 'string', key: 'backgroundMode', size: 32, required: false },
+      { kind: 'string', key: 'backgroundColor', size: 64, required: false },
       { kind: 'string', key: 'themeColor', size: 64, required: false },
+      { kind: 'string', key: 'accent', size: 64, required: false },
+      { kind: 'string', key: 'titleStyle', size: 64, required: false },
+      { kind: 'string', key: 'rsvpStyle', size: 64, required: false },
       { kind: 'boolean', key: 'guestsCanInvite', required: false },
       { kind: 'integer', key: 'maxParticipants', required: false },
       { kind: 'boolean', key: 'isPaid', required: false },
@@ -544,9 +628,14 @@ async function main() {
   const projectId = requireEnv('APPWRITE_PROJECT_ID', env)
   const databaseId = requireEnv('APPWRITE_DATABASE_ID', env)
   const apiKey = requireEnv('APPWRITE_API_KEY', env)
+  const bucketId = env.APPWRITE_BUCKET_ID?.trim() || process.env.APPWRITE_BUCKET_ID?.trim()
+  if (bucketId) {
+    bucketSchema.id = bucketId
+  }
 
   const client = new Client().setEndpoint(endpoint).setProject(projectId).setKey(apiKey)
   const databases = new Databases(client)
+  const storage = new Storage(client)
 
   try {
     await databases.get({ databaseId })
@@ -555,6 +644,8 @@ async function main() {
       `Cannot access database ${databaseId}. Check APPWRITE_ENDPOINT / APPWRITE_PROJECT_ID / APPWRITE_API_KEY. Original error: ${getErrorMessage(error)}`,
     )
   }
+
+  await ensureBucket(storage, bucketSchema)
 
   for (const collectionSchema of collectionSchemas) {
     await ensureCollection(databases, databaseId, collectionSchema)

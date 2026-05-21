@@ -13,6 +13,7 @@
 
 - Enable backend mode with `VITE_DATA_MODE=appwrite`.
 - The first required Appwrite collections are `events` and `participants`.
+- The first shared Storage flow is now prepared for event cover/background visuals.
 - `authService` now uses Appwrite Auth anonymous sessions for guest login in appwrite mode.
 - The first real Appwrite adapters already exist for `authService`, `eventService`, and `participantService`.
 - `profiles` is strongly recommended as the next collection for storing displayName, avatarUrl, and mode. If it is missing, auth still works and falls back to lightweight local cache for profile extras.
@@ -25,6 +26,7 @@
    - `APPWRITE_ENDPOINT`
    - `APPWRITE_PROJECT_ID`
    - `APPWRITE_DATABASE_ID`
+   - `APPWRITE_BUCKET_ID`
    - `APPWRITE_API_KEY`
 3. Run:
 
@@ -41,8 +43,23 @@ Notes:
   - `profiles`
   - `events`
   - `participants`
+- The script also creates/checks the `event_gallery_photos` bucket for shared event cover/background uploads.
 - The current frontend still uses Appwrite only for `authService`, `eventService`, and `participantService` in `VITE_DATA_MODE=appwrite`.
 - `node-appwrite` is kept on the current `1.9.x`-compatible line. The SDK can still warn when its generated patch target (for example `1.9.5`) is newer than the local server patch (for example `1.9.0`). Per Appwrite's release policy and the Node SDK README, `1.9.x` remains backward compatible within the major line; upgrading the local Appwrite server to a newer `1.9.x` patch is still recommended when convenient.
+
+## Shared Event Visuals
+
+- In `VITE_DATA_MODE=appwrite`, custom event cover/background uploads now go through Appwrite Storage.
+- The minimal MVP flow only covers event visuals:
+  - `coverFileId`
+  - `backgroundFileId`
+  - `backgroundMode`
+  - `backgroundColor`
+  - `accent`
+  - `titleStyle`
+  - `rsvpStyle`
+- This step does **not** migrate the photo album, saved photos, comments, or avatars to Storage yet.
+- Old `coverUrl` / `themeColor` fallbacks are preserved for older documents and partial migration states.
 
 ## Multi-user Test
 

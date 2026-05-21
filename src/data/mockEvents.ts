@@ -501,8 +501,15 @@ export function normalizeGalleryEvent(event: GalleryEvent): GalleryEvent {
     savedCount: photos.filter((photo) => photo.saved).length,
     totalCount: photos.length,
     coverEnd: event.coverEnd ?? event.coverStart,
+    coverFileId: event.coverFileId,
+    backgroundFileId: event.backgroundFileId,
     backgroundStart: event.backgroundStart ?? event.coverStart,
     backgroundEnd: event.backgroundEnd ?? event.coverEnd ?? event.coverStart,
+    backgroundMode:
+      event.backgroundMode ?? (event.backgroundStart?.startsWith('#') ? 'color' : 'asset'),
+    backgroundColor:
+      event.backgroundColor ??
+      (event.backgroundStart?.startsWith('#') ? event.backgroundStart : undefined),
     allowGuestInvites: event.allowGuestInvites ?? false,
     participantLimit: event.participantLimit ?? null,
     infoBlocks: event.infoBlocks ?? [],

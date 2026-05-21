@@ -17,9 +17,9 @@ export const APPWRITE_COLLECTIONS = {
 } as const
 
 export const APPWRITE_BUCKETS = {
+  eventVisuals: runtimeConfig.appwriteBucketId || 'event_gallery_photos',
   eventPhotos: runtimeConfig.appwriteBucketId || 'event_gallery_photos',
 } as const
 
 export type AppwriteCollectionKey = keyof typeof APPWRITE_COLLECTIONS
 export type AppwriteBucketKey = keyof typeof APPWRITE_BUCKETS
-

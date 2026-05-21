@@ -11,6 +11,7 @@ import { photoCommentService } from './services/photoCommentService'
 import { photoService } from './services/photoService'
 import { rsvpService } from './services/rsvpService'
 import { savedPhotoService } from './services/savedPhotoService'
+import { storageService } from './services/storageService'
 import { isAppwriteMode } from './services/adapters/dataMode'
 import type {
   AchievementScope,
@@ -681,7 +682,11 @@ function syncEventSavedCount(event: GalleryEvent) {
 }
 
 function isAssetSource(value: string) {
-  return /\.(png|jpe?g|jfif|webp|avif|gif|mp4|webm)$/i.test(value)
+  return (
+    /^(blob:|data:|https?:\/\/)/i.test(value) ||
+    value.includes('/storage/buckets/') ||
+    /\.(png|jpe?g|jfif|webp|avif|gif|mp4|webm)(\?.*)?$/i.test(value)
+  )
 }
 
 function getCoverBackground(event: GalleryEvent) {
@@ -790,6 +795,8 @@ const rsvpStatusLabels: Record<RsvpStatus, string> = {
 const coverPickerOpen = ref(false)
 const coverPickerTab = ref<'posters' | 'gifs'>('posters')
 const coverSearchQuery = ref('')
+const uploadedCoverFile = ref<File | null>(null)
+const uploadedBackgroundFile = ref<File | null>(null)
 const emojiPickerOpen = ref(false)
 const backgroundColorHue = ref(28)
 const createAchievementPopover = ref<string | null>(null)
@@ -1326,6 +1333,15 @@ function readFileAsDataUrl(file: File) {
   })
 }
 
+function isBlobUrl(value: string | null | undefined) {
+  return Boolean(value?.startsWith('blob:'))
+}
+
+function clearPendingEventVisualFiles() {
+  uploadedCoverFile.value = null
+  uploadedBackgroundFile.value = null
+}
+
 async function handleProfileAvatarUpload(nativeEvent: Event) {
   const input = nativeEvent.target as HTMLInputElement
   const file = input.files?.[0]
@@ -1393,6 +1409,7 @@ async function saveProfileEditor() {
 
 function openCreateEvent() {
   createEventForm.value = createEmptyEventForm()
+  clearPendingEventVisualFiles()
   medalForm.value = createEmptyMedalForm()
   applyBackgroundColor(createEventForm.value.backgroundColor)
   enforceCreateDateTimeRules()
@@ -1415,6 +1432,7 @@ function openCreateEvent() {
 function closeCreateEvent() {
   currentView.value = 'home'
   createEventOpen.value = false
+  clearPendingEventVisualFiles()
   medalBuilderOpen.value = false
   activeEventId.value = null
   previewDraftEvent.value = null
@@ -2190,6 +2208,7 @@ function getEventPhotoById(event: GalleryEvent, photoId?: string) {
 }
 
 function populateFormFromEvent(event: GalleryEvent) {
+  clearPendingEventVisualFiles()
   const start = toDateParts(event.startsAt)
   const end = toDateParts(event.endsAt)
   const coverMatch = findAssetIdBySrc(coverAssetOptions, event.coverStart)
@@ -2271,6 +2290,7 @@ function scrollToCreateSection(sectionId: string) {
 function handleCoverUpload(event: Event) {
   const file = (event.target as HTMLInputElement).files?.[0]
   if (file) {
+    uploadedCoverFile.value = file
     createEventForm.value.uploadedCoverUrl = window.URL.createObjectURL(file)
     coverPickerOpen.value = false
   }
@@ -2279,6 +2299,7 @@ function handleCoverUpload(event: Event) {
 function handleBackgroundUpload(event: Event) {
   const file = (event.target as HTMLInputElement).files?.[0]
   if (file) {
+    uploadedBackgroundFile.value = file
     createEventForm.value.backgroundMode = 'asset'
     createEventForm.value.uploadedBackgroundUrl = window.URL.createObjectURL(file)
   }
@@ -2342,6 +2363,7 @@ function createEventFromForm() {
     totalCount: 0,
     coverStart: coverAsset?.src ?? '#ff7a59',
     coverEnd: coverAsset?.src ?? '#ffd166',
+    coverFileId: undefined,
     backgroundStart:
       createEventForm.value.backgroundMode === 'color'
         ? createEventForm.value.backgroundColor
@@ -2350,7 +2372,13 @@ function createEventFromForm() {
       createEventForm.value.backgroundMode === 'color'
         ? '#fffaf6'
         : backgroundAsset?.src ?? '#ffffff',
-    accent: '#ff7a59',
+    backgroundFileId: undefined,
+    backgroundMode: createEventForm.value.backgroundMode,
+    backgroundColor: createEventForm.value.backgroundColor,
+    accent:
+      createEventForm.value.backgroundMode === 'color'
+        ? createEventForm.value.backgroundColor
+        : '#ff7a59',
     allowGuestInvites: createEventForm.value.allowGuestInvites,
     participantLimit: Number(createEventForm.value.participantLimit) || null,
     infoBlocks: trimmedBlocks,
@@ -2370,6 +2398,50 @@ function createEventFromForm() {
   return newEvent
 }
 
+async function persistEventVisualUploads(event: GalleryEvent, existingEvent?: GalleryEvent) {
+  if (!isAppwriteMode()) {
+    return event
+  }
+
+  const nextEvent: GalleryEvent = {
+    ...event,
+    coverFileId: existingEvent?.coverFileId,
+    backgroundFileId: existingEvent?.backgroundFileId,
+  }
+
+  if (uploadedCoverFile.value && isBlobUrl(createEventForm.value.uploadedCoverUrl)) {
+    const uploadedCover = await storageService.uploadEventVisual(uploadedCoverFile.value, 'cover')
+    nextEvent.coverFileId = uploadedCover.fileId
+    nextEvent.coverStart = uploadedCover.previewUrl
+    nextEvent.coverEnd = uploadedCover.previewUrl
+  } else if (!createEventForm.value.uploadedCoverUrl) {
+    nextEvent.coverFileId = undefined
+  }
+
+  if (createEventForm.value.backgroundMode === 'color') {
+    nextEvent.backgroundFileId = undefined
+    nextEvent.backgroundMode = 'color'
+    nextEvent.backgroundColor = createEventForm.value.backgroundColor
+    nextEvent.backgroundStart = createEventForm.value.backgroundColor
+    nextEvent.backgroundEnd = '#fffaf6'
+    return nextEvent
+  }
+
+  nextEvent.backgroundMode = 'asset'
+  nextEvent.backgroundColor = createEventForm.value.backgroundColor
+
+  if (uploadedBackgroundFile.value && isBlobUrl(createEventForm.value.uploadedBackgroundUrl)) {
+    const uploadedBackground = await storageService.uploadEventVisual(uploadedBackgroundFile.value, 'background')
+    nextEvent.backgroundFileId = uploadedBackground.fileId
+    nextEvent.backgroundStart = uploadedBackground.previewUrl
+    nextEvent.backgroundEnd = uploadedBackground.previewUrl
+  } else if (!createEventForm.value.uploadedBackgroundUrl) {
+    nextEvent.backgroundFileId = undefined
+  }
+
+  return nextEvent
+}
+
 async function saveEvent() {
   enforceCreateDateTimeRules()
   if (!canSaveEvent.value) return
@@ -2378,7 +2450,7 @@ async function saveEvent() {
     const existing = getEventById(editingEventId.value)
     if (!existing) return
 
-    const updated = createEventFromForm()
+    let updated = createEventFromForm()
     updated.id = existing.id
     updated.photos = existing.photos
     updated.chatMessages = existing.chatMessages
@@ -2386,6 +2458,7 @@ async function saveEvent() {
     updated.savedCount = existing.savedCount
     updated.role = existing.role
     updated.status = buildEventStatus(updated.startsAt, updated.endsAt)
+    updated = await persistEventVisualUploads(updated, existing)
     syncEventSavedCount(updated)
 
     await eventService.updateEvent(updated)
@@ -2395,6 +2468,7 @@ async function saveEvent() {
     activeTab.value = updated.status
     editingEventId.value = null
     createEventOpen.value = false
+    clearPendingEventVisualFiles()
     medalBuilderOpen.value = false
     coverPickerOpen.value = false
     previewDraftEvent.value = null
@@ -2411,7 +2485,8 @@ async function saveEvent() {
     return
   }
 
-  const nextEvent = createEventFromForm()
+  let nextEvent = createEventFromForm()
+  nextEvent = await persistEventVisualUploads(nextEvent)
   await eventService.createEvent(nextEvent)
   await persistEventAchievementsSelection(nextEvent.id)
   await loadHomeEvents()
@@ -2420,6 +2495,7 @@ async function saveEvent() {
   activeTab.value = nextEvent.status
   activeAchievement.value = null
   createEventOpen.value = false
+  clearPendingEventVisualFiles()
   medalBuilderOpen.value = false
   coverPickerOpen.value = false
   previewDraftEvent.value = null

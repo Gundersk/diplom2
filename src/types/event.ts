@@ -71,8 +71,12 @@ export type GalleryEvent = {
   totalCount: number
   coverStart: string
   coverEnd: string
+  coverFileId?: string
+  backgroundFileId?: string
   backgroundStart: string
   backgroundEnd: string
+  backgroundMode?: 'asset' | 'color'
+  backgroundColor?: string
   accent: string
   allowGuestInvites?: boolean
   participantLimit?: null | number

@@ -28,6 +28,11 @@ Bucket:
 
 - `event_gallery_photos` (фото-оригиналы)
 
+Current first implemented use:
+
+- shared event cover/background uploads in appwrite mode
+- event album / saved photos / comments will move later in separate steps
+
 Правило:
 
 - **файл фото хранится физически один раз**;
@@ -73,23 +78,28 @@ Bucket:
 - `updatedAt: datetime` (optional)
 - `location: string` (optional)
 - `organizerId: string` (required, userId)
-- `organizerName: string` (required)
-- `organizerInitials: string` (required)
-- `organizerTone: string` (required)
-- `organizerAvatarSrc: string` (optional)
 - `inviteCode: string` (required, уникально/квази-уникально)
-- `coverStart: string` (required)
-- `coverEnd: string` (required)
-- `backgroundStart: string` (required)
-- `backgroundEnd: string` (required)
-- `accent: string` (required)
+- `coverUrl: string` (optional, legacy/fallback for bundled cover visuals)
+- `coverFileId: string` (optional, Appwrite Storage file id for custom cover)
+- `backgroundFileId: string` (optional, Appwrite Storage file id for custom background)
+- `backgroundMode: string` (optional, `asset` | `color`)
+- `backgroundColor: string` (optional)
+- `themeColor: string` (optional, fallback visual tone)
+- `accent: string` (optional)
 - `allowGuestInvites: boolean` (required)
 - `participantLimit: number` (optional)
-- `infoBlocksJson: string` (optional, JSON-массив блоков)
-- `paymentJson: string` (optional, JSON-объект оплаты)
-- `timezoneLabel: string` (optional)
+- `paymentDetails: string` (optional)
+- `paymentComment: string` (optional)
+- `costPerPerson: string` (optional)
+- `timezone: string` (optional)
 - `titleStyle: string` (optional)
 - `rsvpStyle: string` (optional)
+
+Важно:
+
+- `organizerName` не хранится в `events`;
+- имя организатора должно приходить из `profiles` / `participants`;
+- custom cover/background file живут в Storage, а в `events` хранится только fileId и нужные визуальные настройки.
 
 Индексы:
 
