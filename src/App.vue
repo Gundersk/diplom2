@@ -2476,9 +2476,13 @@ async function saveEvent() {
     syncEventSavedCount(updated)
 
     await eventService.updateEvent(updated)
+    await participantService.joinEventAsParticipant(updated.id, updated.organizerName, 'organizer')
     await persistEventAchievementsSelection(updated.id)
     await loadHomeEvents()
-    await participantService.joinEventAsParticipant(updated.id, updated.organizerName, 'organizer')
+    const refreshedEvent = await eventService.getEventById(updated.id)
+    if (refreshedEvent) {
+      upsertHomeEvent(refreshedEvent)
+    }
     activeTab.value = updated.status
     editingEventId.value = null
     createEventOpen.value = false
@@ -2486,7 +2490,7 @@ async function saveEvent() {
     medalBuilderOpen.value = false
     coverPickerOpen.value = false
     previewDraftEvent.value = null
-    openEventPage(updated.id)
+    openEventPage(updated.id, refreshedEvent ?? updated)
     notifications.value = [
       {
         id: createId('notice'),
@@ -2502,9 +2506,13 @@ async function saveEvent() {
   let nextEvent = createEventFromForm()
   nextEvent = await persistEventVisualUploads(nextEvent)
   await eventService.createEvent(nextEvent)
+  await participantService.joinEventAsParticipant(nextEvent.id, nextEvent.organizerName, 'organizer')
   await persistEventAchievementsSelection(nextEvent.id)
   await loadHomeEvents()
-  await participantService.joinEventAsParticipant(nextEvent.id, nextEvent.organizerName, 'organizer')
+  const refreshedEvent = await eventService.getEventById(nextEvent.id)
+  if (refreshedEvent) {
+    upsertHomeEvent(refreshedEvent)
+  }
   expandedEvents.value = new Set()
   activeTab.value = nextEvent.status
   activeAchievement.value = null
@@ -2513,7 +2521,7 @@ async function saveEvent() {
   medalBuilderOpen.value = false
   coverPickerOpen.value = false
   previewDraftEvent.value = null
-  openEventPage(nextEvent.id)
+  openEventPage(nextEvent.id, refreshedEvent ?? nextEvent)
   notifications.value = [
     {
       id: createId('notice'),

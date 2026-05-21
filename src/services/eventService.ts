@@ -5,6 +5,7 @@ import { hasAppwriteRuntimeConfig } from '../config/runtime'
 import { appwriteDatabases, appwriteId, appwriteQuery } from '../lib/appwrite'
 import { isAppwriteMode } from './adapters/dataMode'
 import { authService } from './authService'
+import { participantService } from './participantService'
 import { storageService } from './storageService'
 import type { EventInfoBlock, EventPaymentInfo, EventRole, GalleryEvent } from '../types/event'
 
@@ -174,6 +175,35 @@ function mergeEventWithCachedUiState(
   return nextEvent
 }
 
+function buildInitials(name: string) {
+  return (
+    name
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase() ?? '')
+      .join('') || 'OR'
+  )
+}
+
+async function resolveOrganizerDisplay(event: GalleryEvent) {
+  if (!event.organizerId) {
+    return event
+  }
+
+  const organizerParticipant = await participantService.getOrganizerParticipant(event.id, event.organizerId)
+  if (!organizerParticipant?.displayName) {
+    return event
+  }
+
+  const organizerName = organizerParticipant.displayName
+  return normalizeGalleryEvent({
+    ...event,
+    organizerName,
+    organizerInitials: buildInitials(organizerName),
+  })
+}
+
 function normalizeLocalEvents(events: GalleryEvent[]) {
   return events.map((event) => normalizeGalleryEvent(event))
 }
@@ -309,14 +339,16 @@ function fromAppwriteEventDocument(
   const accent = document.accent ?? cachedEvent?.accent ?? document.themeColor ?? '#ff7a59'
   const coverStart = coverPreviewUrl || cachedEvent?.coverStart || document.coverUrl || accent
   const coverEnd = coverPreviewUrl || cachedEvent?.coverEnd || document.coverUrl || accent
+  const assetBackgroundFallbackStart = cachedEvent?.backgroundStart || document.themeColor || accent || '#f3f0ff'
+  const assetBackgroundFallbackEnd = cachedEvent?.backgroundEnd || '#ffffff'
   const backgroundStart =
     backgroundMode === 'color'
       ? backgroundColor || cachedEvent?.backgroundStart || document.themeColor || '#f3f0ff'
-      : backgroundPreviewUrl || cachedEvent?.backgroundStart || coverStart
+      : backgroundPreviewUrl || assetBackgroundFallbackStart
   const backgroundEnd =
     backgroundMode === 'color'
       ? cachedEvent?.backgroundEnd || '#fffaf6'
-      : backgroundPreviewUrl || cachedEvent?.backgroundEnd || '#ffffff'
+      : backgroundPreviewUrl || assetBackgroundFallbackEnd
 
   const baseEvent: GalleryEvent = {
     id: document.$id,
@@ -480,15 +512,19 @@ async function getHomeEventsFromAppwrite() {
     linkedDocuments.set(document.$id, document)
   }
 
-  const events = [...linkedDocuments.values()]
-    .map((document) =>
-      fromAppwriteEventDocument(
-        document,
-        participantMap.rolesByEventId.get(document.$id),
-        participantMap.currentUserId,
+  const events = (
+    await Promise.all(
+      [...linkedDocuments.values()].map(async (document) =>
+        await resolveOrganizerDisplay(
+          fromAppwriteEventDocument(
+            document,
+            participantMap.rolesByEventId.get(document.$id),
+            participantMap.currentUserId,
+          ),
+        ),
       ),
     )
-    .sort(compareEventsByStartDate)
+  ).sort(compareEventsByStartDate)
 
   persistHomeEvents(events)
   return events
@@ -527,10 +563,12 @@ async function getAppwriteEventById(eventId: string) {
     eventId,
   )
 
-  const event = fromAppwriteEventDocument(
-    document,
-    participantMap.rolesByEventId.get(document.$id),
-    participantMap.currentUserId,
+  const event = await resolveOrganizerDisplay(
+    fromAppwriteEventDocument(
+      document,
+      participantMap.rolesByEventId.get(document.$id),
+      participantMap.currentUserId,
+    ),
   )
 
   updateCachedEvent(event)
@@ -564,10 +602,12 @@ async function getAppwriteEventByInviteCode(inviteCode: string) {
     return null
   }
 
-  const event = fromAppwriteEventDocument(
-    document,
-    participantMap.rolesByEventId.get(document.$id),
-    participantMap.currentUserId,
+  const event = await resolveOrganizerDisplay(
+    fromAppwriteEventDocument(
+      document,
+      participantMap.rolesByEventId.get(document.$id),
+      participantMap.currentUserId,
+    ),
   )
 
   updateCachedEvent(event)

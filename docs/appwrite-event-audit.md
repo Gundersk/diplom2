@@ -368,3 +368,20 @@ Today the shared truth of an Appwrite event is:
 - visual/editor state is partly local illusion
 
 That is why the organizer can see more than the invited guest.
+
+---
+
+## 2026-05-21 update
+
+The first shared-event repair pass is now implemented:
+
+- `coverFileId` and `backgroundFileId` are restored through separate branches;
+- background no longer falls back to `coverStart` when `backgroundFileId` is absent;
+- organizer display name is resolved through `participants`, not stored back into `events`;
+- create/edit flow now re-reads the updated event from Appwrite before reopening it in the UI.
+
+This means:
+
+- cover and background are no longer intentionally mixed in `fromAppwriteEventDocument(...)`;
+- `organizerName` remains derived display state, not persisted event state;
+- appwrite-mode editing is now closer to a real shared backend roundtrip.

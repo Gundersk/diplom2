@@ -119,6 +119,20 @@ export const participantService = {
     return response.documents.map((document) => normalizeParticipant(document))
   },
 
+  async getOrganizerParticipant(eventId: string, organizerId?: string): Promise<EventParticipant | null> {
+    if (!organizerId) {
+      return null
+    }
+
+    const directMatch = await this.getParticipant(eventId, organizerId)
+    if (directMatch) {
+      return directMatch
+    }
+
+    const participants = await this.getEventParticipants(eventId)
+    return participants.find((participant) => participant.role === 'organizer') ?? null
+  },
+
   async joinEventAsParticipant(
     eventId: string,
     displayName: string,
@@ -280,4 +294,3 @@ export const participantService = {
     await appwriteDatabases.deleteDocument(APPWRITE_DATABASE_ID, APPWRITE_COLLECTIONS.participants, participantId)
   },
 }
-

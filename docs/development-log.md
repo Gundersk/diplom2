@@ -72,6 +72,48 @@
 npm run build
 ```
 
+## 2026-05-21. Шаг: починка shared event visuals, organizer display и edit flow в appwrite mode
+
+### Цель
+
+Исправить три связанные проблемы после первого реального shared-event сценария:
+- у гостя background не должен подменяться cover-изображением;
+- имя организатора должно приходить из `participants`, а не отображаться как `userId`;
+- редактирование события в appwrite mode должно открывать текущую форму и после сохранения показывать обновлённое событие без ручной перезагрузки.
+
+### Что сделано
+
+1. В `eventService` исправлено восстановление visual state из Appwrite:
+   - `coverStart` и `backgroundStart` теперь поднимаются по разным цепочкам;
+   - `backgroundFileId` больше не падает в `coverStart` как fallback;
+   - если background-файл отсутствует, событие использует отдельный background fallback, а не обложку.
+2. В `participantService` добавлен helper получения организатора события:
+   - сначала ищется participant по паре `eventId + organizerId`;
+   - если прямой записи нет, используется fallback на participant с ролью `organizer`.
+3. В `eventService` добавлено async-обогащение события именем организатора:
+   - `organizerName` не возвращается в `events` schema;
+   - display name организатора подтягивается через `participants`;
+   - если organizer participant найден, UI получает его `displayName` и инициалы.
+4. В `App.vue` усилен create/edit flow:
+   - после `createEvent()` и `updateEvent()` organizer participant фиксируется до финального обновления экрана;
+   - затем событие перечитывается через `eventService.getEventById(...)`;
+   - refreshed event сразу попадает в `homeEvents` и открывается как актуальный `selectedEvent`.
+5. Это сохраняет текущий визуальный интерфейс, но делает shared event state стабильнее между браузерами.
+
+### Что важно по архитектуре
+
+- `organizerName` по-прежнему не хранится в `events`, чтобы не плодить денормализацию;
+- shared visual truth теперь разделяет:
+  - `coverFileId` -> poster/cover;
+  - `backgroundFileId` -> event background;
+- edit flow в appwrite mode теперь больше опирается на повторное чтение backend-данных, а не только на локальный optimistic-объект.
+
+### Проверка
+
+```bash
+npm run build
+```
+
 ## 2026-05-21. Шаг: первый Appwrite Storage flow для визуала события
 
 ### Цель
