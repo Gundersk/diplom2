@@ -1216,3 +1216,29 @@ npm run build
 ### Next step
 
 Either prepare the Appwrite collection schema for `photos`, `event_photos`, `saved_photos`, and `photo_comments`, or start the first real Appwrite adapter for the photo stack.
+
+---
+
+## 2026-05-21 - Appwrite schema plan
+
+### What changed
+
+1. Added a dedicated Appwrite schema plan doc with collections + Storage bucket, including indexes and access rules.
+2. Documented the "single physical photo file" rule:
+   - `photos` stores metadata + Storage file reference;
+   - `event_photos` stores event->photo links;
+   - `saved_photos` stores user->photo links (personal gallery);
+   - physical deletion is allowed only when both link tables have no references for `photoId`.
+3. Added TypeScript constants for future Appwrite adapters without wiring any service to Appwrite yet.
+
+### Files changed
+
+- `docs/appwrite-schema.md`
+- `src/config/appwriteSchema.ts`
+- `README.md`
+- `docs/development-log.md`
+
+### Notes
+
+- All services still run in `VITE_DATA_MODE=local` (mock + localStorage).
+- Appwrite integration will be done gradually per service, keeping local mode for demos/defense.
