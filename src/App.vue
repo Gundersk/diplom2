@@ -4,9 +4,11 @@ import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { buildEventStatus } from './data/mockEvents'
 import { authService } from './services/authService'
 import { achievementService } from './services/achievementService'
+import { chatService } from './services/chatService'
 import { eventService } from './services/eventService'
 import { participantService } from './services/participantService'
 import { photoService } from './services/photoService'
+import { rsvpService } from './services/rsvpService'
 import type {
   AchievementScope,
   AchievementTemplate,
@@ -16,11 +18,9 @@ import type {
 import type {
   AssetOption,
   CreateEventForm,
-  EventChatMessage,
   EventInfoBlock,
   EventInfoBlockType,
   EventPaymentInfo,
-  EventRsvpEntry,
   EventTab,
   EventTheme,
   GalleryEvent,
@@ -31,6 +31,8 @@ import type {
 } from './types/event'
 import type { EventParticipant } from './types/participant'
 import type { GalleryPhoto } from './types/photo'
+import type { EventChatMessage } from './types/chat'
+import type { EventRsvpEntry } from './types/rsvp'
 import type { CurrentUser } from './types/user'
 
 type AuthMode = 'guest' | 'profile'
@@ -662,11 +664,13 @@ const profileEditorError = ref('')
 void initializeCurrentUser()
 void loadAchievementTemplates()
 void syncAllEventPhotosFromService()
+void syncAllEventRsvpsFromService()
+void syncAllEventMessagesFromService()
 
 const rsvpStatusLabels: Record<RsvpStatus, string> = {
   going: 'Пойду',
   maybe: 'Возможно',
-  cant_go: 'Не смогу',
+  'not-going': 'Не смогу',
 }
 const coverPickerOpen = ref(false)
 const coverPickerTab = ref<'posters' | 'gifs'>('posters')
@@ -1299,6 +1303,10 @@ function closeGuestPreview() {
 
 function openEventPage(eventId: string) {
   activeEventId.value = eventId
+  void syncEventRsvpsFromService(eventId)
+  void syncEventMessagesFromService(eventId)
+  void syncEventPhotosFromService(eventId)
+  void syncEventAchievementsFromService(eventId)
   currentView.value = 'event'
   eventChatDraft.value = ''
   profileMenuOpen.value = false
@@ -1445,6 +1453,46 @@ async function syncAllEventPhotosFromService() {
   }
 }
 
+async function syncEventRsvpsFromService(eventId: string) {
+  const event = getEventById(eventId)
+  if (!event) return null
+
+  const guestRsvps = await rsvpService.getEventRsvps(eventId)
+  const nextEvent = {
+    ...event,
+    guestRsvps,
+  }
+  eventService.updateEvent(nextEvent)
+  homeEvents.value = eventService.getHomeEvents()
+  return nextEvent
+}
+
+async function syncAllEventRsvpsFromService() {
+  for (const event of homeEvents.value) {
+    await syncEventRsvpsFromService(event.id)
+  }
+}
+
+async function syncEventMessagesFromService(eventId: string) {
+  const event = getEventById(eventId)
+  if (!event) return null
+
+  const chatMessages = await chatService.getEventMessages(eventId)
+  const nextEvent = {
+    ...event,
+    chatMessages,
+  }
+  eventService.updateEvent(nextEvent)
+  homeEvents.value = eventService.getHomeEvents()
+  return nextEvent
+}
+
+async function syncAllEventMessagesFromService() {
+  for (const event of homeEvents.value) {
+    await syncEventMessagesFromService(event.id)
+  }
+}
+
 async function syncEventAchievementsFromService(eventId: string) {
   const event = getEventById(eventId)
   if (!event) return null
@@ -1571,21 +1619,18 @@ async function sendEventChatMessage() {
   const participant = currentParticipant.value ?? (await ensureCurrentParticipant(event))
   if (!participant) return
 
+  const nextMessage = await chatService.addEventMessage({
+    eventId: event.id,
+    userId: currentUser.id,
+    participantId: participant.id,
+    authorName: participant.displayName,
+    authorAvatarUrl: currentUser.avatarUrl,
+    text,
+  })
+
   updateEventInList(event.id, (current) => ({
     ...current,
-    chatMessages: [
-      ...current.chatMessages,
-      {
-        id: createId('chat'),
-        eventId: current.id,
-        userId: currentUser.id,
-        participantId: participant.id,
-        authorName: participant.displayName,
-        authorInitials: buildUserInitials(participant.displayName),
-        text,
-        createdAt: new Date().toISOString(),
-      },
-    ],
+    chatMessages: [...current.chatMessages, nextMessage],
   }))
   eventChatDraft.value = ''
 }
@@ -1738,7 +1783,7 @@ function getRsvpPreviewSymbols(styleId: string) {
 
 function getRsvpChoices(styleId: string): RsvpChoice[] {
   const symbols = getRsvpPreviewSymbols(styleId)
-  const ids: RsvpStatus[] = ['going', 'maybe', 'cant_go']
+  const ids: RsvpStatus[] = ['going', 'maybe', 'not-going']
   return ids.map((id, index) => ({
     id,
     label: rsvpStatusLabels[id],
@@ -1750,7 +1795,7 @@ function getRsvpStatusVerb(status: RsvpStatus) {
   const verbs: Record<RsvpStatus, string> = {
     going: 'пойдёт',
     maybe: 'возможно придёт',
-    cant_go: 'не сможет прийти',
+    'not-going': 'не сможет прийти',
   }
   return verbs[status]
 }
@@ -1758,7 +1803,7 @@ function getRsvpStatusVerb(status: RsvpStatus) {
 function getRsvpSummary(event: GalleryEvent) {
   const going = event.guestRsvps.filter((entry) => entry.status === 'going').length
   const maybe = event.guestRsvps.filter((entry) => entry.status === 'maybe').length
-  const cant = event.guestRsvps.filter((entry) => entry.status === 'cant_go').length
+  const cant = event.guestRsvps.filter((entry) => entry.status === 'not-going').length
   return { going, maybe, cant }
 }
 
@@ -1798,50 +1843,33 @@ async function submitRsvpResponse() {
     ? `${participant.displayName} отметил(а) «${statusLabel}»: ${message}`
     : `${participant.displayName} отметил(а) «${statusLabel}».`
 
-  updateEventInList(event.id, (current) => {
-    const existingRsvp = current.guestRsvps.find(
-      (entry) =>
-        (entry.eventId ? entry.eventId === current.id : true) &&
-        ((entry.participantId && entry.participantId === participant.id) ||
-          (!entry.participantId && entry.userId === currentUser.id) ||
-          (!entry.participantId &&
-            !entry.userId &&
-            getRsvpEntryDisplayName(entry) === participant.displayName)),
-    )
-
-    return {
-      ...current,
-      guestRsvps: [
-        ...current.guestRsvps.filter((entry) => entry.id !== existingRsvp?.id),
-        {
-          id: existingRsvp?.id ?? createId('rsvp'),
-          eventId: current.id,
-          userId: currentUser.id,
-          participantId: participant.id,
-          displayName: participant.displayName,
-          userName: participant.displayName,
-          userInitials: buildUserInitials(participant.displayName),
-          status,
-          message: message || undefined,
-          createdAt: existingRsvp?.createdAt ?? new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-      ],
-      chatMessages: [
-        ...current.chatMessages,
-        {
-          id: createId('chat'),
-          eventId: current.id,
-          userId: currentUser.id,
-          participantId: participant.id,
-          authorName: participant.displayName,
-          authorInitials: buildUserInitials(participant.displayName),
-          text: chatText,
-          createdAt: new Date().toISOString(),
-        },
-      ],
-    }
+  const nextRsvp = await rsvpService.setParticipantRsvp({
+    eventId: event.id,
+    userId: currentUser.id,
+    participantId: participant.id,
+    displayName: participant.displayName,
+    avatarUrl: currentUser.avatarUrl,
+    status,
+    message: message || undefined,
   })
+
+  const nextMessage = await chatService.addEventMessage({
+    eventId: event.id,
+    userId: currentUser.id,
+    participantId: participant.id,
+    authorName: participant.displayName,
+    authorAvatarUrl: currentUser.avatarUrl,
+    text: chatText,
+  })
+
+  updateEventInList(event.id, (current) => ({
+    ...current,
+    guestRsvps: [
+      ...current.guestRsvps.filter((entry) => entry.id !== nextRsvp.id),
+      nextRsvp,
+    ],
+    chatMessages: [...current.chatMessages, nextMessage],
+  }))
 
   await addCurrentParticipantPoints(1)
 
@@ -1875,25 +1903,28 @@ async function addEventPhoto(eventId: string, file: File, source: 'album' | 'cha
     imageUrl,
   })
 
+  const photoChatMessage =
+    source === 'chat'
+      ? await chatService.addEventMessage({
+          eventId,
+          userId: currentUser.id,
+          participantId: participant.id,
+          authorName: participant.displayName,
+          authorAvatarUrl: currentUser.avatarUrl,
+          text: 'добавил(а) фото',
+          photoId: photo.id,
+        })
+      : null
+
   updateEventInList(eventId, (current) => {
     const nextEvent = {
       ...current,
       photos: [...current.photos, photo],
       chatMessages:
-        source === 'chat'
+        photoChatMessage
           ? [
               ...current.chatMessages,
-              {
-                id: createId('chat'),
-                eventId: current.id,
-                userId: currentUser.id,
-                participantId: participant.id,
-                authorName: participant.displayName,
-                authorInitials: buildUserInitials(participant.displayName),
-                text: 'добавил(а) фото',
-                createdAt: new Date().toISOString(),
-                photoId: photo.id,
-              },
+              photoChatMessage,
             ]
           : current.chatMessages,
     }

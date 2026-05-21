@@ -1,5 +1,7 @@
 import type { EventAchievement } from './achievement'
+import type { EventChatMessage } from './chat'
 import type { GalleryPhoto } from './photo'
+import type { EventRsvpEntry, EventRsvpStatus } from './rsvp'
 
 export type EventTab = 'current' | 'upcoming' | 'past'
 export type EventRole = 'Участник' | 'Организатор'
@@ -16,33 +18,7 @@ export type EventTheme = {
   ink: string
 }
 
-export type EventChatMessage = {
-  id: string
-  eventId?: string
-  userId?: string
-  participantId?: string
-  authorName: string
-  authorInitials?: string
-  text: string
-  createdAt: string
-  photoId?: string
-}
-
-export type RsvpStatus = 'going' | 'maybe' | 'cant_go'
-
-export type EventRsvpEntry = {
-  id: string
-  eventId?: string
-  userId?: string
-  participantId?: string
-  displayName?: string
-  userName?: string
-  userInitials?: string
-  status: RsvpStatus
-  message?: string
-  createdAt: string
-  updatedAt?: string
-}
+export type RsvpStatus = EventRsvpStatus
 
 export type RsvpChoice = {
   id: RsvpStatus

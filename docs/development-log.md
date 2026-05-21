@@ -974,3 +974,55 @@ npm run build
 ### Next step
 
 Either extract RSVP/chat into dedicated services too, or start preparing Appwrite adapters for `achievementService` and `photoService` one layer at a time.
+## Step 17 - 2026-05-21
+
+### Goal
+
+Extract RSVP and event chat into dedicated services without changing the current UI behavior.
+
+### What was added
+
+1. Created `src/types/rsvp.ts`.
+2. Created `src/types/chat.ts`.
+3. Created `src/services/rsvpService.ts`.
+4. Created `src/services/chatService.ts`.
+5. Moved RSVP storage into a separate localStorage data layer:
+   - new RSVP entries are tied to `eventId`;
+   - `userId`;
+   - `participantId`.
+6. Moved event chat messages into a separate localStorage data layer:
+   - new messages are tied to `eventId`;
+   - `userId`;
+   - `participantId`;
+   - `authorName` and optional `authorAvatarUrl`.
+7. Preserved compatibility with old mock data:
+   - if RSVP or chat entries still live inside old mock events, the new services softly migrate them on first access;
+   - old entries without all new fields still render correctly.
+8. Updated `App.vue` minimally so the screen now reads and writes RSVP and chat through the new services instead of mutating only the mock event payload.
+
+### Files changed
+
+- `src/types/rsvp.ts`
+- `src/types/chat.ts`
+- `src/services/rsvpService.ts`
+- `src/services/chatService.ts`
+- `src/types/event.ts`
+- `src/data/mockEvents.ts`
+- `src/App.vue`
+- `docs/development-log.md`
+
+### Architecture notes
+
+- Appwrite is still not connected.
+- The UI keeps the same RSVP and chat behavior, but the data flow is now separated from the visual layer.
+- This makes RSVP and chat ready for a future Appwrite adapter one service at a time.
+
+### Verification
+
+```bash
+npm run build
+```
+
+### Next step
+
+Prepare Appwrite adapters for `authService`, `eventService`, `participantService`, `photoService`, `achievementService`, `rsvpService`, and `chatService` one layer at a time, or extract any remaining direct UI data mutations into their own services first.

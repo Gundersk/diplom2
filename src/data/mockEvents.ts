@@ -1,14 +1,13 @@
-import type {
-  EventChatMessage,
-  EventRole,
-  EventTab,
-  GalleryEvent,
-} from '../types/event'
+import type { EventRole, EventTab, GalleryEvent } from '../types/event'
+import type { EventChatMessage } from '../types/chat'
 import type {
   AchievementMode,
   EventAchievement,
 } from '../types/achievement'
 import type { GalleryPhoto } from '../types/photo'
+import type { EventRsvpEntry } from '../types/rsvp'
+import { normalizeChatMessage } from '../types/chat'
+import { normalizeRsvpEntry } from '../types/rsvp'
 
 type SeedAchievement = {
   id: string
@@ -452,7 +451,7 @@ function buildSeedChatMessages(seed: {
   photos: GalleryPhoto[]
   startsAt: string
 }): EventChatMessage[] {
-  return seed.photos.slice(0, 4).map((photo, index) => ({
+  return seed.photos.slice(0, 4).map((photo, index) => normalizeChatMessage({
     id: `seed-chat-${photo.id}`,
     authorName: index % 2 === 0 ? seed.organizerName : 'Гость',
     authorInitials: index % 2 === 0 ? seed.organizerName.slice(0, 1) : 'Г',
@@ -524,12 +523,12 @@ export function normalizeGalleryEvent(event: GalleryEvent): GalleryEvent {
       createdAt: achievement.createdAt ?? event.startsAt,
     })),
     photos,
-    chatMessages: event.chatMessages ?? buildSeedChatMessages({
+    chatMessages: (event.chatMessages ?? buildSeedChatMessages({
       organizerName: event.organizerName,
       photos,
       startsAt: event.startsAt,
-    }),
-    guestRsvps: event.guestRsvps ?? [],
+    })).map((message) => normalizeChatMessage(message)),
+    guestRsvps: (event.guestRsvps ?? []).map((entry) => normalizeRsvpEntry(entry as EventRsvpEntry)),
     titleStyle: event.titleStyle ?? 'classic',
     rsvpStyle: event.rsvpStyle ?? 'icons',
   }
