@@ -1404,3 +1404,39 @@ npm run build
 ### Next step
 
 Run `npm run setup:appwrite` after filling `.env.setup`, then verify the generated collections in Appwrite Console before moving the next data services to Appwrite.
+
+---
+
+## 2026-05-21 - Appwrite setup script fix for index order
+
+### What changed
+
+1. Fixed index creation in `scripts/setup-appwrite-schema.ts` to use `ASC` / `DESC` order values instead of lowercase variants.
+2. Added recovery logic for indexes stuck in `failed` or `stuck` status:
+   - the script now deletes that broken index;
+   - waits until it is removed;
+   - creates it again with corrected order values.
+3. Kept the script idempotent for already existing collections and attributes.
+4. Documented the Appwrite SDK/server patch-version warning in `README.md`.
+
+### Files changed
+
+- `scripts/setup-appwrite-schema.ts`
+- `README.md`
+- `docs/development-log.md`
+
+### Notes
+
+- `node-appwrite` remains on the current `1.9.x`-compatible line.
+- The warning about SDK `1.9.5` vs server `1.9.0` is treated as a patch-level mismatch, not as a blocker for the current setup.
+- Upgrading the local Appwrite server to a newer `1.9.x` patch is still recommended when convenient.
+
+### Verification
+
+```bash
+npm run build
+```
+
+### Next step
+
+Re-run `npm run setup:appwrite` locally and confirm that the recreated `profiles.userId` index becomes `available`.

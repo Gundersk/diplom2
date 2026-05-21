@@ -36,11 +36,13 @@ Notes:
 
 - `.env.setup` is local-only and ignored by git.
 - The setup script is idempotent: existing collections, attributes, and indexes are skipped.
+- If an index already exists in `failed` status, the setup script removes that failed index and recreates it.
 - The script currently creates the first backend collections used by the app:
   - `profiles`
   - `events`
   - `participants`
 - The current frontend still uses Appwrite only for `authService`, `eventService`, and `participantService` in `VITE_DATA_MODE=appwrite`.
+- `node-appwrite` is kept on the current `1.9.x`-compatible line. The SDK can still warn when its generated patch target (for example `1.9.5`) is newer than the local server patch (for example `1.9.0`). Per Appwrite's release policy and the Node SDK README, `1.9.x` remains backward compatible within the major line; upgrading the local Appwrite server to a newer `1.9.x` patch is still recommended when convenient.
 
 ## Multi-user Test
 

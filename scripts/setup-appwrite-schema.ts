@@ -6,10 +6,10 @@ import {
   Client,
   Databases,
   DatabasesIndexType,
-  OrderBy,
   Permission,
   Role,
   type Models,
+  type OrderBy,
 } from 'node-appwrite'
 
 type CollectionSchema = {
@@ -43,7 +43,7 @@ type IndexSchema = {
   key: string
   type: DatabasesIndexType
   attributes: string[]
-  orders?: OrderBy[]
+  orders?: Array<'ASC' | 'DESC'>
 }
 
 type ExistingAttribute = {
@@ -263,8 +263,28 @@ function attributeMatches(existing: ExistingAttribute, expected: AttributeSchema
 function indexMatches(existing: Models.Index, expected: IndexSchema) {
   const sameType = existing.type === expected.type
   const sameAttributes = JSON.stringify(existing.attributes ?? []) === JSON.stringify(expected.attributes)
-  const sameOrders = JSON.stringify(existing.orders ?? []) === JSON.stringify(expected.orders ?? [])
+  const sameOrders =
+    JSON.stringify((existing.orders ?? []).map((item) => String(item).toUpperCase())) ===
+    JSON.stringify((expected.orders ?? []).map((item) => item.toUpperCase()))
   return sameType && sameAttributes && sameOrders
+}
+
+async function waitForIndexRemoved(
+  databases: Databases,
+  databaseId: string,
+  collectionId: string,
+  key: string,
+) {
+  for (let attempt = 1; attempt <= INDEX_POLL_ATTEMPTS; attempt += 1) {
+    const index = await getIndexOrNull(databases, databaseId, collectionId, key)
+    if (!index) {
+      return
+    }
+
+    await sleep(POLL_DELAY_MS)
+  }
+
+  throw new Error(`Timed out while waiting for index ${collectionId}.${key} to be removed`)
 }
 
 async function ensureCollection(
@@ -365,16 +385,28 @@ async function ensureIndex(
 ) {
   const existing = await getIndexOrNull(databases, databaseId, collectionId, index.key)
   if (existing) {
-    if (!indexMatches(existing, index)) {
-      logStep(`Index ${collectionId}.${index.key} already exists with a different shape. Leaving it unchanged.`)
-    } else {
-      logStep(`Index ${collectionId}.${index.key} already exists, skipping.`)
-    }
+    const status = existing.status?.toLowerCase()
 
-    if (existing.status?.toLowerCase() !== 'available') {
-      await waitForIndexReady(databases, databaseId, collectionId, index.key)
+    if (status === 'failed' || status === 'stuck') {
+      logStep(`Index ${collectionId}.${index.key} is in status ${existing.status}. Recreating it.`)
+      await databases.deleteIndex({
+        databaseId,
+        collectionId,
+        key: index.key,
+      })
+      await waitForIndexRemoved(databases, databaseId, collectionId, index.key)
+    } else {
+      if (!indexMatches(existing, index)) {
+        logStep(`Index ${collectionId}.${index.key} already exists with a different shape. Leaving it unchanged.`)
+      } else {
+        logStep(`Index ${collectionId}.${index.key} already exists, skipping.`)
+      }
+
+      if (status !== 'available') {
+        await waitForIndexReady(databases, databaseId, collectionId, index.key)
+      }
+      return
     }
-    return
   }
 
   try {
@@ -385,7 +417,7 @@ async function ensureIndex(
       key: index.key,
       type: index.type,
       attributes: index.attributes,
-      orders: index.orders,
+      orders: index.orders as unknown as OrderBy[],
     })
   } catch (error) {
     if (!isConflictError(error)) {
@@ -419,7 +451,7 @@ const collectionSchemas: CollectionSchema[] = [
         key: 'userId',
         type: DatabasesIndexType.Unique,
         attributes: ['userId'],
-        orders: [OrderBy.Asc],
+        orders: ['ASC'],
       },
     ],
   },
@@ -453,19 +485,19 @@ const collectionSchemas: CollectionSchema[] = [
         key: 'organizerId',
         type: DatabasesIndexType.Key,
         attributes: ['organizerId'],
-        orders: [OrderBy.Asc],
+        orders: ['ASC'],
       },
       {
         key: 'inviteCode',
         type: DatabasesIndexType.Unique,
         attributes: ['inviteCode'],
-        orders: [OrderBy.Asc],
+        orders: ['ASC'],
       },
       {
         key: 'startsAt',
         type: DatabasesIndexType.Key,
         attributes: ['startsAt'],
-        orders: [OrderBy.Asc],
+        orders: ['ASC'],
       },
     ],
   },
@@ -488,19 +520,19 @@ const collectionSchemas: CollectionSchema[] = [
         key: 'eventId',
         type: DatabasesIndexType.Key,
         attributes: ['eventId'],
-        orders: [OrderBy.Asc],
+        orders: ['ASC'],
       },
       {
         key: 'userId',
         type: DatabasesIndexType.Key,
         attributes: ['userId'],
-        orders: [OrderBy.Asc],
+        orders: ['ASC'],
       },
       {
         key: 'eventId_userId',
         type: DatabasesIndexType.Unique,
         attributes: ['eventId', 'userId'],
-        orders: [OrderBy.Asc, OrderBy.Asc],
+        orders: ['ASC', 'ASC'],
       },
     ],
   },
