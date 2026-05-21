@@ -31,6 +31,10 @@ export function hasAppwriteRuntimeConfig() {
   )
 }
 
+export function hasAppwriteAuthConfig() {
+  return Boolean(runtimeConfig.appwriteEndpoint && runtimeConfig.appwriteProjectId)
+}
+
 if (import.meta.env.DEV && runtimeConfig.dataMode === 'appwrite' && !hasAppwriteRuntimeConfig()) {
   console.warn(
     '[runtimeConfig] VITE_DATA_MODE=appwrite, но Appwrite env заполнены не полностью. Приложение останется работоспособным в режиме подготовки.',

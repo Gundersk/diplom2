@@ -1288,3 +1288,40 @@ npm run build
 ### Next step
 
 Start the next Appwrite adapter layer for either `authService` or the `photoService` stack (`photos`, `event_photos`, `saved_photos`, `photo_comments`).
+---
+
+## 2026-05-21 - Appwrite auth adapter
+
+### What changed
+
+1. Added the first Appwrite Auth adapter branch to `authService`.
+2. Guest login in `VITE_DATA_MODE=appwrite` now creates a real Appwrite anonymous session.
+3. `getCurrentUser()` in appwrite mode now reads the real Appwrite account id, so events and participants can bind to a stable backend `userId`.
+4. `profiles` became an optional but recommended collection:
+   - if it exists, `displayName`, `avatarUrl`, and `mode` are stored there;
+   - if it does not exist yet, auth still works and falls back to a lightweight local cache for profile extras.
+5. Mock email-code flow was intentionally left as a temporary TODO layer in appwrite mode.
+
+### Files changed
+
+- `src/config/runtime.ts`
+- `src/services/authService.ts`
+- `README.md`
+- `docs/development-log.md`
+
+### Notes
+
+- Local mode is preserved and still behaves as before.
+- In appwrite mode, logout now removes the current Appwrite session via `account.deleteSession("current")`.
+- Real Appwrite Email OTP / SMTP is not connected yet.
+- `photoService`, `savedPhotoService`, `photoCommentService`, `achievementService`, `rsvpService`, and `chatService` remain localStorage-based.
+
+### Verification
+
+```bash
+npm run build
+```
+
+### Next step
+
+Connect a real Appwrite Email OTP flow for `authService`, or start the Appwrite adapter for the photo stack once the `profiles` collection is ready.
