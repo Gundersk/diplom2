@@ -41,14 +41,15 @@ function persistRsvps(entries: EventRsvpEntry[]) {
   )
 }
 
-function migrateEventRsvpsIfNeeded(eventId: string) {
+async function migrateEventRsvpsIfNeeded(eventId: string) {
   const stored = readStoredRsvps()
   const existing = stored.filter((entry) => entry.eventId === eventId)
   if (existing.length > 0) {
     return existing
   }
 
-  const event = eventService.getHomeEvents().find((item) => item.id === eventId)
+  const events = await eventService.getHomeEvents()
+  const event = events.find((item) => item.id === eventId)
   if (!event || event.guestRsvps.length === 0) {
     return []
   }
@@ -86,7 +87,7 @@ export const rsvpService = {
       return stored
     }
 
-    return migrateEventRsvpsIfNeeded(eventId)
+    return await migrateEventRsvpsIfNeeded(eventId)
   },
 
   async getParticipantRsvp(eventId: string, participantId: string): Promise<EventRsvpEntry | null> {

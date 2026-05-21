@@ -212,14 +212,15 @@ function mergeTemplates() {
   return nextTemplates
 }
 
-function migrateEventAchievementsIfNeeded(eventId: string) {
+async function migrateEventAchievementsIfNeeded(eventId: string) {
   const storedAchievements = readStoredEventAchievements()
   const eventAchievements = storedAchievements.filter((achievement) => achievement.eventId === eventId)
   if (eventAchievements.length > 0) {
     return eventAchievements
   }
 
-  const event = eventService.getHomeEvents().find((item) => item.id === eventId)
+  const events = await eventService.getHomeEvents()
+  const event = events.find((item) => item.id === eventId)
   if (!event || event.achievements.length === 0) {
     return []
   }
@@ -253,7 +254,7 @@ export const achievementService = {
 
   async getEventAchievements(eventId: string, scope?: AchievementScope): Promise<EventAchievement[]> {
     const stored = readStoredEventAchievements().filter((achievement) => achievement.eventId === eventId)
-    const achievements = stored.length > 0 ? stored : migrateEventAchievementsIfNeeded(eventId)
+    const achievements = stored.length > 0 ? stored : await migrateEventAchievementsIfNeeded(eventId)
     return scope ? achievements.filter((achievement) => achievement.scope === scope) : achievements
   },
 

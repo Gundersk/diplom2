@@ -79,14 +79,15 @@ function normalizePhoto(photo: GalleryPhoto, fallback?: Partial<GalleryPhoto>): 
   }
 }
 
-function migrateEventPhotosIfNeeded(eventId: string) {
+async function migrateEventPhotosIfNeeded(eventId: string) {
   const storedPhotos = readStoredPhotos()
   const eventPhotos = storedPhotos.filter((photo) => photo.eventId === eventId)
   if (eventPhotos.length > 0) {
     return eventPhotos
   }
 
-  const event = eventService.getHomeEvents().find((item) => item.id === eventId)
+  const events = await eventService.getHomeEvents()
+  const event = events.find((item) => item.id === eventId)
   if (!event || event.photos.length === 0) {
     return []
   }
@@ -104,9 +105,10 @@ function migrateEventPhotosIfNeeded(eventId: string) {
   return migratedPhotos
 }
 
-function getEventPhotoLinksFromEvents(photoId: string): EventPhotoLink[] {
-  return eventService
-    .getHomeEvents()
+async function getEventPhotoLinksFromEvents(photoId: string): Promise<EventPhotoLink[]> {
+  const events = await eventService.getHomeEvents()
+
+  return events
     .filter((event) => event.photos.some((photo) => photo.id === photoId))
     .map((event) => {
       const photo = event.photos.find((entry) => entry.id === photoId)
@@ -137,7 +139,7 @@ function updateStoredPhoto(photoId: string, updater: (photo: GalleryPhoto) => Ga
 export const photoService = {
   async getEventPhotos(eventId: string, userId?: string): Promise<GalleryPhoto[]> {
     const storedPhotos = readStoredPhotos().filter((photo) => photo.eventId === eventId)
-    const eventPhotos = storedPhotos.length > 0 ? storedPhotos : migrateEventPhotosIfNeeded(eventId)
+    const eventPhotos = storedPhotos.length > 0 ? storedPhotos : await migrateEventPhotosIfNeeded(eventId)
 
     if (!userId) {
       return eventPhotos
@@ -252,7 +254,7 @@ export const photoService = {
       return storedPhoto
     }
 
-    for (const event of eventService.getHomeEvents()) {
+    for (const event of await eventService.getHomeEvents()) {
       const eventPhoto = event.photos.find((photo) => photo.id === photoId)
       if (eventPhoto) {
         return normalizePhoto(eventPhoto, {
@@ -296,7 +298,7 @@ export const photoService = {
     savedLinksCount: number
     canDeletePhysicalPhoto: boolean
   }> {
-    const eventLinksCount = getEventPhotoLinksFromEvents(photoId).length
+    const eventLinksCount = (await getEventPhotoLinksFromEvents(photoId)).length
     const savedLinksCount = await savedPhotoService.getSavedLinksCount(photoId)
 
     return {

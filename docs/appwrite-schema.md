@@ -69,21 +69,27 @@ Bucket:
 - `description: string` (optional)
 - `startsAt: datetime` (required)
 - `endsAt: datetime` (optional)
-- `timezone: string` (required)
-- `location: string` (optional)
-- `organizerId: string` (required, userId)
-- `inviteCode: string` (required, уникально/квази-уникально)
-- `coverFileId: string` (optional) / `coverUrl: string` (optional)
-- `themeBackgroundFileId: string` (optional) / `themeBackgroundUrl: string` (optional)
-- `themeColor: string` (optional, например hex)
-- `guestsCanInvite: boolean` (required)
-- `maxParticipants: number` (optional)
-- `isPaid: boolean` (required)
-- `costPerPerson: number` (optional)
-- `paymentDetails: string` (optional)
-- `paymentComment: string` (optional)
 - `createdAt: datetime` (required)
 - `updatedAt: datetime` (optional)
+- `location: string` (optional)
+- `organizerId: string` (required, userId)
+- `organizerName: string` (required)
+- `organizerInitials: string` (required)
+- `organizerTone: string` (required)
+- `organizerAvatarSrc: string` (optional)
+- `inviteCode: string` (required, уникально/квази-уникально)
+- `coverStart: string` (required)
+- `coverEnd: string` (required)
+- `backgroundStart: string` (required)
+- `backgroundEnd: string` (required)
+- `accent: string` (required)
+- `allowGuestInvites: boolean` (required)
+- `participantLimit: number` (optional)
+- `infoBlocksJson: string` (optional, JSON-массив блоков)
+- `paymentJson: string` (optional, JSON-объект оплаты)
+- `timezoneLabel: string` (optional)
+- `titleStyle: string` (optional)
+- `rsvpStyle: string` (optional)
 
 Индексы:
 
@@ -328,4 +334,3 @@ Bucket:
 - физически удалить файл и `photos` metadata только если:
   - нет ссылок в `event_photos` для `photoId`
   - нет ссылок в `saved_photos` для `photoId`
-

@@ -56,12 +56,15 @@ export type GalleryEvent = {
   status: EventTab
   startsAt: string
   endsAt: string
+  createdAt?: string
+  updatedAt?: string
   role: EventRole
   organizerId?: string
   organizerName: string
   organizerInitials: string
   organizerTone: string
   organizerAvatarSrc?: string
+  inviteCode?: string
   description?: string
   location: string
   savedCount: number

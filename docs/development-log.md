@@ -1,4 +1,4 @@
-# Журнал разработки Event Gallery
+﻿# Журнал разработки Event Gallery
 
 Этот файл нужен для дипломной защиты: здесь фиксируются важные действия по проекту, архитектурные решения, созданные файлы и команды, которыми можно повторить работу вручную.
 
@@ -809,7 +809,7 @@ npm run build
 
 Continue MVP auth work without connecting Appwrite yet:
 - separate `demo user`, `guest user`, and `profile user`;
-- remove the old hardcoded guest fallback through the name `����`;
+- remove the old hardcoded guest fallback through the name `����`;
 - add a working auth gate for guest login and mock email-code login;
 - make profile name and avatar editable through the existing UI;
 - keep account name separate from event participant name.
@@ -818,13 +818,13 @@ Continue MVP auth work without connecting Appwrite yet:
 
 1. `authService` was cleaned up and extended:
    - `CurrentUser.mode` now supports `demo | guest | profile`;
-   - `����` is used only for explicit demo fallback;
-   - guest login now creates a real guest with fallback like `����� 4821`;
+   - `����` is used only for explicit demo fallback;
+   - guest login now creates a real guest with fallback like `����� 4821`;
    - mock email-code flow still uses development code `000000`;
    - guest can be upgraded to profile without changing `userId`.
 2. `App.vue` now uses a clearer auth flow:
    - if a stored user exists, it is restored from `localStorage`;
-   - if not, the app creates an explicit demo user instead of pretending every guest is `����`;
+   - if not, the app creates an explicit demo user instead of pretending every guest is `����`;
    - auth modal now has two scenarios: guest and email-code.
 3. Added editable profile UI in the current visual style:
    - open from existing profile menu buttons;
@@ -1242,3 +1242,49 @@ Either prepare the Appwrite collection schema for `photos`, `event_photos`, `sav
 
 - All services still run in `VITE_DATA_MODE=local` (mock + localStorage).
 - Appwrite integration will be done gradually per service, keeping local mode for demos/defense.
+---
+
+## 2026-05-21 - First Appwrite adapter for events and participants
+
+### What changed
+
+1. Added the first real Appwrite adapter branch for `eventService`.
+2. Added the first real Appwrite adapter branch for `participantService`.
+3. Preserved the existing localStorage mode as the default fallback when `VITE_DATA_MODE=local`.
+4. Kept photos, comments, achievements, RSVP, and chat on localStorage for now.
+5. Split event persistence into two layers in appwrite mode:
+   - Appwrite stores the core event document;
+   - local cache keeps UI-only event state that still depends on local services.
+
+### Files changed
+
+- `src/services/eventService.ts`
+- `src/services/participantService.ts`
+- `src/services/photoService.ts`
+- `src/services/savedPhotoService.ts`
+- `src/services/photoCommentService.ts`
+- `src/services/achievementService.ts`
+- `src/services/rsvpService.ts`
+- `src/services/chatService.ts`
+- `src/types/event.ts`
+- `src/App.vue`
+- `README.md`
+- `docs/appwrite-schema.md`
+- `docs/development-log.md`
+
+### Notes
+
+- `VITE_DATA_MODE=appwrite` now expects pre-created `events` and `participants` collections.
+- `eventService` and `participantService` throw a clear runtime error if Appwrite mode is enabled without proper config/collections.
+- `photoService`, `savedPhotoService`, `photoCommentService`, `achievementService`, `rsvpService`, and `chatService` remain localStorage-based.
+- The UI was not redesigned; only the data access layer and minimal async loading paths were updated.
+
+### Verification
+
+```bash
+npm run build
+```
+
+### Next step
+
+Start the next Appwrite adapter layer for either `authService` or the `photoService` stack (`photos`, `event_photos`, `saved_photos`, `photo_comments`).

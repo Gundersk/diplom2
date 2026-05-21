@@ -276,7 +276,6 @@ function applyCurrentUser(user: CurrentUser) {
   currentUser.name =
     user.displayName?.trim() || (user.mode === 'demo' ? 'Юрий' : `Гость ${String(user.id).slice(-4)}`)
   currentUser.initials = buildUserInitials(currentUser.name)
-  void syncAllEventPhotosFromService()
 }
 
 function buildRuntimeDemoUser(): CurrentUser {
@@ -294,10 +293,20 @@ async function initializeCurrentUser() {
   const storedUser = await authService.getCurrentUser()
   const nextUser = storedUser ?? (await authService.createDemoUser('Юрий'))
   applyCurrentUser(nextUser)
+  await loadHomeEvents()
+  await syncAllEventPhotosFromService()
+  await syncAllEventRsvpsFromService()
+  await syncAllEventMessagesFromService()
+  await syncAllEventAchievementsFromService()
 }
 
 async function loadAchievementTemplates() {
   achievementTemplates.value = await achievementService.getAchievementTemplates()
+}
+
+async function loadHomeEvents() {
+  homeEvents.value = await eventService.getHomeEvents()
+  return homeEvents.value
 }
 
 function getThemeById(themeId: string) {
@@ -640,7 +649,7 @@ function buildAchievementFromTemplate(template: AchievementTemplate): EventAchie
 }
 
 const selectedTheme = ref<EventTheme>(themes[0])
-const homeEvents = ref<GalleryEvent[]>(eventService.getHomeEvents())
+const homeEvents = ref<GalleryEvent[]>([])
 const authOpen = ref(false)
 const authMode = ref<AuthMode>('guest')
 const authGuestName = ref('')
@@ -678,9 +687,6 @@ const profileEditorError = ref('')
 
 void initializeCurrentUser()
 void loadAchievementTemplates()
-void syncAllEventPhotosFromService()
-void syncAllEventRsvpsFromService()
-void syncAllEventMessagesFromService()
 
 const rsvpStatusLabels: Record<RsvpStatus, string> = {
   going: 'Пойду',
@@ -1124,6 +1130,11 @@ async function completeAuth() {
     }
 
     applyCurrentUser(nextUser)
+    await loadHomeEvents()
+    await syncAllEventPhotosFromService()
+    await syncAllEventRsvpsFromService()
+    await syncAllEventMessagesFromService()
+    await syncAllEventAchievementsFromService()
     currentView.value = 'home'
     authOpen.value = false
     profileMenuOpen.value = false
@@ -1136,6 +1147,11 @@ async function completeAuth() {
 async function logout() {
   await authService.logout()
   applyCurrentUser(buildRuntimeDemoUser())
+  await loadHomeEvents()
+  await syncAllEventPhotosFromService()
+  await syncAllEventRsvpsFromService()
+  await syncAllEventMessagesFromService()
+  await syncAllEventAchievementsFromService()
   currentView.value = 'landing'
   profileMenuOpen.value = false
   notificationsOpen.value = false
@@ -1459,8 +1475,8 @@ async function syncEventPhotosFromService(eventId: string) {
     photos,
   }
   syncEventSavedCount(nextEvent)
-  eventService.updateEvent(nextEvent)
-  homeEvents.value = eventService.getHomeEvents()
+  eventService.cacheEventState(nextEvent)
+  await loadHomeEvents()
   return nextEvent
 }
 
@@ -1479,8 +1495,8 @@ async function syncEventRsvpsFromService(eventId: string) {
     ...event,
     guestRsvps,
   }
-  eventService.updateEvent(nextEvent)
-  homeEvents.value = eventService.getHomeEvents()
+  eventService.cacheEventState(nextEvent)
+  await loadHomeEvents()
   return nextEvent
 }
 
@@ -1499,8 +1515,8 @@ async function syncEventMessagesFromService(eventId: string) {
     ...event,
     chatMessages,
   }
-  eventService.updateEvent(nextEvent)
-  homeEvents.value = eventService.getHomeEvents()
+  eventService.cacheEventState(nextEvent)
+  await loadHomeEvents()
   return nextEvent
 }
 
@@ -1519,9 +1535,15 @@ async function syncEventAchievementsFromService(eventId: string) {
     ...event,
     achievements,
   }
-  eventService.updateEvent(nextEvent)
-  homeEvents.value = eventService.getHomeEvents()
+  eventService.cacheEventState(nextEvent)
+  await loadHomeEvents()
   return nextEvent
+}
+
+async function syncAllEventAchievementsFromService() {
+  for (const event of homeEvents.value) {
+    await syncEventAchievementsFromService(event.id)
+  }
 }
 
 async function persistEventAchievementsSelection(eventId: string) {
@@ -1561,13 +1583,13 @@ async function persistEventAchievementsSelection(eventId: string) {
   return syncEventAchievementsFromService(eventId)
 }
 
-function updateEventInList(eventId: string, updater: (event: GalleryEvent) => GalleryEvent) {
+async function updateEventInList(eventId: string, updater: (event: GalleryEvent) => GalleryEvent) {
   const event = getEventById(eventId)
   if (!event) return null
 
   const nextEvent = updater(event)
-  eventService.updateEvent(nextEvent)
-  homeEvents.value = eventService.getHomeEvents()
+  eventService.cacheEventState(nextEvent)
+  await loadHomeEvents()
   return nextEvent
 }
 
@@ -1649,7 +1671,7 @@ async function sendEventChatMessage() {
     text,
   })
 
-  updateEventInList(event.id, (current) => ({
+  await updateEventInList(event.id, (current) => ({
     ...current,
     chatMessages: [...current.chatMessages, nextMessage],
   }))
@@ -1671,7 +1693,7 @@ async function togglePhotoSaved(eventId: string, photoId: string) {
     participantId: participant?.id,
   })
 
-  updateEventInList(eventId, (current) => {
+  await updateEventInList(eventId, (current) => {
     const nextEvent = {
       ...current,
       photos: current.photos.map((photo) =>
@@ -1942,7 +1964,7 @@ async function submitRsvpResponse() {
     text: chatText,
   })
 
-  updateEventInList(event.id, (current) => ({
+  await updateEventInList(event.id, (current) => ({
     ...current,
     guestRsvps: [
       ...current.guestRsvps.filter((entry) => entry.id !== nextRsvp.id),
@@ -1996,7 +2018,7 @@ async function addEventPhoto(eventId: string, file: File, source: 'album' | 'cha
         })
       : null
 
-  updateEventInList(eventId, (current) => {
+  await updateEventInList(eventId, (current) => {
     const nextEvent = {
       ...current,
       photos: [...current.photos, photo],
@@ -2256,9 +2278,9 @@ async function saveEvent() {
     updated.status = buildEventStatus(updated.startsAt, updated.endsAt)
     syncEventSavedCount(updated)
 
-    eventService.updateEvent(updated)
+    await eventService.updateEvent(updated)
     await persistEventAchievementsSelection(updated.id)
-    homeEvents.value = eventService.getHomeEvents()
+    await loadHomeEvents()
     await participantService.joinEventAsParticipant(updated.id, updated.organizerName, 'organizer')
     activeTab.value = updated.status
     editingEventId.value = null
@@ -2280,9 +2302,9 @@ async function saveEvent() {
   }
 
   const nextEvent = createEventFromForm()
-  eventService.createEvent(nextEvent)
+  await eventService.createEvent(nextEvent)
   await persistEventAchievementsSelection(nextEvent.id)
-  homeEvents.value = eventService.getHomeEvents()
+  await loadHomeEvents()
   await participantService.joinEventAsParticipant(nextEvent.id, nextEvent.organizerName, 'organizer')
   expandedEvents.value = new Set()
   activeTab.value = nextEvent.status

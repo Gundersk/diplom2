@@ -40,14 +40,15 @@ function persistMessages(messages: EventChatMessage[]) {
   )
 }
 
-function migrateEventMessagesIfNeeded(eventId: string) {
+async function migrateEventMessagesIfNeeded(eventId: string) {
   const stored = readStoredMessages()
   const existing = stored.filter((message) => message.eventId === eventId)
   if (existing.length > 0) {
     return existing
   }
 
-  const event = eventService.getHomeEvents().find((item) => item.id === eventId)
+  const events = await eventService.getHomeEvents()
+  const event = events.find((item) => item.id === eventId)
   if (!event || event.chatMessages.length === 0) {
     return []
   }
@@ -84,7 +85,7 @@ export const chatService = {
       return stored
     }
 
-    return migrateEventMessagesIfNeeded(eventId)
+    return await migrateEventMessagesIfNeeded(eventId)
   },
 
   async addEventMessage(input: {

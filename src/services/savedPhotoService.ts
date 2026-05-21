@@ -62,15 +62,15 @@ function markLegacyMigrationDone() {
   window.localStorage.setItem(SAVED_PHOTO_LEGACY_MIGRATION_KEY, JSON.stringify(true))
 }
 
-function migrateUserSavedPhotosIfNeeded(userId: string) {
+async function migrateUserSavedPhotosIfNeeded(userId: string) {
   const storedEntries = readStoredSavedPhotos()
 
   if (isLegacyMigrationDone()) {
     return storedEntries.filter((entry) => entry.userId === userId)
   }
 
-  const migratedEntries = eventService
-    .getHomeEvents()
+  const events = await eventService.getHomeEvents()
+  const migratedEntries = events
     .flatMap((event) =>
       event.photos
         .filter((photo) => photo.saved)
@@ -102,13 +102,13 @@ function migrateUserSavedPhotosIfNeeded(userId: string) {
   return migratedEntries
 }
 
-function ensureUserSavedPhotos(userId: string) {
+async function ensureUserSavedPhotos(userId: string) {
   const storedEntries = readStoredSavedPhotos().filter((entry) => entry.userId === userId)
   if (storedEntries.length > 0) {
     return storedEntries
   }
 
-  return migrateUserSavedPhotosIfNeeded(userId)
+  return await migrateUserSavedPhotosIfNeeded(userId)
 }
 
 function getSavedPhotoLinksByPhotoId(photoId: string) {
@@ -117,7 +117,7 @@ function getSavedPhotoLinksByPhotoId(photoId: string) {
 
 export const savedPhotoService = {
   async getUserSavedPhotos(userId: string): Promise<SavedPhoto[]> {
-    return ensureUserSavedPhotos(userId)
+    return await ensureUserSavedPhotos(userId)
   },
 
   async getUserSavedPhotoIds(userId: string): Promise<string[]> {
