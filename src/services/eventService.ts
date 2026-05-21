@@ -420,52 +420,101 @@ async function getCurrentUserParticipantMap() {
   }
 }
 
+function compareEventsByStartDate(first: GalleryEvent, second: GalleryEvent) {
+  return new Date(first.startsAt).getTime() - new Date(second.startsAt).getTime()
+}
+
+async function getDocumentsByIds(documentIds: string[]) {
+  const uniqueDocumentIds = [...new Set(documentIds.filter(Boolean))]
+  if (uniqueDocumentIds.length === 0) {
+    return [] as EventDocument[]
+  }
+
+  const results = await Promise.allSettled(
+    uniqueDocumentIds.map((documentId) =>
+      appwriteDatabases.getDocument<EventDocument>(
+        APPWRITE_DATABASE_ID,
+        APPWRITE_COLLECTIONS.events,
+        documentId,
+      ),
+    ),
+  )
+
+  return results.flatMap((result) => {
+    if (result.status === 'fulfilled') {
+      return [result.value]
+    }
+
+    console.warn('[eventService] Failed to load linked event document.', result.reason)
+    return []
+  })
+}
+
 async function getHomeEventsFromAppwrite() {
   assertAppwriteReady('getHomeEvents')
 
-  const [eventsResponse, participantMap] = await Promise.all([
+  const participantMap = await getCurrentUserParticipantMap()
+  if (!participantMap.currentUserId) {
+    persistHomeEvents([])
+    return []
+  }
+
+  const [organizerEventsResponse, participantEventsDocuments] = await Promise.all([
     appwriteDatabases.listDocuments<EventDocument>(
       APPWRITE_DATABASE_ID,
       APPWRITE_COLLECTIONS.events,
-      [appwriteQuery.limit(5000), appwriteQuery.orderAsc('startsAt')],
+      [
+        appwriteQuery.equal('organizerId', participantMap.currentUserId),
+        appwriteQuery.limit(5000),
+        appwriteQuery.orderAsc('startsAt'),
+      ],
     ),
-    getCurrentUserParticipantMap(),
+    getDocumentsByIds([...participantMap.rolesByEventId.keys()]),
   ])
 
-  const events = eventsResponse.documents.map((document) =>
-    fromAppwriteEventDocument(
-      document,
-      participantMap.rolesByEventId.get(document.$id),
-      participantMap.currentUserId,
-    ),
-  )
+  const linkedDocuments = new Map<string, EventDocument>()
+  for (const document of organizerEventsResponse.documents) {
+    linkedDocuments.set(document.$id, document)
+  }
+  for (const document of participantEventsDocuments) {
+    linkedDocuments.set(document.$id, document)
+  }
+
+  const events = [...linkedDocuments.values()]
+    .map((document) =>
+      fromAppwriteEventDocument(
+        document,
+        participantMap.rolesByEventId.get(document.$id),
+        participantMap.currentUserId,
+      ),
+    )
+    .sort(compareEventsByStartDate)
 
   persistHomeEvents(events)
   return events
 }
 
-function getLocalHomeEvents() {
-  const storedEvents = readStoredHomeEvents()
-  if (storedEvents) {
-    return storedEvents
+function updateCachedEvent(event: GalleryEvent) {
+  const cachedEvents = readStoredHomeEvents() ?? []
+  const nextEvents = cachedEvents.some((item) => item.id === event.id)
+    ? cachedEvents.map((item) => (item.id === event.id ? event : item))
+    : [...cachedEvents, event]
+  persistHomeEvents(nextEvents)
+}
+
+function cacheCreatedEventIfLinked(event: GalleryEvent, currentUserId?: string) {
+  if (!currentUserId) {
+    return
   }
 
-  const mockEvents = getMockHomeEvents()
-  persistHomeEvents(mockEvents)
-  return mockEvents
+  if (event.organizerId === currentUserId) {
+    updateCachedEvent(event)
+  }
 }
 
-async function getLocalEventById(eventId: string) {
-  return getLocalHomeEvents().find((event) => event.id === eventId) ?? null
-}
-
-async function getLocalEventByInviteCode(inviteCode: string) {
-  const normalizedCode = formatInviteCode(inviteCode)
-  if (!normalizedCode) return null
-
-  return (
-    getLocalHomeEvents().find((event) => formatInviteCode(event.inviteCode || event.id) === normalizedCode) ?? null
-  )
+function removeCachedEvent(eventId: string) {
+  const cachedEvents = readStoredHomeEvents() ?? []
+  persistHomeEvents(cachedEvents.filter((event) => event.id !== eventId))
 }
 
 async function getAppwriteEventById(eventId: string) {
@@ -484,12 +533,7 @@ async function getAppwriteEventById(eventId: string) {
     participantMap.currentUserId,
   )
 
-  const cachedEvents = readStoredHomeEvents() ?? []
-  const nextEvents = cachedEvents.some((item) => item.id === event.id)
-    ? cachedEvents.map((item) => (item.id === event.id ? event : item))
-    : [...cachedEvents, event]
-  persistHomeEvents(nextEvents)
-
+  updateCachedEvent(event)
   return event
 }
 
@@ -526,13 +570,33 @@ async function getAppwriteEventByInviteCode(inviteCode: string) {
     participantMap.currentUserId,
   )
 
-  const cachedEvents = readStoredHomeEvents() ?? []
-  const nextEvents = cachedEvents.some((item) => item.id === event.id)
-    ? cachedEvents.map((item) => (item.id === event.id ? event : item))
-    : [...cachedEvents, event]
-  persistHomeEvents(nextEvents)
+  updateCachedEvent(event)
 
   return event
+}
+
+function getLocalHomeEvents() {
+  const storedEvents = readStoredHomeEvents()
+  if (storedEvents) {
+    return storedEvents
+  }
+
+  const mockEvents = getMockHomeEvents()
+  persistHomeEvents(mockEvents)
+  return mockEvents
+}
+
+async function getLocalEventById(eventId: string) {
+  return getLocalHomeEvents().find((event) => event.id === eventId) ?? null
+}
+
+async function getLocalEventByInviteCode(inviteCode: string) {
+  const normalizedCode = formatInviteCode(inviteCode)
+  if (!normalizedCode) return null
+
+  return (
+    getLocalHomeEvents().find((event) => formatInviteCode(event.inviteCode || event.id) === normalizedCode) ?? null
+  )
 }
 
 export const eventService = {
@@ -572,9 +636,8 @@ export const eventService = {
       payload,
     )
 
-    const cachedEvents = readStoredHomeEvents() ?? []
-    const nextEvents = [...cachedEvents.filter((item) => item.id !== normalizedEvent.id), normalizedEvent]
-    persistHomeEvents(nextEvents)
+    const currentUser = await authService.getCurrentUser()
+    cacheCreatedEventIfLinked(normalizedEvent, currentUser?.id)
     return normalizedEvent
   },
 
@@ -605,11 +668,7 @@ export const eventService = {
       payload,
     )
 
-    const cachedEvents = readStoredHomeEvents() ?? []
-    const nextEvents = cachedEvents.some((item) => item.id === normalizedEvent.id)
-      ? cachedEvents.map((item) => (item.id === normalizedEvent.id ? normalizedEvent : item))
-      : [...cachedEvents, normalizedEvent]
-    persistHomeEvents(nextEvents)
+    updateCachedEvent(normalizedEvent)
     return normalizedEvent
   },
 
@@ -647,8 +706,7 @@ export const eventService = {
 
     await appwriteDatabases.deleteDocument(APPWRITE_DATABASE_ID, APPWRITE_COLLECTIONS.events, eventId)
 
-    const cachedEvents = readStoredHomeEvents() ?? []
-    persistHomeEvents(cachedEvents.filter((event) => event.id !== eventId))
+    removeCachedEvent(eventId)
   },
 }
 

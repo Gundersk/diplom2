@@ -166,13 +166,55 @@ async function getProfileDocument(userId: string): Promise<ProfileDocument | nul
   } catch (error) {
     const errorWithCode = error as Error & { code?: number | string }
     if (errorWithCode?.code === 404) {
-      warnProfilesUnavailable('Profile document not found yet.')
       return null
     }
 
     warnProfilesUnavailable(error instanceof Error ? error.message : undefined)
     return null
   }
+}
+
+async function ensureProfileDocumentForAccount(
+  account: Models.User<Models.Preferences>,
+  cachedUser?: CurrentUser | null,
+  overrides?: {
+    mode?: 'guest' | 'profile'
+    displayName?: string
+    avatarUrl?: string
+    email?: string
+  },
+) {
+  const existingProfile = await getProfileDocument(account.$id)
+  const fallbackName = cachedUser?.displayName || account.name || createGuestFallbackName()
+  const nextMode =
+    overrides?.mode ??
+    existingProfile?.mode ??
+    (cachedUser?.mode === 'profile' ? 'profile' : account.email || overrides?.email ? 'profile' : 'guest')
+  const nextDisplayName = normalizeDisplayName(
+    overrides?.displayName ?? existingProfile?.displayName ?? cachedUser?.displayName ?? account.name,
+    fallbackName,
+  )
+  const nextAvatarUrl = overrides?.avatarUrl ?? existingProfile?.avatarUrl ?? cachedUser?.avatarUrl
+  const nextCreatedAt = existingProfile?.createdAt ?? cachedUser?.createdAt ?? account.$createdAt
+  const nextUpdatedAt = new Date().toISOString()
+
+  if (
+    existingProfile &&
+    existingProfile.mode === nextMode &&
+    (existingProfile.displayName ?? '') === nextDisplayName &&
+    (existingProfile.avatarUrl ?? '') === (nextAvatarUrl ?? '')
+  ) {
+    return existingProfile
+  }
+
+  return await upsertProfileDocument({
+    userId: account.$id,
+    mode: nextMode,
+    displayName: nextDisplayName,
+    avatarUrl: nextAvatarUrl,
+    createdAt: nextCreatedAt,
+    updatedAt: nextUpdatedAt,
+  })
 }
 
 function mapAppwriteAccountToCurrentUser(
@@ -262,7 +304,12 @@ async function getAppwriteCurrentUser() {
 
   const cachedUser = readCurrentUser()
   const matchingCachedUser = cachedUser?.id === account.$id ? cachedUser : null
-  const profile = await getProfileDocument(account.$id)
+  const profile = await ensureProfileDocumentForAccount(account, matchingCachedUser, {
+    mode: matchingCachedUser?.mode === 'profile' ? 'profile' : account.email ? 'profile' : 'guest',
+    displayName: matchingCachedUser?.displayName,
+    avatarUrl: matchingCachedUser?.avatarUrl,
+    email: matchingCachedUser?.email,
+  })
   const currentUser = mapAppwriteAccountToCurrentUser(account, profile, matchingCachedUser)
   persistCurrentUser(currentUser)
   return currentUser
@@ -363,13 +410,11 @@ async function verifyEmailCodeAppwrite(email: string, code: string): Promise<Cur
     updatedAt: new Date().toISOString(),
   })
 
-  const profile = await upsertProfileDocument({
-    userId: account.$id,
+  const profile = await ensureProfileDocumentForAccount(account, nextUser, {
     mode: 'profile',
     displayName: nextUser.displayName,
     avatarUrl: nextUser.avatarUrl,
-    createdAt: nextUser.createdAt,
-    updatedAt: new Date().toISOString(),
+    email: email.trim().toLowerCase(),
   })
 
   const currentUser = {
@@ -496,21 +541,19 @@ export const authService = {
     }
 
     const cachedUser = readCurrentUser()
-    const profile = await upsertProfileDocument({
-      userId: account.$id,
-      mode: 'guest',
+    const matchingCachedUser = cachedUser?.id === account.$id ? cachedUser : null
+    const profile = await ensureProfileDocumentForAccount(account, matchingCachedUser, {
+      mode: matchingCachedUser?.mode === 'profile' ? 'profile' : 'guest',
       displayName: normalizedName,
-      avatarUrl: cachedUser?.avatarUrl,
-      createdAt: cachedUser?.createdAt ?? account.$createdAt,
-      updatedAt: new Date().toISOString(),
+      avatarUrl: matchingCachedUser?.avatarUrl,
     })
 
     const guestUser = mapAppwriteAccountToCurrentUser(account, profile, {
       id: account.$id,
-      mode: 'guest',
+      mode: matchingCachedUser?.mode === 'profile' ? 'profile' : 'guest',
       displayName: normalizedName,
-      avatarUrl: cachedUser?.avatarUrl,
-      createdAt: cachedUser?.createdAt ?? account.$createdAt,
+      avatarUrl: matchingCachedUser?.avatarUrl,
+      createdAt: matchingCachedUser?.createdAt ?? account.$createdAt,
       updatedAt: new Date().toISOString(),
     })
 
@@ -610,4 +653,3 @@ export const authService = {
     }
   },
 }
-

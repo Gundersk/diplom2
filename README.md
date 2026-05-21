@@ -16,6 +16,8 @@
 - The first shared Storage flow is now prepared for event cover/background visuals.
 - `authService` now uses Appwrite Auth anonymous sessions for guest login in appwrite mode.
 - The first real Appwrite adapters already exist for `authService`, `eventService`, and `participantService`.
+- If an Appwrite session already exists, `authService` reuses it instead of creating a new guest session.
+- If a session exists but the `profiles` document is missing, `authService` restores that profile for the same `userId`.
 - `profiles` is strongly recommended as the next collection for storing displayName, avatarUrl, and mode. If it is missing, auth still works and falls back to lightweight local cache for profile extras.
 - `photoService`, `savedPhotoService`, `photoCommentService`, `achievementService`, `rsvpService`, and `chatService` still use localStorage for now.
 
@@ -69,3 +71,13 @@ Notes:
 4. Open the link in a second browser or an incognito window.
 5. Sign in as a guest.
 6. Check the `participants` collection in Appwrite Console: a second participant should appear with a different `userId`.
+
+## Participant vs RSVP Model
+
+- `participant` means the user has entered the private event context and has access to that event.
+- `RSVP` is a separate response layer: `going`, `maybe`, or `not-going`.
+- Choosing `not-going` does **not** remove the participant record.
+- In appwrite mode, **My events** should show only events linked to the current user:
+  - events they organize;
+  - events where they are already a participant.
+- RSVP changes do not grant repeatable points in the current MVP flow. Photo upload points are still preserved as the main lightweight gamification action.

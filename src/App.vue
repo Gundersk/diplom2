@@ -1733,11 +1733,13 @@ function getCurrentParticipantRole(event: GalleryEvent) {
 }
 
 async function ensureCurrentParticipant(event: GalleryEvent | null) {
-  if (!event || !currentUser.id) {
+  if (!event || !currentUser.id || (isAppwriteMode() && !hasRealAuthenticatedUser())) {
     currentParticipant.value = null
     return null
   }
 
+  // Participant is the access/link between a user and an event.
+  // RSVP is a separate response and must not remove the participant record.
   const participant = await participantService.joinEventAsParticipant(
     event.id,
     getPreferredParticipantDisplayName(),
@@ -2100,8 +2102,6 @@ async function submitRsvpResponse() {
     ],
     chatMessages: [...current.chatMessages, nextMessage],
   }))
-
-  await addCurrentParticipantPoints(1)
 
   notifications.value = [
     {
