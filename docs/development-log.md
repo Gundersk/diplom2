@@ -1095,3 +1095,64 @@ npm run build
 ### Next step
 
 Start connecting Appwrite one service at a time, most likely beginning with `authService` or `eventService`, while keeping `VITE_DATA_MODE=local` as the fallback development path.
+
+## Step 19 - 2026-05-21
+
+### Goal
+
+Prepare an economical personal-gallery model where photos are stored once and personal saves are represented only as links.
+
+### What was added
+
+1. Created `src/types/savedPhoto.ts`.
+2. Created `src/types/eventPhoto.ts`.
+3. Created `src/services/savedPhotoService.ts`.
+4. Moved personal saved-state out of `photo.saved` as a persistent source of truth.
+5. Kept `photo.saved` only as a UI-derived and compatibility field.
+6. Added a saved-photo link model based on:
+   - `userId`;
+   - `photoId`;
+   - `eventId`.
+7. Prepared the event-photo relation model (`event_photos`) separately from the photo metadata model (`photos`).
+8. Updated `photoService` so it can now:
+   - derive saved state per current user;
+   - return saved gallery photos by photo ids instead of copying files;
+   - inspect photo usage;
+   - perform orphan cleanup only when there are no event or saved references left.
+9. Updated `App.vue` minimally so photo saving now uses `savedPhotoService.toggleSavedPhoto(...)` instead of storing user truth only inside `photo.saved`.
+10. Preserved mock/localStorage compatibility:
+   - old saved flags are migrated once as legacy fallback;
+   - existing mock photos continue to render.
+
+### Files changed
+
+- `src/types/photo.ts`
+- `src/types/savedPhoto.ts`
+- `src/types/eventPhoto.ts`
+- `src/services/photoService.ts`
+- `src/services/savedPhotoService.ts`
+- `src/App.vue`
+- `docs/development-log.md`
+
+### Architecture notes
+
+- Personal gallery should store links, not duplicated files.
+- Photo file metadata lives in `photos`.
+- Event membership lives in `event_photos`.
+- Personal saved state lives in `saved_photos`.
+- Later Appwrite collections should be:
+  - `photos`
+  - `event_photos`
+  - `saved_photos`
+  - `photo_likes`
+- Physical file deletion must happen only when a photo has no references from either `event_photos` or `saved_photos`.
+
+### Verification
+
+```bash
+npm run build
+```
+
+### Next step
+
+Either extract photo likes into a dedicated `photoLikeService`, or start the first real Appwrite adapter for the photo stack using `photos`, `event_photos`, and `saved_photos`.

@@ -1,7 +1,10 @@
 // TODO: add Appwrite implementation when VITE_DATA_MODE=appwrite
 // TODO: replace localStorage imageUrl with Appwrite Storage fileId.
+// saved is UI-derived. Persistent personal gallery state lives in savedPhotoService.
 
 import { eventService } from './eventService'
+import { savedPhotoService } from './savedPhotoService'
+import type { EventPhotoLink } from '../types/eventPhoto'
 import type { GalleryPhoto } from '../types/photo'
 
 const PHOTO_STORAGE_KEY = 'event-gallery:photos'
@@ -100,6 +103,23 @@ function migrateEventPhotosIfNeeded(eventId: string) {
   return migratedPhotos
 }
 
+function getEventPhotoLinksFromEvents(photoId: string): EventPhotoLink[] {
+  return eventService
+    .getHomeEvents()
+    .filter((event) => event.photos.some((photo) => photo.id === photoId))
+    .map((event) => {
+      const photo = event.photos.find((entry) => entry.id === photoId)
+      return {
+        id: `event-photo-${event.id}-${photoId}`,
+        eventId: event.id,
+        photoId,
+        addedAt: photo?.createdAt ?? event.startsAt,
+        addedByUserId: photo?.userId,
+        addedByParticipantId: photo?.participantId,
+      }
+    })
+}
+
 function updateStoredPhoto(photoId: string, updater: (photo: GalleryPhoto) => GalleryPhoto) {
   const photos = readStoredPhotos()
   const index = photos.findIndex((photo) => photo.id === photoId)
@@ -114,13 +134,21 @@ function updateStoredPhoto(photoId: string, updater: (photo: GalleryPhoto) => Ga
 }
 
 export const photoService = {
-  async getEventPhotos(eventId: string): Promise<GalleryPhoto[]> {
+  async getEventPhotos(eventId: string, userId?: string): Promise<GalleryPhoto[]> {
     const storedPhotos = readStoredPhotos().filter((photo) => photo.eventId === eventId)
-    if (storedPhotos.length > 0) {
-      return storedPhotos
+    const eventPhotos = storedPhotos.length > 0 ? storedPhotos : migrateEventPhotosIfNeeded(eventId)
+
+    if (!userId) {
+      return eventPhotos
     }
 
-    return migrateEventPhotosIfNeeded(eventId)
+    const savedPhotoIds = new Set(await savedPhotoService.getUserSavedPhotoIds(userId))
+    return eventPhotos.map((photo) =>
+      normalizePhoto({
+        ...photo,
+        saved: savedPhotoIds.has(photo.id),
+      }, photo),
+    )
   },
 
   async addEventPhoto(input: {
@@ -163,8 +191,7 @@ export const photoService = {
   },
 
   async deletePhoto(photoId: string): Promise<void> {
-    const nextPhotos = readStoredPhotos().filter((photo) => photo.id !== photoId)
-    persistPhotos(nextPhotos)
+    await this.deletePhotoIfUnreferenced(photoId)
   },
 
   async togglePhotoLike(photoId: string, userId: string): Promise<GalleryPhoto> {
@@ -192,6 +219,7 @@ export const photoService = {
     })
   },
 
+  // Deprecated: persistent saved state should be managed via savedPhotoService.
   async togglePhotoSaved(photoId: string): Promise<GalleryPhoto> {
     return updateStoredPhoto(photoId, (photo) => ({
       ...photo,
@@ -214,6 +242,82 @@ export const photoService = {
       badges: (photo.badges ?? []).filter((item) => item !== badge),
       updatedAt: new Date().toISOString(),
     }))
+  },
+
+  async getPhotoById(photoId: string): Promise<GalleryPhoto | null> {
+    const storedPhoto = readStoredPhotos().find((photo) => photo.id === photoId)
+    if (storedPhoto) {
+      return storedPhoto
+    }
+
+    for (const event of eventService.getHomeEvents()) {
+      const eventPhoto = event.photos.find((photo) => photo.id === photoId)
+      if (eventPhoto) {
+        return normalizePhoto(eventPhoto, {
+          eventId: event.id,
+          authorName: event.organizerName,
+          createdAt: event.startsAt,
+          tone: eventPhoto.tone ?? DEFAULT_PHOTO_TONE,
+        })
+      }
+    }
+
+    return null
+  },
+
+  async getPhotosByIds(photoIds: string[], userId?: string): Promise<GalleryPhoto[]> {
+    const uniqueIds = uniqueStrings(photoIds)
+    const savedPhotoIds = userId
+      ? new Set(await savedPhotoService.getUserSavedPhotoIds(userId))
+      : new Set<string>()
+    const photos = await Promise.all(uniqueIds.map((photoId) => this.getPhotoById(photoId)))
+
+    return photos
+      .filter((photo): photo is GalleryPhoto => Boolean(photo))
+      .map((photo) =>
+        userId
+          ? normalizePhoto({
+              ...photo,
+              saved: savedPhotoIds.has(photo.id),
+            }, photo)
+          : photo,
+      )
+  },
+
+  async getUserSavedGallery(userId: string): Promise<GalleryPhoto[]> {
+    const savedPhotoIds = await savedPhotoService.getUserSavedPhotoIds(userId)
+    return this.getPhotosByIds(savedPhotoIds, userId)
+  },
+
+  async getPhotoUsage(photoId: string): Promise<{
+    eventLinksCount: number
+    savedLinksCount: number
+    canDeletePhysicalPhoto: boolean
+  }> {
+    const eventLinksCount = getEventPhotoLinksFromEvents(photoId).length
+    const savedLinksCount = await savedPhotoService.getSavedLinksCount(photoId)
+
+    return {
+      eventLinksCount,
+      savedLinksCount,
+      canDeletePhysicalPhoto: eventLinksCount === 0 && savedLinksCount === 0,
+    }
+  },
+
+  async cleanupOrphanPhoto(photoId: string): Promise<void> {
+    const usage = await this.getPhotoUsage(photoId)
+    if (!usage.canDeletePhysicalPhoto) {
+      return
+    }
+
+    const nextPhotos = readStoredPhotos().filter((photo) => photo.id !== photoId)
+    persistPhotos(nextPhotos)
+  },
+
+  async deletePhotoIfUnreferenced(photoId: string): Promise<void> {
+    // TODO Appwrite:
+    // When using Storage, delete the physical file only after both event_photos and saved_photos have no references to photoId.
+    await this.cleanupOrphanPhoto(photoId)
   },
 }
 

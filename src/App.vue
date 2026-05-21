@@ -9,6 +9,7 @@ import { eventService } from './services/eventService'
 import { participantService } from './services/participantService'
 import { photoService } from './services/photoService'
 import { rsvpService } from './services/rsvpService'
+import { savedPhotoService } from './services/savedPhotoService'
 import type {
   AchievementScope,
   AchievementTemplate,
@@ -273,6 +274,7 @@ function applyCurrentUser(user: CurrentUser) {
   currentUser.name =
     user.displayName?.trim() || (user.mode === 'demo' ? 'Юрий' : `Гость ${String(user.id).slice(-4)}`)
   currentUser.initials = buildUserInitials(currentUser.name)
+  void syncAllEventPhotosFromService()
 }
 
 function buildRuntimeDemoUser(): CurrentUser {
@@ -1436,7 +1438,7 @@ async function syncEventPhotosFromService(eventId: string) {
   const event = getEventById(eventId)
   if (!event) return null
 
-  const photos = await photoService.getEventPhotos(eventId)
+  const photos = await photoService.getEventPhotos(eventId, currentUser.id)
   const nextEvent = {
     ...event,
     photos,
@@ -1636,11 +1638,31 @@ async function sendEventChatMessage() {
 }
 
 async function togglePhotoSaved(eventId: string, photoId: string) {
-  const updatedPhoto = await photoService.togglePhotoSaved(photoId)
+  const event = getEventById(eventId)
+  if (!event) return
+
+  const participant =
+    currentParticipant.value?.eventId === event.id
+      ? currentParticipant.value
+      : await ensureCurrentParticipant(event)
+  const { saved } = await savedPhotoService.toggleSavedPhoto({
+    userId: currentUser.id,
+    eventId,
+    photoId,
+    participantId: participant?.id,
+  })
+
   updateEventInList(eventId, (current) => {
     const nextEvent = {
       ...current,
-      photos: current.photos.map((photo) => (photo.id === photoId ? updatedPhoto : photo)),
+      photos: current.photos.map((photo) =>
+        photo.id === photoId
+          ? {
+              ...photo,
+              saved,
+            }
+          : photo,
+      ),
     }
     syncEventSavedCount(nextEvent)
     return nextEvent
