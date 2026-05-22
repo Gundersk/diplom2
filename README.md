@@ -16,10 +16,11 @@
 - The first shared Storage flow is now prepared for event cover/background visuals.
 - `authService` now uses Appwrite Auth anonymous sessions for guest login in appwrite mode.
 - The first real Appwrite adapters already exist for `authService`, `eventService`, and `participantService`.
+- `photoService` and `chatService` now also use Appwrite in `VITE_DATA_MODE=appwrite` for shared event photos and shared event chat.
 - If an Appwrite session already exists, `authService` reuses it instead of creating a new guest session.
 - If a session exists but the `profiles` document is missing, `authService` restores that profile for the same `userId`.
 - `profiles` is strongly recommended as the next collection for storing displayName, avatarUrl, and mode. If it is missing, auth still works and falls back to lightweight local cache for profile extras.
-- `photoService`, `savedPhotoService`, `photoCommentService`, `achievementService`, `rsvpService`, and `chatService` still use localStorage for now.
+- `savedPhotoService`, `photoCommentService`, `achievementService`, and `rsvpService` still use localStorage for now.
 
 ## Appwrite Schema Setup
 
@@ -45,8 +46,28 @@ Notes:
   - `profiles`
   - `events`
   - `participants`
+- After the shared chat/photo step, it should also create:
+  - `photos`
+  - `chat_messages`
 - The script also creates/checks the `event_gallery_photos` bucket for shared event cover/background uploads.
-- The current frontend still uses Appwrite only for `authService`, `eventService`, and `participantService` in `VITE_DATA_MODE=appwrite`.
+- The current frontend uses Appwrite for:
+  - `authService`
+  - `eventService`
+  - `participantService`
+  - `photoService`
+  - `chatService`
+
+## Shared Event Chat And Photos
+
+- In `VITE_DATA_MODE=appwrite`, event chat messages and album photos are now shared between browsers/users through Appwrite.
+- Event photo uploads use the existing `event_gallery_photos` bucket.
+- The `photos` collection stores metadata plus `storageFileId` and `imageUrl`.
+- The `chat_messages` collection stores shared event chat messages and optional `photoId`.
+- `local` mode is still preserved as the demo/localStorage fallback.
+
+Important after pull:
+
+- Run `npm run setup:appwrite` manually before testing shared photos/chat, otherwise the new `photos` and `chat_messages` collections will not exist yet.
 - `node-appwrite` is kept on the current `1.9.x`-compatible line. The SDK can still warn when its generated patch target (for example `1.9.5`) is newer than the local server patch (for example `1.9.0`). Per Appwrite's release policy and the Node SDK README, `1.9.x` remains backward compatible within the major line; upgrading the local Appwrite server to a newer `1.9.x` patch is still recommended when convenient.
 
 ## Shared Event Visuals
@@ -73,6 +94,21 @@ Notes:
 4. Open the link in a second browser or an incognito window.
 5. Sign in as a guest.
 6. Check the `participants` collection in Appwrite Console: a second participant should appear with a different `userId`.
+
+## Shared Chat / Photo Test
+
+1. Run `npm run setup:appwrite`.
+2. Start the app with `VITE_DATA_MODE=appwrite`.
+3. Create an event in the first browser window.
+4. Open the invite link in a second browser or incognito window.
+5. Sign in as a guest.
+6. Send a chat message from the guest.
+7. Upload a photo into the album from the guest.
+8. Upload a photo through the chat input from the guest.
+9. Refresh or reopen the same event as the organizer and verify:
+   - the guest message is visible;
+   - the uploaded album photo is visible;
+   - the chat photo message is visible and linked via `photoId`.
 
 ## Participant vs RSVP Model
 

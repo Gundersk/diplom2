@@ -1,10 +1,27 @@
-// TODO: add Appwrite implementation when VITE_DATA_MODE=appwrite
-
-import { eventService } from './eventService'
+import type { Models } from 'appwrite'
+import { Permission, Role } from 'appwrite'
+import { APPWRITE_COLLECTIONS, APPWRITE_DATABASE_ID } from '../config/appwriteSchema'
+import { hasAppwriteRuntimeConfig } from '../config/runtime'
+import { appwriteDatabases, appwriteId, appwriteQuery } from '../lib/appwrite'
 import type { EventChatMessage } from '../types/chat'
 import { buildChatInitials, normalizeChatMessage } from '../types/chat'
+import { isAppwriteMode } from './adapters/dataMode'
+import { eventService } from './eventService'
 
 const CHAT_STORAGE_KEY = 'event-gallery:chat-messages'
+
+type ChatMessageDocument = Models.Document & {
+  eventId: string
+  userId: string
+  participantId: string
+  authorName: string
+  authorAvatarUrl?: string
+  authorInitials?: string
+  text: string
+  photoId?: string
+  createdAt: string
+  updatedAt?: string
+}
 
 function canUseLocalStorage() {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined'
@@ -12,6 +29,15 @@ function canUseLocalStorage() {
 
 function createId(prefix: string) {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}`
+}
+
+function assertAppwriteReady(methodName: string) {
+  if (!hasAppwriteRuntimeConfig() || !APPWRITE_DATABASE_ID) {
+    const message =
+      `[chatService] ${methodName} requires Appwrite runtime config and an existing chat_messages collection.`
+    console.error(message)
+    throw new Error('Appwrite mode is enabled, but the chat adapter is not configured yet.')
+  }
 }
 
 function readStoredMessages(): EventChatMessage[] {
@@ -38,6 +64,22 @@ function persistMessages(messages: EventChatMessage[]) {
     CHAT_STORAGE_KEY,
     JSON.stringify(messages.map((message) => normalizeChatMessage(message))),
   )
+}
+
+function normalizeChatDocument(document: ChatMessageDocument): EventChatMessage {
+  return normalizeChatMessage({
+    id: document.$id,
+    eventId: document.eventId,
+    userId: document.userId,
+    participantId: document.participantId,
+    authorName: document.authorName,
+    authorAvatarUrl: document.authorAvatarUrl,
+    authorInitials: document.authorInitials || buildChatInitials(document.authorName),
+    text: document.text,
+    photoId: document.photoId,
+    createdAt: document.createdAt ?? document.$createdAt,
+    updatedAt: document.updatedAt ?? document.$updatedAt ?? document.$createdAt,
+  })
 }
 
 async function migrateEventMessagesIfNeeded(eventId: string) {
@@ -80,12 +122,27 @@ function updateStoredMessage(messageId: string, updater: (message: EventChatMess
 
 export const chatService = {
   async getEventMessages(eventId: string): Promise<EventChatMessage[]> {
-    const stored = readStoredMessages().filter((message) => message.eventId === eventId)
-    if (stored.length > 0) {
-      return stored
+    if (!isAppwriteMode()) {
+      const stored = readStoredMessages().filter((message) => message.eventId === eventId)
+      if (stored.length > 0) {
+        return stored
+      }
+
+      return await migrateEventMessagesIfNeeded(eventId)
     }
 
-    return await migrateEventMessagesIfNeeded(eventId)
+    assertAppwriteReady('getEventMessages')
+    const response = await appwriteDatabases.listDocuments<ChatMessageDocument>(
+      APPWRITE_DATABASE_ID,
+      APPWRITE_COLLECTIONS.chatMessages,
+      [
+        appwriteQuery.equal('eventId', eventId),
+        appwriteQuery.limit(5000),
+        appwriteQuery.orderAsc('createdAt'),
+      ],
+    )
+
+    return response.documents.map((document) => normalizeChatDocument(document))
   },
 
   async addEventMessage(input: {
@@ -97,33 +154,83 @@ export const chatService = {
     text: string
     photoId?: string
   }): Promise<EventChatMessage> {
-    const nextMessage = normalizeChatMessage({
-      id: createId('chat'),
-      eventId: input.eventId,
-      userId: input.userId,
-      participantId: input.participantId,
-      authorName: input.authorName,
-      authorAvatarUrl: input.authorAvatarUrl,
-      authorInitials: buildChatInitials(input.authorName),
-      text: input.text,
-      photoId: input.photoId,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    })
+    if (!isAppwriteMode()) {
+      const nextMessage = normalizeChatMessage({
+        id: createId('chat'),
+        eventId: input.eventId,
+        userId: input.userId,
+        participantId: input.participantId,
+        authorName: input.authorName,
+        authorAvatarUrl: input.authorAvatarUrl,
+        authorInitials: buildChatInitials(input.authorName),
+        text: input.text,
+        photoId: input.photoId,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      })
 
-    persistMessages([...readStoredMessages(), nextMessage])
-    return nextMessage
+      persistMessages([...readStoredMessages(), nextMessage])
+      return nextMessage
+    }
+
+    assertAppwriteReady('addEventMessage')
+    const now = new Date().toISOString()
+    const created = await appwriteDatabases.createDocument<ChatMessageDocument>(
+      APPWRITE_DATABASE_ID,
+      APPWRITE_COLLECTIONS.chatMessages,
+      appwriteId.unique(),
+      {
+        eventId: input.eventId,
+        userId: input.userId,
+        participantId: input.participantId,
+        authorName: input.authorName,
+        authorAvatarUrl: input.authorAvatarUrl ?? '',
+        authorInitials: buildChatInitials(input.authorName),
+        text: input.text,
+        photoId: input.photoId ?? '',
+        createdAt: now,
+        updatedAt: now,
+      },
+      [
+        Permission.read(Role.users()),
+        Permission.update(Role.user(input.userId)),
+        Permission.delete(Role.user(input.userId)),
+      ],
+    )
+
+    return normalizeChatDocument(created)
   },
 
   async updateMessage(messageId: string, text: string): Promise<EventChatMessage> {
-    return updateStoredMessage(messageId, (message) => ({
-      ...message,
-      text,
-      updatedAt: new Date().toISOString(),
-    }))
+    if (!isAppwriteMode()) {
+      return updateStoredMessage(messageId, (message) => ({
+        ...message,
+        text,
+        updatedAt: new Date().toISOString(),
+      }))
+    }
+
+    assertAppwriteReady('updateMessage')
+    const updated = await appwriteDatabases.updateDocument<ChatMessageDocument>(
+      APPWRITE_DATABASE_ID,
+      APPWRITE_COLLECTIONS.chatMessages,
+      messageId,
+      {
+        text,
+        updatedAt: new Date().toISOString(),
+      },
+    )
+
+    return normalizeChatDocument(updated)
   },
 
   async deleteMessage(messageId: string): Promise<void> {
-    persistMessages(readStoredMessages().filter((message) => message.id !== messageId))
+    if (!isAppwriteMode()) {
+      persistMessages(readStoredMessages().filter((message) => message.id !== messageId))
+      return
+    }
+
+    assertAppwriteReady('deleteMessage')
+    await appwriteDatabases.deleteDocument(APPWRITE_DATABASE_ID, APPWRITE_COLLECTIONS.chatMessages, messageId)
   },
 }

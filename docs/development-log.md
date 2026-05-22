@@ -1665,3 +1665,81 @@ Run `npm run setup:appwrite` locally, then create/update an event with a bundled
 
 After pulling this fix, run `npm run setup:appwrite` manually.  
 Without that, the new Appwrite attribute `events.backgroundUrl` will not exist yet.
+
+## 2026-05-22. Шаг: MVP-синхронизация фото и чата через Appwrite
+
+### Цель
+
+Сделать первый shared data flow для события, чтобы в `VITE_DATA_MODE=appwrite` сообщения и фотографии события были видны между разными браузерами и пользователями.
+
+### Что сделано
+
+1. В `scripts/setup-appwrite-schema.ts` добавлены две новые Appwrite-коллекции:
+   - `photos`
+   - `chat_messages`
+2. Для `photos` зафиксированы поля metadata события:
+   - `eventId`, `userId`, `participantId`
+   - `authorName`, `authorAvatarUrl`
+   - `storageFileId`, `imageUrl`
+   - `caption`, `likesCount`, `badgesJson`
+   - `createdAt`, `updatedAt`
+3. Для `chat_messages` зафиксированы поля shared event chat:
+   - `eventId`, `userId`, `participantId`
+   - `authorName`, `authorAvatarUrl`, `authorInitials`
+   - `text`, `photoId`
+   - `createdAt`, `updatedAt`
+4. `photoService` получил Appwrite-ветку:
+   - загрузка файла фото в существующий bucket `event_gallery_photos`
+   - сохранение metadata-документа в `photos`
+   - чтение фотографий события из Appwrite по `eventId`
+   - удаление metadata и storage-файла для MVP
+5. `chatService` получил Appwrite-ветку:
+   - чтение shared messages из `chat_messages`
+   - создание shared messages через `createDocument`
+   - базовые `updateMessage/deleteMessage`
+6. В `App.vue` интеграция сделана точечно:
+   - для `local` mode фото по-прежнему читается как data URL
+   - для `appwrite` mode в `photoService` передается исходный `File`
+   - после загрузки фото вызываются `syncEventPhotosFromService()` и `syncEventMessagesFromService()`
+   - после обычной отправки сообщения чат тоже перечитывается из сервиса
+7. `local` mode сохранен как demo/localStorage fallback.
+
+### Что важно по архитектуре
+
+- Shared chat и shared event album теперь работают через Appwrite только в `VITE_DATA_MODE=appwrite`.
+- `savedPhotoService`, `photoCommentService`, `achievementService` и `rsvpService` пока не переводились на backend.
+- Для MVP мы пока не делали realtime: синхронизация происходит через повторное чтение сервиса после действий и при обновлении страницы.
+- После pull нужно вручную выполнить `npm run setup:appwrite`, иначе коллекции `photos` и `chat_messages` не появятся в локальном Appwrite.
+
+### Как проверить вручную
+
+1. Выполнить:
+
+```bash
+npm run setup:appwrite
+```
+
+2. Запустить frontend:
+
+```bash
+npm run dev
+```
+
+3. Включить `VITE_DATA_MODE=appwrite`.
+4. Организатор создает событие и открывает invite link.
+5. Гость в инкогнито входит по invite link.
+6. Гость:
+   - пишет сообщение в чат;
+   - загружает фото в альбом;
+   - загружает фото через чат.
+7. Организатор обновляет событие и видит:
+   - сообщение гостя;
+   - фото в альбоме;
+   - chat message `добавил(а) фото` с `photoId`.
+8. Гость после обновления страницы тоже видит те же данные.
+
+### Проверка
+
+```bash
+npm run build
+```

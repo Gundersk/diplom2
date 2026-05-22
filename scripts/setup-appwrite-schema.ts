@@ -1,6 +1,5 @@
 import { readFile } from 'node:fs/promises'
-import path from 'node:path'
-import process from 'node:process'
+import * as path from 'node:path'
 import {
   AppwriteException,
   Client,
@@ -662,6 +661,84 @@ const collectionSchemas: CollectionSchema[] = [
         type: DatabasesIndexType.Unique,
         attributes: ['eventId', 'userId'],
         orders: ['ASC', 'ASC'],
+      },
+    ],
+  },
+  {
+    id: 'photos',
+    name: 'Photos',
+    permissions: [Permission.create(Role.users()), Permission.read(Role.users())],
+    documentSecurity: true,
+    attributes: [
+      { kind: 'string', key: 'eventId', size: 64, required: true },
+      { kind: 'string', key: 'userId', size: 64, required: true },
+      { kind: 'string', key: 'participantId', size: 64, required: true },
+      { kind: 'string', key: 'authorName', size: 128, required: true },
+      { kind: 'string', key: 'authorAvatarUrl', size: 4096, required: false },
+      { kind: 'string', key: 'storageFileId', size: 64, required: true },
+      { kind: 'string', key: 'imageUrl', size: 4096, required: true },
+      { kind: 'string', key: 'caption', size: 1024, required: false },
+      { kind: 'integer', key: 'likesCount', required: false },
+      { kind: 'string', key: 'badgesJson', size: 4096, required: false },
+      { kind: 'string', key: 'createdAt', size: 64, required: true },
+      { kind: 'string', key: 'updatedAt', size: 64, required: false },
+    ],
+    indexes: [
+      {
+        key: 'eventId',
+        type: DatabasesIndexType.Key,
+        attributes: ['eventId'],
+        orders: ['ASC'],
+      },
+      {
+        key: 'userId',
+        type: DatabasesIndexType.Key,
+        attributes: ['userId'],
+        orders: ['ASC'],
+      },
+      {
+        key: 'createdAt',
+        type: DatabasesIndexType.Key,
+        attributes: ['createdAt'],
+        orders: ['ASC'],
+      },
+    ],
+  },
+  {
+    id: 'chat_messages',
+    name: 'Chat Messages',
+    permissions: [Permission.create(Role.users()), Permission.read(Role.users())],
+    documentSecurity: true,
+    attributes: [
+      { kind: 'string', key: 'eventId', size: 64, required: true },
+      { kind: 'string', key: 'userId', size: 64, required: true },
+      { kind: 'string', key: 'participantId', size: 64, required: true },
+      { kind: 'string', key: 'authorName', size: 128, required: true },
+      { kind: 'string', key: 'authorAvatarUrl', size: 4096, required: false },
+      { kind: 'string', key: 'authorInitials', size: 16, required: false },
+      { kind: 'string', key: 'text', size: 4096, required: true },
+      { kind: 'string', key: 'photoId', size: 64, required: false },
+      { kind: 'string', key: 'createdAt', size: 64, required: true },
+      { kind: 'string', key: 'updatedAt', size: 64, required: false },
+    ],
+    indexes: [
+      {
+        key: 'eventId',
+        type: DatabasesIndexType.Key,
+        attributes: ['eventId'],
+        orders: ['ASC'],
+      },
+      {
+        key: 'createdAt',
+        type: DatabasesIndexType.Key,
+        attributes: ['createdAt'],
+        orders: ['ASC'],
+      },
+      {
+        key: 'photoId',
+        type: DatabasesIndexType.Key,
+        attributes: ['photoId'],
+        orders: ['ASC'],
       },
     ],
   },

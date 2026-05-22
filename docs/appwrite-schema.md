@@ -346,3 +346,74 @@ Current first implemented use:
 - физически удалить файл и `photos` metadata только если:
   - нет ссылок в `event_photos` для `photoId`
   - нет ссылок в `saved_photos` для `photoId`
+
+## 2026-05-22 update: shared event photos and chat
+
+The first shared multi-user sync step now also targets these Appwrite collections in `VITE_DATA_MODE=appwrite`.
+
+### `photos`
+
+Purpose:
+- stores shared event photo metadata for the event album
+- points to a single physical file in the existing `event_gallery_photos` bucket
+
+Fields:
+- `eventId: string` required
+- `userId: string` required
+- `participantId: string` required
+- `authorName: string` required
+- `authorAvatarUrl: string` optional
+- `storageFileId: string` required
+- `imageUrl: string` required
+- `caption: string` optional
+- `likesCount: integer` optional (legacy fallback)
+- `badgesJson: string` optional
+- `createdAt: string` required
+- `updatedAt: string` optional
+
+Indexes:
+- `eventId`
+- `userId`
+- `createdAt`
+
+MVP access model:
+- collection permissions: create/read for `Role.users()`
+- document permissions on create:
+  - `Permission.read(Role.users())`
+  - `Permission.update(Role.user(ownerUserId))`
+  - `Permission.delete(Role.user(ownerUserId))`
+
+### `chat_messages`
+
+Purpose:
+- stores shared event chat messages visible between different browsers/users
+
+Fields:
+- `eventId: string` required
+- `userId: string` required
+- `participantId: string` required
+- `authorName: string` required
+- `authorAvatarUrl: string` optional
+- `authorInitials: string` optional
+- `text: string` required
+- `photoId: string` optional
+- `createdAt: string` required
+- `updatedAt: string` optional
+
+Indexes:
+- `eventId`
+- `createdAt`
+- `photoId`
+
+MVP access model:
+- collection permissions: create/read for `Role.users()`
+- document permissions on create:
+  - `Permission.read(Role.users())`
+  - `Permission.update(Role.user(ownerUserId))`
+  - `Permission.delete(Role.user(ownerUserId))`
+
+### Notes
+
+- This step does **not** move saved photos, photo comments, achievements, or RSVP to Appwrite yet.
+- Shared event chat and shared event album now rely on Appwrite only in `VITE_DATA_MODE=appwrite`.
+- `local` mode remains the fallback for demos and offline/backend-free development.

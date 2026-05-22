@@ -1874,6 +1874,7 @@ async function sendEventChatMessage() {
     ...current,
     chatMessages: [...current.chatMessages, nextMessage],
   }))
+  await syncEventMessagesFromService(event.id)
   eventChatDraft.value = ''
 }
 
@@ -2192,14 +2193,14 @@ async function addEventPhoto(eventId: string, file: File, source: 'album' | 'cha
   const participant = currentParticipant.value ?? (await ensureCurrentParticipant(event))
   if (!participant) return
 
-  const imageUrl = await readFileAsDataUrl(file)
   const photo = await photoService.addEventPhoto({
     eventId,
     userId: currentUser.id,
     participantId: participant.id,
     authorName: participant.displayName,
     authorAvatarUrl: currentUser.avatarUrl,
-    imageUrl,
+    imageUrl: isAppwriteMode() ? undefined : await readFileAsDataUrl(file),
+    file: isAppwriteMode() ? file : undefined,
   })
 
   const photoChatMessage =
@@ -2230,6 +2231,11 @@ async function addEventPhoto(eventId: string, file: File, source: 'album' | 'cha
     syncEventSavedCount(nextEvent)
     return nextEvent
   })
+
+  await syncEventPhotosFromService(eventId)
+  if (photoChatMessage) {
+    await syncEventMessagesFromService(eventId)
+  }
 
   await addCurrentParticipantPoints(10)
 
