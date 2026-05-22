@@ -1,5 +1,6 @@
 export type AchievementScope = 'automatic' | 'personal' | 'group'
 export type AchievementMode = 'automatic' | 'manual'
+export type AchievementVisibility = 'visible' | 'secret'
 export type AchievementConditionType =
   | 'first_photo'
   | 'most_photos'
@@ -17,6 +18,7 @@ export type EventAchievement = {
   tone?: string
   points?: number
   selected?: boolean
+  visibility?: AchievementVisibility
   createdBy?: string
   assignedToUserId?: string
   assignedToParticipantId?: string
@@ -35,6 +37,7 @@ export type AchievementTemplate = {
   tone?: string
   points?: number
   conditionType?: AchievementConditionType
+  visibility?: AchievementVisibility
   isCustom?: boolean
   createdBy?: string
   createdAt?: string
@@ -49,5 +52,16 @@ export type MedalForm = {
   scope: Extract<AchievementScope, 'personal' | 'group'>
   icon: string
   tone: string
+  visibility: AchievementVisibility
   saveAsTemplate: boolean
+}
+
+export type ParticipantAchievement = {
+  id: string
+  eventId: string
+  achievementId: string
+  participantId: string
+  userId: string
+  awardedByUserId: string
+  awardedAt: string
 }

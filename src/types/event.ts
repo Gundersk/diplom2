@@ -136,6 +136,7 @@ export type CreateEventForm = {
   automaticTemplateIds: string[]
   selectedPersonalTemplateIds: string[]
   selectedGroupTemplateIds: string[]
+  secretTemplateIds: string[]
 }
 
 export type AssetOption = {

@@ -416,4 +416,69 @@ MVP access model:
 
 - This step does **not** move saved photos, photo comments, achievements, or RSVP to Appwrite yet.
 - Shared event chat and shared event album now rely on Appwrite only in `VITE_DATA_MODE=appwrite`.
+
+## Achievement MVP Update
+
+Для MVP-достижений модель теперь разделена на две независимые сущности:
+
+- `event_achievements` — список достижений, доступных внутри конкретного события.
+- `participant_achievements` — факт выдачи достижения конкретному участнику.
+
+Это важно, потому что выбранное достижение события не означает автоматическое получение.
+
+### `event_achievements`
+
+Назначение:
+достижения, которые организатор подключил к событию и которые видны на странице события.
+
+Основные поля:
+
+- `eventId: string`
+- `templateId: string | null`
+- `scope: 'automatic' | 'personal' | 'group'`
+- `title: string`
+- `description: string`
+- `icon: string`
+- `tone: string`
+- `visibility: 'visible' | 'secret'`
+- `points: number | null`
+- `createdBy: string | null`
+- `createdAt: string`
+- `updatedAt: string | null`
+- `selected: boolean`
+
+Индексы MVP:
+
+- `eventId`
+- `visibility`
+
+### `participant_achievements`
+
+Назначение:
+связь между участником события и достижением, которое ему реально выдали.
+
+Основные поля:
+
+- `eventId: string`
+- `achievementId: string`
+- `participantId: string`
+- `userId: string`
+- `awardedByUserId: string`
+- `awardedAt: string`
+
+Индексы MVP:
+
+- `eventId`
+- `achievementId`
+- `participantId`
+- `userId`
+- `achievementId + participantId` (unique where supported)
+
+### UI-модель
+
+- Участник видит общий список достижений события и свой прогресс по ним.
+- Открытые достижения показывают реальное название и описание даже до получения.
+- Секретные достижения до выдачи отображаются как `Тайное достижение` / `Условие получения скрыто`.
+- Организатор вручную выдает достижения выбранным участникам.
+- Appwrite realtime для достижений пока не используется: после действия экран просто перечитывает awards из сервиса.
 - `local` mode remains the fallback for demos and offline/backend-free development.

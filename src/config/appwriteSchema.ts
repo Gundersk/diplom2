@@ -12,6 +12,7 @@ export const APPWRITE_COLLECTIONS = {
   photoComments: 'photo_comments',
   achievementTemplates: 'achievement_templates',
   eventAchievements: 'event_achievements',
+  participantAchievements: 'participant_achievements',
   rsvps: 'rsvps',
   chatMessages: 'chat_messages',
 } as const

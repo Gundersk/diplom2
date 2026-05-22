@@ -16,7 +16,9 @@ import { isAppwriteMode } from './services/adapters/dataMode'
 import type {
   AchievementScope,
   AchievementTemplate,
+  AchievementVisibility,
   EventAchievement,
+  ParticipantAchievement,
   MedalForm,
 } from './types/achievement'
 import type {
@@ -341,6 +343,8 @@ async function initializeCurrentUser() {
   await syncAllEventRsvpsFromService()
   await syncAllEventMessagesFromService()
   await syncAllEventAchievementsFromService()
+  await syncAllEventParticipantsFromService()
+  await syncAllEventAchievementAwardsFromService()
   await resolveInviteFlow()
 }
 
@@ -634,6 +638,7 @@ function createEmptyEventForm(): CreateEventForm {
     automaticTemplateIds: [],
     selectedPersonalTemplateIds: [],
     selectedGroupTemplateIds: [],
+    secretTemplateIds: [],
   }
 }
 
@@ -644,6 +649,7 @@ function createEmptyMedalForm(): MedalForm {
     scope: 'personal',
     icon: '🏅',
     tone: medalToneOptions[0],
+    visibility: 'visible',
     saveAsTemplate: true,
   }
 }
@@ -691,7 +697,7 @@ function canExpandOnHome(event: GalleryEvent) {
 }
 
 function canShowHomeAchievements(event: GalleryEvent) {
-  return canExpandOnHome(event) && event.achievements.length > 0
+  return canExpandOnHome(event) && getHomeAwardedAchievements(event).length > 0
 }
 
 function getSavedPhotos(event: GalleryEvent) {
@@ -800,6 +806,7 @@ function buildAchievementFromTemplate(template: AchievementTemplate): EventAchie
     mode: template.mode,
     points: template.points,
     selected: true,
+    visibility: template.visibility ?? 'visible',
     createdBy: currentUser.id,
     createdAt: new Date().toISOString(),
     conditionType: template.conditionType,
@@ -846,6 +853,12 @@ const profileEditorOpen = ref(false)
 const profileEditorName = ref('')
 const profileEditorAvatarUrl = ref<string | null>(null)
 const profileEditorError = ref('')
+const eventParticipantsByEventId = ref<Record<string, EventParticipant[]>>({})
+const eventAchievementAwardsByEventId = ref<Record<string, ParticipantAchievement[]>>({})
+const achievementAwardModalOpen = ref(false)
+const achievementAwardTarget = ref<EventAchievement | null>(null)
+const achievementAwardSelections = ref<string[]>([])
+const achievementAwardError = ref('')
 
 void initializeCurrentUser()
 void loadAchievementTemplates()
@@ -1030,6 +1043,24 @@ const eventPageData = computed(() => {
   if (currentView.value === 'preview') return previewDraftEvent.value
   if (currentView.value === 'event') return activeEvent.value
   return null
+})
+
+const activeEventParticipants = computed(() =>
+  activeEventId.value ? eventParticipantsByEventId.value[activeEventId.value] ?? [] : [],
+)
+
+const activeEventAwards = computed(() =>
+  activeEventId.value ? eventAchievementAwardsByEventId.value[activeEventId.value] ?? [] : [],
+)
+
+const activeParticipantAchievementIds = computed(() => {
+  const participantId = currentParticipant.value?.id
+  if (!participantId) return new Set<string>()
+  return new Set(
+    activeEventAwards.value
+      .filter((award) => award.participantId === participantId)
+      .map((award) => award.achievementId),
+  )
 })
 
 function getAssetById(list: AssetOption[], id: string) {
@@ -1533,6 +1564,8 @@ function openEventPage(eventId: string, eventOverride?: GalleryEvent | null) {
   void syncEventMessagesFromService(eventId)
   void syncEventPhotosFromService(eventId)
   void syncEventAchievementsFromService(eventId)
+  void syncEventParticipantsFromService(eventId)
+  void syncEventAchievementAwardsFromService(eventId)
   currentView.value = 'event'
   eventChatDraft.value = ''
   profileMenuOpen.value = false
@@ -1605,6 +1638,7 @@ async function saveCustomMedal() {
     description: trimmedDescription,
     icon: medalForm.value.icon.trim() || '🏅',
     tone: medalForm.value.tone,
+    visibility: medalForm.value.visibility,
     createdBy: currentUser.id,
   })
 
@@ -1618,6 +1652,11 @@ async function saveCustomMedal() {
     createEventForm.value.selectedPersonalTemplateIds = [
       ...createEventForm.value.selectedPersonalTemplateIds,
       newTemplate.id,
+    ]
+  }
+  if (newTemplate.visibility === 'secret') {
+    createEventForm.value.secretTemplateIds = [
+      ...new Set([...createEventForm.value.secretTemplateIds, newTemplate.id]),
     ]
   }
 
@@ -1743,6 +1782,34 @@ async function syncAllEventAchievementsFromService() {
   }
 }
 
+async function syncEventParticipantsFromService(eventId: string) {
+  eventParticipantsByEventId.value = {
+    ...eventParticipantsByEventId.value,
+    [eventId]: await participantService.getEventParticipants(eventId),
+  }
+  return eventParticipantsByEventId.value[eventId]
+}
+
+async function syncAllEventParticipantsFromService() {
+  for (const event of homeEvents.value) {
+    await syncEventParticipantsFromService(event.id)
+  }
+}
+
+async function syncEventAchievementAwardsFromService(eventId: string) {
+  eventAchievementAwardsByEventId.value = {
+    ...eventAchievementAwardsByEventId.value,
+    [eventId]: await achievementService.getEventAchievementAwards(eventId),
+  }
+  return eventAchievementAwardsByEventId.value[eventId]
+}
+
+async function syncAllEventAchievementAwardsFromService() {
+  for (const event of homeEvents.value) {
+    await syncEventAchievementAwardsFromService(event.id)
+  }
+}
+
 async function persistEventAchievementsSelection(eventId: string) {
   const existingAchievements = await achievementService.getEventAchievements(eventId)
   for (const achievement of existingAchievements) {
@@ -1758,6 +1825,7 @@ async function persistEventAchievementsSelection(eventId: string) {
       description: template.description,
       icon: template.icon,
       tone: template.tone,
+      visibility: createEventForm.value.secretTemplateIds.includes(template.id) ? 'secret' : 'visible',
       points: template.points,
       createdBy: currentUser.id,
     })
@@ -1772,6 +1840,9 @@ async function persistEventAchievementsSelection(eventId: string) {
       description: template.description,
       icon: template.icon,
       tone: template.tone,
+      visibility: createEventForm.value.secretTemplateIds.includes(template.id)
+        ? 'secret'
+        : (template.visibility ?? 'visible'),
       points: template.points,
       createdBy: currentUser.id,
     })
@@ -1990,10 +2061,27 @@ function countAchievements(event: GalleryEvent, scope: AchievementScope) {
   return event.achievements.filter((achievement) => achievement.scope === scope).length
 }
 
+function isSecretTemplate(templateId: string) {
+  return createEventForm.value.secretTemplateIds.includes(templateId)
+}
+
+function toggleTemplateSecret(templateId: string) {
+  const next = new Set(createEventForm.value.secretTemplateIds)
+  if (next.has(templateId)) {
+    next.delete(templateId)
+  } else {
+    next.add(templateId)
+  }
+  createEventForm.value.secretTemplateIds = [...next]
+}
+
 function toggleAutomaticTemplate(templateId: string) {
   const nextIds = new Set(createEventForm.value.automaticTemplateIds)
   if (nextIds.has(templateId)) {
     nextIds.delete(templateId)
+    createEventForm.value.secretTemplateIds = createEventForm.value.secretTemplateIds.filter(
+      (id) => id !== templateId,
+    )
   } else {
     nextIds.add(templateId)
   }
@@ -2008,6 +2096,9 @@ function toggleManualTemplate(templateId: string, scope: AchievementScope) {
   )
   if (nextIds.has(templateId)) {
     nextIds.delete(templateId)
+    createEventForm.value.secretTemplateIds = createEventForm.value.secretTemplateIds.filter(
+      (id) => id !== templateId,
+    )
   } else {
     nextIds.add(templateId)
   }
@@ -2019,6 +2110,9 @@ function toggleManualTemplate(templateId: string, scope: AchievementScope) {
 }
 
 function removeSelectedAchievement(templateId: string, scope: 'automatic' | AchievementScope) {
+  createEventForm.value.secretTemplateIds = createEventForm.value.secretTemplateIds.filter(
+    (id) => id !== templateId,
+  )
   if (scope === 'automatic') {
     createEventForm.value.automaticTemplateIds = createEventForm.value.automaticTemplateIds.filter(
       (id) => id !== templateId,
@@ -2046,6 +2140,144 @@ function getCreateAchievementKey(scope: string, templateId: string) {
   return `${scope}-${templateId}`
 }
 
+function getHomeParticipant(eventId: string) {
+  if (!currentUser.id) return null
+  return (
+    eventParticipantsByEventId.value[eventId]?.find((participant) => participant.userId === currentUser.id) ?? null
+  )
+}
+
+function getEventAwards(eventId: string) {
+  return eventAchievementAwardsByEventId.value[eventId] ?? []
+}
+
+function getHomeAwardedAchievements(event: GalleryEvent) {
+  const participant = getHomeParticipant(event.id)
+  if (!participant) return []
+
+  const awardedIds = new Set(
+    getEventAwards(event.id)
+      .filter((award) => award.participantId === participant.id)
+      .map((award) => award.achievementId),
+  )
+
+  return event.achievements.filter((achievement) => awardedIds.has(achievement.id))
+}
+
+function isAchievementUnlockedForCurrentParticipant(achievement: EventAchievement) {
+  return activeParticipantAchievementIds.value.has(achievement.id)
+}
+
+function getAchievementAwardCount(eventId: string, achievementId: string) {
+  return getEventAwards(eventId).filter((award) => award.achievementId === achievementId).length
+}
+
+function getAchievementAwardedParticipants(eventId: string, achievementId: string) {
+  const participants = eventParticipantsByEventId.value[eventId] ?? []
+  const awardedParticipantIds = new Set(
+    getEventAwards(eventId)
+      .filter((award) => award.achievementId === achievementId)
+      .map((award) => award.participantId),
+  )
+
+  return participants.filter((participant) => awardedParticipantIds.has(participant.id))
+}
+
+function getAchievementCardTitle(achievement: EventAchievement) {
+  if (isCurrentUserOrganizer(activeEvent.value) || isAchievementUnlockedForCurrentParticipant(achievement)) {
+    return achievement.title
+  }
+  return achievement.visibility === 'secret' ? 'Тайное достижение' : achievement.title
+}
+
+function getAchievementCardDescription(achievement: EventAchievement) {
+  if (isCurrentUserOrganizer(activeEvent.value) || isAchievementUnlockedForCurrentParticipant(achievement)) {
+    return achievement.description
+  }
+  return achievement.visibility === 'secret' ? 'Условие получения скрыто' : achievement.description
+}
+
+function getAchievementCardIcon(achievement: EventAchievement) {
+  if (isCurrentUserOrganizer(activeEvent.value) || isAchievementUnlockedForCurrentParticipant(achievement)) {
+    return achievement.icon
+  }
+  return achievement.visibility === 'secret' ? '❔' : achievement.icon
+}
+
+function getAchievementAudienceLabel(eventId: string, achievement: EventAchievement) {
+  const count = getAchievementAwardCount(eventId, achievement.id)
+  const total = eventParticipantsByEventId.value[eventId]?.length ?? 0
+  const unlocked = isAchievementUnlockedForCurrentParticipant(achievement)
+
+  if (count === 0) return 'Пока нет ни у кого'
+  if (count === 1 && unlocked) return 'Эксклюзив (есть только у вас)'
+  if (count === 1) return 'Есть у 1 участника'
+  return `Есть у ${count} из ${total || count} участников`
+}
+
+function getAchievementAwardedNamesLabel(eventId: string, achievementId: string) {
+  const participants = getAchievementAwardedParticipants(eventId, achievementId)
+  if (participants.length === 0) return 'Получили: никто'
+  return `Получили: ${participants.map((participant) => participant.displayName).join(', ')}`
+}
+
+async function openAchievementAwardModal(achievement: EventAchievement) {
+  if (!activeEvent.value) return
+  achievementAwardTarget.value = achievement
+  achievementAwardSelections.value = []
+  achievementAwardError.value = ''
+  achievementAwardModalOpen.value = true
+  await syncEventParticipantsFromService(activeEvent.value.id)
+  await syncEventAchievementAwardsFromService(activeEvent.value.id)
+}
+
+function closeAchievementAwardModal() {
+  achievementAwardModalOpen.value = false
+  achievementAwardTarget.value = null
+  achievementAwardSelections.value = []
+  achievementAwardError.value = ''
+}
+
+function isAchievementAlreadyAwardedToParticipant(achievementId: string, participantId: string) {
+  return activeEventAwards.value.some(
+    (award) => award.achievementId === achievementId && award.participantId === participantId,
+  )
+}
+
+function toggleAchievementAwardSelection(participantId: string) {
+  const next = new Set(achievementAwardSelections.value)
+  if (next.has(participantId)) {
+    next.delete(participantId)
+  } else {
+    next.add(participantId)
+  }
+  achievementAwardSelections.value = [...next]
+}
+
+async function submitAchievementAwards() {
+  if (!activeEvent.value || !achievementAwardTarget.value || !currentUser.id) return
+
+  const selectedParticipants = activeEventParticipants.value.filter((participant) =>
+    achievementAwardSelections.value.includes(participant.id),
+  )
+
+  if (selectedParticipants.length === 0) {
+    achievementAwardError.value = 'Выберите хотя бы одного участника.'
+    return
+  }
+
+  await achievementService.awardAchievementToParticipants(
+    activeEvent.value.id,
+    achievementAwardTarget.value.id,
+    selectedParticipants,
+    currentUser.id,
+  )
+
+  await syncEventAchievementAwardsFromService(activeEvent.value.id)
+  await loadHomeEvents()
+  closeAchievementAwardModal()
+}
+
 async function deleteTemplate(templateId: string) {
   const template = achievementTemplates.value.find((item) => item.id === templateId)
   if (!template) return
@@ -2057,6 +2289,9 @@ async function deleteTemplate(templateId: string) {
     (id) => id !== templateId,
   )
   createEventForm.value.selectedGroupTemplateIds = createEventForm.value.selectedGroupTemplateIds.filter(
+    (id) => id !== templateId,
+  )
+  createEventForm.value.secretTemplateIds = createEventForm.value.secretTemplateIds.filter(
     (id) => id !== templateId,
   )
   if (createAchievementPopover.value?.endsWith(templateId)) {
@@ -2348,6 +2583,15 @@ function populateFormFromEvent(event: GalleryEvent) {
           event.achievements.some((achievement) => achievement.title === template.title),
       )
       .map((template) => template.id),
+    secretTemplateIds: achievementTemplates.value
+      .filter((template) =>
+        event.achievements.some(
+          (achievement) =>
+            achievement.visibility === 'secret' &&
+            (achievement.templateId === template.id || achievement.title === template.title),
+        ),
+      )
+      .map((template) => template.id),
   }
 }
 
@@ -2408,11 +2652,27 @@ function createEventFromForm() {
       .join('')
       .slice(0, 2)
       .toUpperCase() || currentUser.initials
-  const automaticAchievements = selectedAutomaticTemplates.value.map((template) =>
-    buildAchievementFromTemplate(template),
-  )
+  const automaticAchievements = selectedAutomaticTemplates.value.map((template) => {
+    const visibility: AchievementVisibility = createEventForm.value.secretTemplateIds.includes(template.id)
+      ? 'secret'
+      : 'visible'
+
+    return {
+      ...buildAchievementFromTemplate(template),
+      visibility,
+    }
+  })
   const selectedTemplates = [...selectedPersonalTemplates.value, ...selectedGroupTemplates.value].map(
-    (template) => buildAchievementFromTemplate(template),
+    (template) => {
+      const visibility: AchievementVisibility = createEventForm.value.secretTemplateIds.includes(template.id)
+        ? 'secret'
+        : (template.visibility ?? 'visible')
+
+      return {
+        ...buildAchievementFromTemplate(template),
+        visibility,
+      }
+    },
   )
   const payment =
     createPaymentEnabled.value &&
@@ -2933,7 +3193,7 @@ async function saveEvent() {
             ></video>
             <div v-if="canShowHomeAchievements(event)" class="expanded-achievements" aria-label="Полученные достижения">
               <button
-                v-for="achievement in event.achievements"
+                v-for="achievement in getHomeAwardedAchievements(event)"
                 :key="achievement.id"
                 class="achievement-medal"
                 :class="{ active: activeAchievement === getAchievementKey(event, achievement) }"
@@ -3242,6 +3502,80 @@ async function saveEvent() {
               <span class="rsvp-action-label">{{ choice.label }}</span>
             </button>
           </div>
+
+          <section
+            v-if="currentView !== 'preview'"
+            class="event-achievements-panel"
+            :class="{ organizer: isCurrentUserOrganizer(activeEvent) }"
+          >
+            <div class="event-achievements-header">
+              <div>
+                <strong>{{ isCurrentUserOrganizer(activeEvent) ? 'Управление достижениями' : 'Достижения' }}</strong>
+                <p v-if="isCurrentUserOrganizer(activeEvent)">Выдавайте медали участникам вручную</p>
+                <p v-else>
+                  {{ activeParticipantAchievementIds.size }} / {{ eventPageData.achievements.length || 0 }}
+                </p>
+              </div>
+              <span v-if="!isCurrentUserOrganizer(activeEvent)" class="event-achievements-count">
+                {{ activeParticipantAchievementIds.size }} / {{ eventPageData.achievements.length || 0 }}
+              </span>
+            </div>
+
+            <div v-if="!isCurrentUserOrganizer(activeEvent)" class="event-achievements-progress">
+              <span
+                class="event-achievements-progress-fill"
+                :style="{
+                  width: `${eventPageData.achievements.length ? (activeParticipantAchievementIds.size / eventPageData.achievements.length) * 100 : 0}%`,
+                }"
+              ></span>
+            </div>
+
+            <div class="event-achievements-list">
+              <article
+                v-for="achievement in eventPageData.achievements"
+                :key="achievement.id"
+                class="event-achievement-card"
+                :class="{
+                  'is-unlocked': isAchievementUnlockedForCurrentParticipant(achievement),
+                  'is-secret':
+                    achievement.visibility === 'secret' &&
+                    !isCurrentUserOrganizer(activeEvent) &&
+                    !isAchievementUnlockedForCurrentParticipant(achievement),
+                }"
+                :style="{ '--achievement-tone': achievement.tone }"
+              >
+                <span class="event-achievement-icon">
+                  {{ getAchievementCardIcon(achievement) }}
+                </span>
+                <div class="event-achievement-info">
+                  <strong>{{ getAchievementCardTitle(achievement) }}</strong>
+                  <p>{{ getAchievementCardDescription(achievement) }}</p>
+                  <small>
+                    {{
+                      isCurrentUserOrganizer(activeEvent)
+                        ? getAchievementAwardedNamesLabel(eventPageData.id, achievement.id)
+                        : getAchievementAudienceLabel(eventPageData.id, achievement)
+                    }}
+                  </small>
+                </div>
+                <div v-if="isCurrentUserOrganizer(activeEvent)" class="event-achievement-actions">
+                  <button
+                    class="secondary-button compact-action"
+                    type="button"
+                    @click="openAchievementAwardModal(achievement)"
+                  >
+                    Выдать
+                  </button>
+                </div>
+                <span v-else class="event-achievement-state">
+                  {{ isAchievementUnlockedForCurrentParticipant(achievement) ? '✓' : achievement.visibility === 'secret' ? '?' : '•' }}
+                </span>
+              </article>
+              <p v-if="!eventPageData.achievements.length" class="event-achievement-empty">
+                Здесь появятся достижения события после настройки организатором.
+              </p>
+            </div>
+          </section>
         </aside>
       </div>
     </section>
@@ -3529,6 +3863,9 @@ async function saveEvent() {
                   >
                     <strong>{{ template.title }}</strong>
                     <p>{{ template.description }}</p>
+                    <button class="ghost-inline-button" type="button" @click="toggleTemplateSecret(template.id)">
+                      {{ isSecretTemplate(template.id) ? 'Сделать открытым' : 'Сделать секретным' }}
+                    </button>
                   </div>
                 </div>
               </div>
@@ -3603,6 +3940,9 @@ async function saveEvent() {
                   >
                     <strong>{{ template.title }}</strong>
                     <p>{{ template.description }}</p>
+                    <button class="ghost-inline-button" type="button" @click="toggleTemplateSecret(template.id)">
+                      {{ isSecretTemplate(template.id) ? 'Сделать открытым' : 'Сделать секретным' }}
+                    </button>
                   </div>
                 </div>
               </div>
@@ -3689,6 +4029,9 @@ async function saveEvent() {
                   >
                     <strong>{{ template.title }}</strong>
                     <p>{{ template.description }}</p>
+                    <button class="ghost-inline-button" type="button" @click="toggleTemplateSecret(template.id)">
+                      {{ isSecretTemplate(template.id) ? 'Сделать открытым' : 'Сделать секретным' }}
+                    </button>
                   </div>
                 </div>
               </div>
@@ -4020,6 +4363,28 @@ async function saveEvent() {
           </div>
         </div>
 
+        <div class="medal-visibility-row">
+          <span>Видимость</span>
+          <div class="medal-visibility-actions">
+            <button
+              class="secondary-button compact-action"
+              :class="{ active: medalForm.visibility === 'visible' }"
+              type="button"
+              @click="medalForm.visibility = 'visible'"
+            >
+              Открытое
+            </button>
+            <button
+              class="secondary-button compact-action"
+              :class="{ active: medalForm.visibility === 'secret' }"
+              type="button"
+              @click="medalForm.visibility = 'secret'"
+            >
+              Секретное
+            </button>
+          </div>
+        </div>
+
         <label class="toggle-card">
           <input v-model="medalForm.saveAsTemplate" type="checkbox" />
           <span>Сохранить как шаблон для будущих событий</span>
@@ -4031,6 +4396,56 @@ async function saveEvent() {
         </div>
       </section>
     </div>
+  <div v-if="achievementAwardModalOpen && achievementAwardTarget" class="event-achievement-modal" @click.self="closeAchievementAwardModal">
+    <section class="event-achievement-modal-card" aria-modal="true" role="dialog" aria-labelledby="achievement-award-title">
+      <div class="section-title-row">
+        <div>
+          <h3 id="achievement-award-title">{{ achievementAwardTarget.title }}</h3>
+          <p>Выберите участников, которым нужно вручить достижение.</p>
+        </div>
+        <button class="ghost-inline-button" type="button" @click="closeAchievementAwardModal">Закрыть</button>
+      </div>
+
+      <div class="event-achievement-modal-list">
+        <label
+          v-for="participant in activeEventParticipants"
+          :key="participant.id"
+          class="event-achievement-user-row"
+          :class="{ disabled: isAchievementAlreadyAwardedToParticipant(achievementAwardTarget.id, participant.id) }"
+        >
+          <input
+            type="checkbox"
+            :checked="
+              isAchievementAlreadyAwardedToParticipant(achievementAwardTarget.id, participant.id) ||
+              achievementAwardSelections.includes(participant.id)
+            "
+            :disabled="isAchievementAlreadyAwardedToParticipant(achievementAwardTarget.id, participant.id)"
+            @change="toggleAchievementAwardSelection(participant.id)"
+          />
+          <span class="guest-avatar-chip">{{ buildUserInitials(participant.displayName) }}</span>
+          <span class="event-achievement-user-copy">
+            <strong>{{ participant.displayName }}</strong>
+            <small>
+              {{
+                isAchievementAlreadyAwardedToParticipant(achievementAwardTarget.id, participant.id)
+                  ? 'Уже получено'
+                  : participant.role === 'organizer'
+                    ? 'Организатор'
+                    : 'Участник'
+              }}
+            </small>
+          </span>
+        </label>
+      </div>
+
+      <p v-if="achievementAwardError" class="event-achievement-error">{{ achievementAwardError }}</p>
+
+      <div class="create-actions">
+        <button class="secondary-button" type="button" @click="closeAchievementAwardModal">Отмена</button>
+        <button class="primary-button" type="button" @click="submitAchievementAwards">Выдать выбранным</button>
+      </div>
+    </section>
+  </div>
   </main>
   <div v-if="authOpen" class="auth-backdrop" @click.self="authOpen = false">
     <section class="auth-dialog" aria-modal="true" role="dialog" aria-labelledby="auth-title">

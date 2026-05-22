@@ -119,3 +119,18 @@ Important after pull:
   - events they organize;
   - events where they are already a participant.
 - RSVP changes do not grant repeatable points in the current MVP flow. Photo upload points are still preserved as the main lightweight gamification action.
+
+## Event Achievements MVP
+
+- Event achievements are now split into two layers:
+  - `event_achievements` = achievements configured for a specific event;
+  - `participant_achievements` = actual awards received by concrete participants.
+- Organizers manually award achievements from the event page.
+- Participants see a progress panel with:
+  - unlocked achievements highlighted;
+  - visible but locked achievements shown in a muted state;
+  - secret achievements hidden as `Тайное достижение` until awarded.
+- Selected event achievements are **not** automatically granted anymore just because they were added to the event.
+- After pulling this step, run `npm run setup:appwrite` manually so Appwrite creates:
+  - `event_achievements`
+  - `participant_achievements`
