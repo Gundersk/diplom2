@@ -70,6 +70,32 @@ type BucketSchema = {
   transformations: boolean
 }
 
+function bucketMatches(existing: Models.Bucket, expected: BucketSchema) {
+  const samePermissions = JSON.stringify(existing.$permissions ?? []) === JSON.stringify(expected.permissions)
+  const sameFileSecurity = Boolean(existing.fileSecurity) === expected.fileSecurity
+  const sameEnabled = Boolean(existing.enabled) === expected.enabled
+  const sameMaximumFileSize = Number(existing.maximumFileSize ?? 0) === expected.maximumFileSize
+  const sameAllowedExtensions =
+    JSON.stringify((existing.allowedFileExtensions ?? []).map((item) => item.toLowerCase()).sort()) ===
+    JSON.stringify(expected.allowedFileExtensions.map((item) => item.toLowerCase()).sort())
+  const sameCompression = existing.compression === expected.compression
+  const sameEncryption = Boolean(existing.encryption) === expected.encryption
+  const sameAntivirus = Boolean(existing.antivirus) === expected.antivirus
+  const sameTransformations = Boolean(existing.transformations) === expected.transformations
+
+  return (
+    samePermissions &&
+    sameFileSecurity &&
+    sameEnabled &&
+    sameMaximumFileSize &&
+    sameAllowedExtensions &&
+    sameCompression &&
+    sameEncryption &&
+    sameAntivirus &&
+    sameTransformations
+  )
+}
+
 const ENV_FILE = path.resolve(process.cwd(), '.env.setup')
 const ATTRIBUTE_POLL_ATTEMPTS = 30
 const INDEX_POLL_ATTEMPTS = 30
@@ -461,6 +487,23 @@ async function ensureIndex(
 async function ensureBucket(storage: Storage, schema: BucketSchema) {
   const existing = await getBucketOrNull(storage, schema.id)
   if (existing) {
+    if (!bucketMatches(existing, schema)) {
+      logStep(`Bucket ${schema.id} already exists with a different shape. Updating it.`)
+      return await storage.updateBucket({
+        bucketId: schema.id,
+        name: schema.name,
+        permissions: schema.permissions,
+        fileSecurity: schema.fileSecurity,
+        enabled: schema.enabled,
+        maximumFileSize: schema.maximumFileSize,
+        allowedFileExtensions: schema.allowedFileExtensions,
+        compression: schema.compression,
+        encryption: schema.encryption,
+        antivirus: schema.antivirus,
+        transformations: schema.transformations,
+      })
+    }
+
     logStep(`Bucket ${schema.id} already exists, skipping creation.`)
     return existing
   }
@@ -500,7 +543,7 @@ const bucketSchema: BucketSchema = {
   fileSecurity: true,
   enabled: true,
   maximumFileSize: 20 * 1024 * 1024,
-  allowedFileExtensions: ['jpg', 'jpeg', 'png', 'webp', 'gif'],
+  allowedFileExtensions: ['jpg', 'jpeg', 'png', 'webp', 'gif', 'mp4', 'webm', 'avif'],
   compression: Compression.None,
   encryption: true,
   antivirus: true,
@@ -550,6 +593,7 @@ const collectionSchemas: CollectionSchema[] = [
       { kind: 'string', key: 'coverFileId', size: 64, required: false },
       { kind: 'string', key: 'backgroundFileId', size: 64, required: false },
       { kind: 'string', key: 'backgroundMode', size: 32, required: false },
+      { kind: 'string', key: 'backgroundMediaType', size: 32, required: false },
       { kind: 'string', key: 'backgroundColor', size: 64, required: false },
       { kind: 'string', key: 'themeColor', size: 64, required: false },
       { kind: 'string', key: 'accent', size: 64, required: false },

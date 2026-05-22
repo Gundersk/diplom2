@@ -9,6 +9,20 @@ import type { EventRsvpEntry } from '../types/rsvp'
 import { normalizeChatMessage } from '../types/chat'
 import { normalizeRsvpEntry } from '../types/rsvp'
 
+function inferBackgroundMediaType(source?: string) {
+  if (!source) return 'image' as const
+
+  if (/\.(mp4|webm)(\?.*)?$/i.test(source)) {
+    return 'video' as const
+  }
+
+  if (/\.gif(\?.*)?$/i.test(source)) {
+    return 'gif' as const
+  }
+
+  return 'image' as const
+}
+
 type SeedAchievement = {
   id: string
   title: string
@@ -507,6 +521,10 @@ export function normalizeGalleryEvent(event: GalleryEvent): GalleryEvent {
     backgroundEnd: event.backgroundEnd ?? event.coverEnd ?? event.coverStart,
     backgroundMode:
       event.backgroundMode ?? (event.backgroundStart?.startsWith('#') ? 'color' : 'asset'),
+    backgroundMediaType:
+      event.backgroundMode === 'color'
+        ? undefined
+        : event.backgroundMediaType ?? inferBackgroundMediaType(event.backgroundStart),
     backgroundColor:
       event.backgroundColor ??
       (event.backgroundStart?.startsWith('#') ? event.backgroundStart : undefined),

@@ -1601,3 +1601,45 @@ npm run build
 ### Next step
 
 Re-run `npm run setup:appwrite` locally and confirm that the recreated `profiles.userId` index becomes `available`.
+
+---
+
+## 2026-05-22 - MP4 background support
+
+### What changed
+
+1. Added `backgroundMediaType` to the event model so shared event backgrounds no longer infer video-ness from the URL shape.
+2. Updated `scripts/setup-appwrite-schema.ts`:
+   - `events` now gets optional `backgroundMediaType`;
+   - `event_gallery_photos` bucket allows `mp4`, `webm`, and `avif`;
+   - existing buckets with outdated settings are updated instead of silently left behind.
+3. In the create/edit flow, background media type now comes from:
+   - preset asset metadata (`asset.kind`);
+   - uploaded file MIME type (`video/*` -> `video`, `image/gif` -> `gif`, other images -> `image`).
+4. `eventService` now persists and restores `backgroundMediaType` through Appwrite `events`.
+5. Video backgrounds now render through `<video autoplay loop muted playsinline>` on:
+   - the create screen preview;
+   - the event page;
+   - the expanded event block on home.
+
+### Files changed
+
+- `src/types/event.ts`
+- `src/data/mockEvents.ts`
+- `src/App.vue`
+- `src/style.css`
+- `src/services/eventService.ts`
+- `scripts/setup-appwrite-schema.ts`
+- `docs/appwrite-schema.md`
+- `README.md`
+- `docs/development-log.md`
+
+### Verification
+
+```bash
+npm run build
+```
+
+### Next step
+
+Run `npm run setup:appwrite` locally, then create/update an event with a bundled or uploaded MP4 background and verify that `backgroundMediaType=video` is saved in `events`.

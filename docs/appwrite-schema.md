@@ -83,6 +83,7 @@ Current first implemented use:
 - `coverFileId: string` (optional, Appwrite Storage file id for custom cover)
 - `backgroundFileId: string` (optional, Appwrite Storage file id for custom background)
 - `backgroundMode: string` (optional, `asset` | `color`)
+- `backgroundMediaType: string` (optional, `image` | `gif` | `video`)
 - `backgroundColor: string` (optional)
 - `themeColor: string` (optional, fallback visual tone)
 - `accent: string` (optional)

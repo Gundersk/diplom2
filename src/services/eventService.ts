@@ -27,6 +27,7 @@ type EventDocument = Models.Document & {
   coverFileId?: string
   backgroundFileId?: string
   backgroundMode?: string
+  backgroundMediaType?: string
   backgroundColor?: string
   themeColor?: string
   accent?: string
@@ -287,6 +288,7 @@ function toAppwriteEventPayload(event: GalleryEvent) {
     coverFileId: normalizedEvent.coverFileId ?? '',
     backgroundFileId: normalizedEvent.backgroundFileId ?? '',
     backgroundMode,
+    backgroundMediaType: normalizedEvent.backgroundMediaType ?? '',
     backgroundColor,
     themeColor,
     accent: normalizedEvent.accent ?? '',
@@ -333,6 +335,10 @@ function fromAppwriteEventDocument(
     document.backgroundMode === 'color' || document.backgroundMode === 'asset'
       ? document.backgroundMode
       : cachedEvent?.backgroundMode ?? 'asset'
+  const backgroundMediaType =
+    document.backgroundMediaType === 'video' || document.backgroundMediaType === 'gif' || document.backgroundMediaType === 'image'
+      ? document.backgroundMediaType
+      : cachedEvent?.backgroundMediaType
   const backgroundColor =
     document.backgroundColor ||
     (backgroundMode === 'color' ? document.themeColor || cachedEvent?.backgroundColor : cachedEvent?.backgroundColor)
@@ -404,6 +410,7 @@ function fromAppwriteEventDocument(
     backgroundStart,
     backgroundEnd,
     backgroundMode,
+    backgroundMediaType: backgroundMode === 'color' ? undefined : backgroundMediaType,
     backgroundColor: backgroundMode === 'color' ? backgroundColor || undefined : undefined,
     accent,
     allowGuestInvites: Boolean(document.guestsCanInvite),

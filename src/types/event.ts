@@ -50,6 +50,8 @@ export type EventPaymentInfo = {
   comment: string
 }
 
+export type BackgroundMediaType = 'image' | 'gif' | 'video'
+
 export type GalleryEvent = {
   id: string
   title: string
@@ -76,6 +78,7 @@ export type GalleryEvent = {
   backgroundStart: string
   backgroundEnd: string
   backgroundMode?: 'asset' | 'color'
+  backgroundMediaType?: BackgroundMediaType
   backgroundColor?: string
   accent: string
   allowGuestInvites?: boolean
@@ -115,6 +118,7 @@ export type CreateEventForm = {
   coverAssetId: string
   backgroundAssetId: string
   backgroundMode: 'asset' | 'color'
+  backgroundMediaType: BackgroundMediaType
   backgroundColor: string
   paymentEnabled: boolean
   costPerPerson: string

@@ -21,6 +21,7 @@ import type {
 } from './types/achievement'
 import type {
   AssetOption,
+  BackgroundMediaType,
   CreateEventForm,
   EventInfoBlock,
   EventInfoBlockType,
@@ -199,6 +200,41 @@ function buildUserInitials(name?: string) {
       .slice(0, 2)
       .toUpperCase() || 'Ю'
   )
+}
+
+function inferBackgroundMediaTypeFromSource(source?: string): BackgroundMediaType {
+  if (!source) return 'image'
+
+  if (/\.(mp4|webm)(\?.*)?$/i.test(source)) {
+    return 'video'
+  }
+
+  if (/\.gif(\?.*)?$/i.test(source)) {
+    return 'gif'
+  }
+
+  return 'image'
+}
+
+function getAssetBackgroundMediaType(asset?: AssetOption | null): BackgroundMediaType {
+  if (!asset) return 'image'
+  if (asset.kind === 'video') return 'video'
+  if (asset.category === 'gif' || /\.gif(\?.*)?$/i.test(asset.src)) return 'gif'
+  return 'image'
+}
+
+function getBackgroundMediaTypeFromFile(file: File): BackgroundMediaType {
+  const normalizedType = file.type.toLowerCase()
+
+  if (normalizedType === 'video/mp4' || normalizedType === 'video/webm' || normalizedType.startsWith('video/')) {
+    return 'video'
+  }
+
+  if (normalizedType === 'image/gif') {
+    return 'gif'
+  }
+
+  return 'image'
 }
 
 function getAvatarStyle(avatarUrl?: string) {
@@ -583,6 +619,7 @@ function createEmptyEventForm(): CreateEventForm {
     coverAssetId: coverAssetOptions[0]?.id ?? '',
     backgroundAssetId: backgroundAssetOptions[0]?.id ?? '',
     backgroundMode: 'asset',
+    backgroundMediaType: getAssetBackgroundMediaType(backgroundAssetOptions[0]),
     backgroundColor: softBackgroundColors[0],
     uploadedCoverUrl: null,
     uploadedBackgroundUrl: null,
@@ -721,6 +758,18 @@ function getBackgroundBackground(event: GalleryEvent) {
   }
 
   return `linear-gradient(135deg, ${event.backgroundStart}, ${event.backgroundEnd})`
+}
+
+function isVideoBackground(event: Pick<GalleryEvent, 'backgroundMode' | 'backgroundMediaType' | 'backgroundStart'>) {
+  if (event.backgroundMode === 'color') {
+    return false
+  }
+
+  if (event.backgroundMediaType) {
+    return event.backgroundMediaType === 'video'
+  }
+
+  return inferBackgroundMediaTypeFromSource(event.backgroundStart) === 'video'
 }
 
 function getEventSurfaceStyle(start: string, end: string) {
@@ -998,18 +1047,28 @@ const selectedCoverAsset = computed(() =>
     : getAssetById(coverAssetOptions, createEventForm.value.coverAssetId),
 )
 
-const selectedBackgroundAsset = computed(() =>
-  createEventForm.value.backgroundMode === 'asset' && createEventForm.value.uploadedBackgroundUrl
-    ? {
-        id: 'uploaded-background',
-        kind: 'image' as const,
-        label: 'Свой фон',
-        src: createEventForm.value.uploadedBackgroundUrl,
-      }
-    : createEventForm.value.backgroundMode === 'asset'
-      ? getAssetById(backgroundAssetOptions, createEventForm.value.backgroundAssetId)
-      : null,
-)
+const selectedBackgroundAsset = computed<AssetOption | null>(() => {
+  if (createEventForm.value.backgroundMode !== 'asset') {
+    return null
+  }
+
+  if (createEventForm.value.uploadedBackgroundUrl) {
+    const uploadedKind: AssetOption['kind'] =
+      createEventForm.value.backgroundMediaType === 'video' ? 'video' : 'image'
+    const uploadedCategory: AssetOption['category'] =
+      createEventForm.value.backgroundMediaType === 'gif' ? 'gif' : 'poster'
+
+    return {
+      id: 'uploaded-background',
+      kind: uploadedKind,
+      category: uploadedCategory,
+      label: 'Свой фон',
+      src: createEventForm.value.uploadedBackgroundUrl,
+    }
+  }
+
+  return getAssetById(backgroundAssetOptions, createEventForm.value.backgroundAssetId)
+})
 
 const startDateTime = computed(() =>
   buildDateTimeFromParts(
@@ -1150,7 +1209,7 @@ const createBackgroundStyle = computed(() => {
     return { background: createEventForm.value.backgroundColor }
   }
 
-  if (selectedBackgroundAsset.value?.kind === 'image') {
+  if (selectedBackgroundAsset.value && selectedBackgroundAsset.value.kind !== 'video') {
     return {
       background: `url("${selectedBackgroundAsset.value.src}") center / cover no-repeat`,
     }
@@ -1164,7 +1223,7 @@ const previewBackgroundStyle = computed(() => {
     return { background: createEventForm.value.backgroundColor }
   }
 
-  if (selectedBackgroundAsset.value?.kind === 'image') {
+  if (selectedBackgroundAsset.value && selectedBackgroundAsset.value.kind !== 'video') {
     return {
       background: `url("${selectedBackgroundAsset.value.src}") center / cover no-repeat`,
     }
@@ -2224,6 +2283,12 @@ function populateFormFromEvent(event: GalleryEvent) {
   const coverMatch = findAssetIdBySrc(coverAssetOptions, event.coverStart)
   const backgroundMatch = findAssetIdBySrc(backgroundAssetOptions, event.backgroundStart)
   const isColorBackground = event.backgroundStart.startsWith('#')
+  const matchedBackgroundAsset = backgroundMatch ? getAssetById(backgroundAssetOptions, backgroundMatch) : null
+  const backgroundMediaType = isColorBackground
+    ? createEmptyEventForm().backgroundMediaType
+    : event.backgroundMediaType ??
+      getAssetBackgroundMediaType(matchedBackgroundAsset) ??
+      inferBackgroundMediaTypeFromSource(event.backgroundStart)
 
   createEventForm.value = {
     ...createEmptyEventForm(),
@@ -2245,6 +2310,7 @@ function populateFormFromEvent(event: GalleryEvent) {
     coverAssetId: coverMatch || createEmptyEventForm().coverAssetId,
     backgroundAssetId: backgroundMatch || createEmptyEventForm().backgroundAssetId,
     backgroundMode: isColorBackground ? 'color' : 'asset',
+    backgroundMediaType,
     backgroundColor: isColorBackground ? event.backgroundStart : createEmptyEventForm().backgroundColor,
     uploadedCoverUrl: coverMatch ? null : isAssetSource(event.coverStart) ? event.coverStart : null,
     uploadedBackgroundUrl:
@@ -2311,6 +2377,7 @@ function handleBackgroundUpload(event: Event) {
   if (file) {
     uploadedBackgroundFile.value = file
     createEventForm.value.backgroundMode = 'asset'
+    createEventForm.value.backgroundMediaType = getBackgroundMediaTypeFromFile(file)
     createEventForm.value.uploadedBackgroundUrl = window.URL.createObjectURL(file)
   }
 }
@@ -2320,6 +2387,12 @@ function createEventFromForm() {
   const backgroundAsset = selectedBackgroundAsset.value
   const safeStartsAt = startDateTime.value
   const safeEndsAt = endDateTime.value
+  const backgroundMediaType =
+    createEventForm.value.backgroundMode === 'color'
+      ? undefined
+      : createEventForm.value.uploadedBackgroundUrl
+        ? createEventForm.value.backgroundMediaType
+        : getAssetBackgroundMediaType(backgroundAsset)
   const hostName = createEventForm.value.hostAlias.trim() || currentUser.name
   const hostInitials =
     hostName
@@ -2384,6 +2457,7 @@ function createEventFromForm() {
         : backgroundAsset?.src ?? '#ffffff',
     backgroundFileId: undefined,
     backgroundMode: createEventForm.value.backgroundMode,
+    backgroundMediaType,
     backgroundColor: createEventForm.value.backgroundColor,
     accent:
       createEventForm.value.backgroundMode === 'color'
@@ -2431,6 +2505,7 @@ async function persistEventVisualUploads(event: GalleryEvent, existingEvent?: Ga
   if (createEventForm.value.backgroundMode === 'color') {
     nextEvent.backgroundFileId = undefined
     nextEvent.backgroundMode = 'color'
+    nextEvent.backgroundMediaType = undefined
     nextEvent.backgroundColor = createEventForm.value.backgroundColor
     nextEvent.backgroundStart = createEventForm.value.backgroundColor
     nextEvent.backgroundEnd = '#fffaf6'
@@ -2438,11 +2513,13 @@ async function persistEventVisualUploads(event: GalleryEvent, existingEvent?: Ga
   }
 
   nextEvent.backgroundMode = 'asset'
+  nextEvent.backgroundMediaType = nextEvent.backgroundMediaType ?? createEventForm.value.backgroundMediaType
   nextEvent.backgroundColor = createEventForm.value.backgroundColor
 
   if (uploadedBackgroundFile.value) {
     const uploadedBackground = await storageService.uploadEventVisual(uploadedBackgroundFile.value, 'background')
     nextEvent.backgroundFileId = uploadedBackground.fileId
+    nextEvent.backgroundMediaType = getBackgroundMediaTypeFromFile(uploadedBackgroundFile.value)
     nextEvent.backgroundStart = uploadedBackground.previewUrl
     nextEvent.backgroundEnd = uploadedBackground.previewUrl
   } else if (!createEventForm.value.uploadedBackgroundUrl) {
@@ -2831,6 +2908,15 @@ async function saveEvent() {
           </div>
 
           <div v-else class="event-expanded" :style="getEventSurfaceStyle(event.backgroundStart, event.backgroundEnd)">
+            <video
+              v-if="isVideoBackground(event)"
+              class="event-expanded-video"
+              :src="event.backgroundStart"
+              autoplay
+              muted
+              loop
+              playsinline
+            ></video>
             <div v-if="canShowHomeAchievements(event)" class="expanded-achievements" aria-label="Полученные достижения">
               <button
                 v-for="achievement in event.achievements"
@@ -2913,7 +2999,7 @@ async function saveEvent() {
       :style="getEventSurfaceStyle(eventPageData.backgroundStart, eventPageData.backgroundEnd)"
     >
       <video
-        v-if="isAssetSource(eventPageData.backgroundStart) && eventPageData.backgroundStart.endsWith('.mp4')"
+        v-if="isVideoBackground(eventPageData)"
         class="event-page-background-video"
         :src="eventPageData.backgroundStart"
         autoplay
@@ -3700,7 +3786,7 @@ async function saveEvent() {
                 class="background-mode-button"
                 :class="{ active: createEventForm.backgroundMode === 'asset' }"
                 type="button"
-                @click="createEventForm.backgroundMode = 'asset'"
+                @click="createEventForm.backgroundMode = 'asset'; createEventForm.backgroundMediaType = getAssetBackgroundMediaType(getAssetById(backgroundAssetOptions, createEventForm.backgroundAssetId))"
               >
                 Из подборки
               </button>
@@ -3721,7 +3807,7 @@ async function saveEvent() {
                 class="asset-thumb background-thumb"
                 :class="{ active: createEventForm.backgroundAssetId === asset.id && !createEventForm.uploadedBackgroundUrl }"
                 type="button"
-                @click="createEventForm.backgroundAssetId = asset.id; createEventForm.uploadedBackgroundUrl = null"
+                @click="createEventForm.backgroundAssetId = asset.id; createEventForm.uploadedBackgroundUrl = null; createEventForm.backgroundMediaType = getAssetBackgroundMediaType(asset)"
               >
                 <template v-if="asset.kind === 'image'">
                   <img :src="asset.src" :alt="asset.label" />
@@ -3767,7 +3853,7 @@ async function saveEvent() {
               Свой фон
               <input
                 type="file"
-                accept="image/*"
+                accept="image/*,video/mp4,video/webm,.mp4,.webm"
                 hidden
                 @change="handleBackgroundUpload"
               />

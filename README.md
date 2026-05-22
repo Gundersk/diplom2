@@ -56,6 +56,7 @@ Notes:
   - `coverFileId`
   - `backgroundFileId`
   - `backgroundMode`
+  - `backgroundMediaType`
   - `backgroundColor`
   - `accent`
   - `titleStyle`
