@@ -26,6 +26,7 @@ type EventDocument = Models.Document & {
   coverUrl?: string
   coverFileId?: string
   backgroundFileId?: string
+  backgroundUrl?: string
   backgroundMode?: string
   backgroundMediaType?: string
   backgroundColor?: string
@@ -143,10 +144,10 @@ function parsePayment(value?: string): EventPaymentInfo | null {
 
 function getFallbackRole(event: GalleryEvent, currentUserId?: string, participantRole?: 'organizer' | 'guest'): EventRole {
   if (participantRole === 'organizer' || (currentUserId && event.organizerId === currentUserId)) {
-    return 'РћСЂРіР°РЅРёР·Р°С‚РѕСЂ' as EventRole
+    return 'Организатор'
   }
 
-  return 'РЈС‡Р°СЃС‚РЅРёРє' as EventRole
+  return 'Участник'
 }
 
 function getCachedEventUiState(eventId: string) {
@@ -268,6 +269,12 @@ function toAppwriteEventPayload(event: GalleryEvent) {
     backgroundMode === 'color'
       ? normalizedEvent.backgroundColor ?? normalizedEvent.backgroundStart
       : normalizedEvent.backgroundColor ?? ''
+  const backgroundUrl =
+    backgroundMode === 'color'
+      ? ''
+      : normalizedEvent.backgroundStart.startsWith('#')
+        ? ''
+        : normalizedEvent.backgroundStart
   const themeColor =
     backgroundMode === 'color'
       ? backgroundColor || normalizedEvent.accent
@@ -287,6 +294,7 @@ function toAppwriteEventPayload(event: GalleryEvent) {
     coverUrl,
     coverFileId: normalizedEvent.coverFileId ?? '',
     backgroundFileId: normalizedEvent.backgroundFileId ?? '',
+    backgroundUrl,
     backgroundMode,
     backgroundMediaType: normalizedEvent.backgroundMediaType ?? '',
     backgroundColor,
@@ -345,16 +353,23 @@ function fromAppwriteEventDocument(
   const accent = document.accent ?? cachedEvent?.accent ?? document.themeColor ?? '#ff7a59'
   const coverStart = coverPreviewUrl || cachedEvent?.coverStart || document.coverUrl || accent
   const coverEnd = coverPreviewUrl || cachedEvent?.coverEnd || document.coverUrl || accent
-  const assetBackgroundFallbackStart = cachedEvent?.backgroundStart || document.themeColor || accent || '#f3f0ff'
-  const assetBackgroundFallbackEnd = cachedEvent?.backgroundEnd || '#ffffff'
   const backgroundStart =
     backgroundMode === 'color'
       ? backgroundColor || cachedEvent?.backgroundStart || document.themeColor || '#f3f0ff'
-      : backgroundPreviewUrl || assetBackgroundFallbackStart
+      : backgroundPreviewUrl || document.backgroundUrl || cachedEvent?.backgroundStart || document.themeColor || accent || '#f3f0ff'
   const backgroundEnd =
     backgroundMode === 'color'
       ? cachedEvent?.backgroundEnd || '#fffaf6'
-      : backgroundPreviewUrl || assetBackgroundFallbackEnd
+      : backgroundPreviewUrl || document.backgroundUrl || cachedEvent?.backgroundEnd || '#ffffff'
+
+  if (import.meta.env.DEV) {
+    console.log('[eventService] restored appwrite event background', {
+      eventId: document.$id,
+      backgroundUrl: document.backgroundUrl,
+      backgroundFileId: document.backgroundFileId,
+      restoredBackgroundStart: backgroundStart,
+    })
+  }
 
   const baseEvent: GalleryEvent = {
     id: document.$id,
@@ -405,6 +420,7 @@ function fromAppwriteEventDocument(
     totalCount: 0,
     coverFileId: document.coverFileId || undefined,
     backgroundFileId: document.backgroundFileId || undefined,
+    backgroundUrl: document.backgroundUrl || undefined,
     coverStart,
     coverEnd,
     backgroundStart,
@@ -676,6 +692,16 @@ export const eventService = {
     assertAppwriteReady('createEvent')
     const payload = toAppwriteEventPayload(normalizedEvent)
 
+    if (import.meta.env.DEV) {
+      console.log('[eventService] create payload background', {
+        backgroundMode: payload.backgroundMode,
+        backgroundMediaType: payload.backgroundMediaType,
+        backgroundFileId: payload.backgroundFileId,
+        backgroundUrl: payload.backgroundUrl,
+        backgroundStart: normalizedEvent.backgroundStart,
+      })
+    }
+
     await appwriteDatabases.createDocument<EventDocument>(
       APPWRITE_DATABASE_ID,
       APPWRITE_COLLECTIONS.events,
@@ -707,6 +733,16 @@ export const eventService = {
 
     assertAppwriteReady('updateEvent')
     const payload = toAppwriteEventPayload(normalizedEvent)
+
+    if (import.meta.env.DEV) {
+      console.log('[eventService] update payload background', {
+        backgroundMode: payload.backgroundMode,
+        backgroundMediaType: payload.backgroundMediaType,
+        backgroundFileId: payload.backgroundFileId,
+        backgroundUrl: payload.backgroundUrl,
+        backgroundStart: normalizedEvent.backgroundStart,
+      })
+    }
 
     await appwriteDatabases.updateDocument<EventDocument>(
       APPWRITE_DATABASE_ID,

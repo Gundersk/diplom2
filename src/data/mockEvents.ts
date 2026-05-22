@@ -517,6 +517,9 @@ export function normalizeGalleryEvent(event: GalleryEvent): GalleryEvent {
     coverEnd: event.coverEnd ?? event.coverStart,
     coverFileId: event.coverFileId,
     backgroundFileId: event.backgroundFileId,
+    backgroundUrl:
+      event.backgroundUrl ??
+      (event.backgroundStart?.startsWith('#') ? undefined : event.backgroundStart),
     backgroundStart: event.backgroundStart ?? event.coverStart,
     backgroundEnd: event.backgroundEnd ?? event.coverEnd ?? event.coverStart,
     backgroundMode:

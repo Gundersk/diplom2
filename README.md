@@ -55,6 +55,7 @@ Notes:
 - The minimal MVP flow only covers event visuals:
   - `coverFileId`
   - `backgroundFileId`
+  - `backgroundUrl`
   - `backgroundMode`
   - `backgroundMediaType`
   - `backgroundColor`

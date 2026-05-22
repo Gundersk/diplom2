@@ -592,6 +592,7 @@ const collectionSchemas: CollectionSchema[] = [
       { kind: 'string', key: 'coverUrl', size: 4096, required: false },
       { kind: 'string', key: 'coverFileId', size: 64, required: false },
       { kind: 'string', key: 'backgroundFileId', size: 64, required: false },
+      { kind: 'string', key: 'backgroundUrl', size: 4096, required: false },
       { kind: 'string', key: 'backgroundMode', size: 32, required: false },
       { kind: 'string', key: 'backgroundMediaType', size: 32, required: false },
       { kind: 'string', key: 'backgroundColor', size: 64, required: false },

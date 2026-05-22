@@ -1643,3 +1643,25 @@ npm run build
 ### Next step
 
 Run `npm run setup:appwrite` locally, then create/update an event with a bundled or uploaded MP4 background and verify that `backgroundMediaType=video` is saved in `events`.
+
+---
+
+## 2026-05-22 - Bundled background persistence in Appwrite
+
+### What changed
+
+1. Added `backgroundUrl` to the persisted `events` shape for Appwrite.
+2. Bundled preset backgrounds are now restored for guests/incognito users without relying on local cache:
+   - restore order is `backgroundFileId -> backgroundUrl -> cachedEvent.backgroundStart -> fallback`.
+3. `createEventFromForm()` now preserves the selected bundled asset source in the event draft.
+4. `persistEventVisualUploads()` now:
+   - keeps bundled `backgroundUrl` when no custom upload is used;
+   - updates `backgroundUrl` to the Appwrite Storage view URL after a custom upload;
+   - clears it only for color backgrounds.
+5. Added DEV-only diagnostics in `eventService` for create/update payloads and restored Appwrite documents.
+6. Fixed remaining mojibake in `eventService` role fallbacks (`Организатор` / `Участник`).
+
+### Important
+
+After pulling this fix, run `npm run setup:appwrite` manually.  
+Without that, the new Appwrite attribute `events.backgroundUrl` will not exist yet.

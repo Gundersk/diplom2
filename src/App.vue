@@ -2456,6 +2456,10 @@ function createEventFromForm() {
         ? '#fffaf6'
         : backgroundAsset?.src ?? '#ffffff',
     backgroundFileId: undefined,
+    backgroundUrl:
+      createEventForm.value.backgroundMode === 'color'
+        ? undefined
+        : backgroundAsset?.src ?? undefined,
     backgroundMode: createEventForm.value.backgroundMode,
     backgroundMediaType,
     backgroundColor: createEventForm.value.backgroundColor,
@@ -2491,6 +2495,7 @@ async function persistEventVisualUploads(event: GalleryEvent, existingEvent?: Ga
     ...event,
     coverFileId: existingEvent?.coverFileId,
     backgroundFileId: existingEvent?.backgroundFileId,
+    backgroundUrl: existingEvent?.backgroundUrl ?? event.backgroundUrl,
   }
 
   if (uploadedCoverFile.value) {
@@ -2504,6 +2509,7 @@ async function persistEventVisualUploads(event: GalleryEvent, existingEvent?: Ga
 
   if (createEventForm.value.backgroundMode === 'color') {
     nextEvent.backgroundFileId = undefined
+    nextEvent.backgroundUrl = undefined
     nextEvent.backgroundMode = 'color'
     nextEvent.backgroundMediaType = undefined
     nextEvent.backgroundColor = createEventForm.value.backgroundColor
@@ -2519,11 +2525,13 @@ async function persistEventVisualUploads(event: GalleryEvent, existingEvent?: Ga
   if (uploadedBackgroundFile.value) {
     const uploadedBackground = await storageService.uploadEventVisual(uploadedBackgroundFile.value, 'background')
     nextEvent.backgroundFileId = uploadedBackground.fileId
+    nextEvent.backgroundUrl = uploadedBackground.previewUrl
     nextEvent.backgroundMediaType = getBackgroundMediaTypeFromFile(uploadedBackgroundFile.value)
     nextEvent.backgroundStart = uploadedBackground.previewUrl
     nextEvent.backgroundEnd = uploadedBackground.previewUrl
   } else if (!createEventForm.value.uploadedBackgroundUrl) {
     nextEvent.backgroundFileId = undefined
+    nextEvent.backgroundUrl = nextEvent.backgroundStart
   }
 
   return nextEvent

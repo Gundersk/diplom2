@@ -75,6 +75,7 @@ export type GalleryEvent = {
   coverEnd: string
   coverFileId?: string
   backgroundFileId?: string
+  backgroundUrl?: string
   backgroundStart: string
   backgroundEnd: string
   backgroundMode?: 'asset' | 'color'

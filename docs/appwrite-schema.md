@@ -82,6 +82,7 @@ Current first implemented use:
 - `coverUrl: string` (optional, legacy/fallback for bundled cover visuals)
 - `coverFileId: string` (optional, Appwrite Storage file id for custom cover)
 - `backgroundFileId: string` (optional, Appwrite Storage file id for custom background)
+- `backgroundUrl: string` (optional, persisted source for bundled shared background assets)
 - `backgroundMode: string` (optional, `asset` | `color`)
 - `backgroundMediaType: string` (optional, `image` | `gif` | `video`)
 - `backgroundColor: string` (optional)
