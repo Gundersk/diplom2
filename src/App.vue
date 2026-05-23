@@ -354,9 +354,14 @@ async function loadAchievementTemplates() {
 
 async function loadHomeEvents() {
   homeEvents.value = await eventService.getHomeEvents()
-  await syncAllEventAchievementsFromService()
-  await syncAllEventAchievementAwardsFromService()
   return homeEvents.value
+}
+
+function replaceHomeEvent(nextEvent: GalleryEvent) {
+  syncEventSavedCount(nextEvent)
+  eventService.cacheEventState(nextEvent)
+  upsertHomeEvent(nextEvent)
+  return nextEvent
 }
 
 function upsertHomeEvent(event: GalleryEvent) {
@@ -1723,10 +1728,7 @@ async function syncEventPhotosFromService(eventId: string) {
     ...event,
     photos,
   }
-  syncEventSavedCount(nextEvent)
-  eventService.cacheEventState(nextEvent)
-  await loadHomeEvents()
-  return nextEvent
+  return replaceHomeEvent(nextEvent)
 }
 
 async function syncAllEventPhotosFromService() {
@@ -1744,9 +1746,7 @@ async function syncEventRsvpsFromService(eventId: string) {
     ...event,
     guestRsvps,
   }
-  eventService.cacheEventState(nextEvent)
-  await loadHomeEvents()
-  return nextEvent
+  return replaceHomeEvent(nextEvent)
 }
 
 async function syncAllEventRsvpsFromService() {
@@ -1764,9 +1764,7 @@ async function syncEventMessagesFromService(eventId: string) {
     ...event,
     chatMessages,
   }
-  eventService.cacheEventState(nextEvent)
-  await loadHomeEvents()
-  return nextEvent
+  return replaceHomeEvent(nextEvent)
 }
 
 async function syncAllEventMessagesFromService() {
@@ -1784,9 +1782,7 @@ async function syncEventAchievementsFromService(eventId: string) {
     ...event,
     achievements,
   }
-  eventService.cacheEventState(nextEvent)
-  await loadHomeEvents()
-  return nextEvent
+  return replaceHomeEvent(nextEvent)
 }
 
 async function syncAllEventAchievementsFromService() {
@@ -2389,10 +2385,7 @@ async function submitAchievementAwards() {
     }
 
     await syncEventAchievementAwardsFromService(eventId)
-    await loadHomeEvents()
-    if (activeEventId.value === eventId) {
-      await syncEventAchievementsFromService(eventId)
-    }
+    await syncEventAchievementsFromService(eventId)
     closeAchievementAwardModal()
   } catch (error) {
     console.error('[achievements] sync failed', {

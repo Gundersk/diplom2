@@ -118,6 +118,35 @@ npm run build
 - Realtime пока не добавлялся: после выдачи UI просто перечитывает awards из сервиса.
 - После pull нужно вручную выполнить `npm run setup:appwrite`, иначе новые коллекции достижений не появятся в локальном Appwrite.
 
+## 2026-05-23. Шаг: устранение бесконечного цикла loadHomeEvents
+
+### Цель
+
+Починить зависание UI и спам в консоли `[eventService] restored appwrite event background`, из-за которого перестал работать гостевой вход.
+
+### Причина
+
+После прошлого шага `loadHomeEvents()` начал вызывать `syncAllEventAchievementsFromService()`, а `syncEventAchievementsFromService()` в конце снова вызывал `loadHomeEvents()`. Получился бесконечный цикл с повторными запросами к Appwrite.
+
+### Что сделано
+
+1. `loadHomeEvents()` снова только загружает список событий.
+2. Добавлен `replaceHomeEvent()` для точечного обновления одного события в `homeEvents` без полной перезагрузки.
+3. `syncEventPhotos/Rsvps/Messages/AchievementsFromService` переведены на `replaceHomeEvent()` вместо `loadHomeEvents()`.
+
+### Файлы
+
+- `src/App.vue`
+- `docs/development-log.md`
+
+### Проверка
+
+```bash
+npm run build
+```
+
+После перезагрузки страницы консоль не должна бесконечно логировать background restore; гостевой вход снова открывает модалку/переход.
+
 ## 2026-05-23. Шаг: выдача/отзыв достижений, прогресс организатора и сохранение при редактировании
 
 ### Цель
