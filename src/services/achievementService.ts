@@ -159,7 +159,15 @@ function normalizeConditionType(value?: string): AchievementConditionType | unde
 }
 
 function normalizeVisibility(value?: string): AchievementVisibility {
-  return value === 'secret' ? 'secret' : 'visible'
+  if (value === 'hint' || value === 'hidden' || value === 'visible') {
+    return value
+  }
+
+  if (value === 'secret') {
+    return 'hidden'
+  }
+
+  return 'visible'
 }
 
 function normalizeTemplate(template: AchievementTemplate): AchievementTemplate {
@@ -769,6 +777,12 @@ export const achievementService = {
     participants: Array<Pick<EventParticipant, 'id' | 'userId'>>,
     awardedByUserId: string,
   ): Promise<ParticipantAchievement[]> {
+    for (const participant of participants) {
+      if (!participant.id || !participant.userId) {
+        throw new Error('У участника не хватает participantId или userId для выдачи достижения.')
+      }
+    }
+
     return Promise.all(
       participants.map((participant) =>
         this.awardAchievement({
@@ -777,6 +791,63 @@ export const achievementService = {
           participantId: participant.id,
           userId: participant.userId,
           awardedByUserId,
+        }),
+      ),
+    )
+  },
+
+  async revokeAchievement(input: {
+    eventId: string
+    achievementId: string
+    participantId: string
+  }): Promise<void> {
+    if (!isAppwriteMode()) {
+      persistParticipantAchievements(
+        readStoredParticipantAchievements().filter(
+          (award) =>
+            !(
+              award.eventId === input.eventId &&
+              award.achievementId === input.achievementId &&
+              award.participantId === input.participantId
+            ),
+        ),
+      )
+      return
+    }
+
+    assertAppwriteReady('revokeAchievement')
+    const documents = await listParticipantAchievementDocuments(input.eventId)
+    const existing = documents.find(
+      (document) =>
+        document.achievementId === input.achievementId &&
+        document.participantId === input.participantId,
+    )
+    if (!existing) return
+
+    await appwriteDatabases.deleteDocument(
+      APPWRITE_DATABASE_ID,
+      APPWRITE_COLLECTIONS.participantAchievements,
+      existing.$id,
+    )
+  },
+
+  async revokeAchievementFromParticipants(
+    eventId: string,
+    achievementId: string,
+    participants: Array<Pick<EventParticipant, 'id'>>,
+  ): Promise<void> {
+    for (const participant of participants) {
+      if (!participant.id) {
+        throw new Error('У участника не хватает participantId для отзыва достижения.')
+      }
+    }
+
+    await Promise.all(
+      participants.map((participant) =>
+        this.revokeAchievement({
+          eventId,
+          achievementId,
+          participantId: participant.id,
         }),
       ),
     )

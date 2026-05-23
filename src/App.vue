@@ -354,6 +354,8 @@ async function loadAchievementTemplates() {
 
 async function loadHomeEvents() {
   homeEvents.value = await eventService.getHomeEvents()
+  await syncAllEventAchievementsFromService()
+  await syncAllEventAchievementAwardsFromService()
   return homeEvents.value
 }
 
@@ -1821,17 +1823,34 @@ async function syncAllEventAchievementAwardsFromService() {
   }
 }
 
+function getEventAchievementConfigKey(achievement: EventAchievement) {
+  return (
+    achievement.templateId ??
+    achievementTemplates.value.find((template) => template.title === achievement.title)?.id ??
+    achievement.id
+  )
+}
+
 async function persistEventAchievementsSelection(eventId: string) {
   const existingAchievements = await achievementService.getEventAchievements(eventId)
+  const desiredConfigs = [
+    ...selectedAutomaticTemplates.value.map((template) => ({ template, scope: 'automatic' as const })),
+    ...selectedPersonalTemplates.value.map((template) => ({ template, scope: 'personal' as const })),
+    ...selectedGroupTemplates.value.map((template) => ({ template, scope: 'group' as const })),
+  ]
+  const desiredTemplateIds = new Set(desiredConfigs.map(({ template }) => template.id))
+
   for (const achievement of existingAchievements) {
-    await achievementService.unselectAchievement(achievement.id)
+    if (!desiredTemplateIds.has(getEventAchievementConfigKey(achievement))) {
+      await achievementService.unselectAchievement(achievement.id)
+    }
   }
 
-  for (const template of selectedAutomaticTemplates.value) {
+  for (const { template, scope } of desiredConfigs) {
     await achievementService.selectAchievement({
       eventId,
       templateId: template.id,
-      scope: 'automatic',
+      scope,
       title: template.title,
       description: template.description,
       icon: template.icon,
@@ -1842,21 +1861,7 @@ async function persistEventAchievementsSelection(eventId: string) {
     })
   }
 
-  for (const template of [...selectedPersonalTemplates.value, ...selectedGroupTemplates.value]) {
-    await achievementService.selectAchievement({
-      eventId,
-      templateId: template.id,
-      scope: template.scope,
-      title: template.title,
-      description: template.description,
-      icon: template.icon,
-      tone: template.tone,
-      visibility: getTemplateVisibility(template.id),
-      points: template.points,
-      createdBy: currentUser.id,
-    })
-  }
-
+  await syncEventAchievementAwardsFromService(eventId)
   return syncEventAchievementsFromService(eventId)
 }
 
@@ -2178,12 +2183,6 @@ function isAchievementUnlockedForCurrentParticipant(achievement: EventAchievemen
 }
 
 function isAchievementVisuallyEmphasized(achievement: EventAchievement) {
-  if (!activeEvent.value) return false
-
-  if (isCurrentUserOrganizer(activeEvent.value)) {
-    return getAchievementAwardCount(activeEvent.value.id, achievement.id) > 0
-  }
-
   return isAchievementUnlockedForCurrentParticipant(achievement)
 }
 
@@ -2193,17 +2192,6 @@ function getNormalizedAchievementVisibility(achievement: EventAchievement): Achi
 
 function getAchievementAwardCount(eventId: string, achievementId: string) {
   return getEventAwards(eventId).filter((award) => award.achievementId === achievementId).length
-}
-
-function getAchievementAwardedParticipants(eventId: string, achievementId: string) {
-  const participants = eventParticipantsByEventId.value[eventId] ?? []
-  const awardedParticipantIds = new Set(
-    getEventAwards(eventId)
-      .filter((award) => award.achievementId === achievementId)
-      .map((award) => award.participantId),
-  )
-
-  return participants.filter((participant) => awardedParticipantIds.has(participant.id))
 }
 
 function isAchievementHiddenForCurrentParticipant(achievement: EventAchievement) {
@@ -2251,12 +2239,6 @@ function getAchievementAudienceLabel(eventId: string, achievement: EventAchievem
   return `Есть у ${count} из ${total || count} участников`
 }
 
-function getAchievementAwardedNamesLabel(eventId: string, achievementId: string) {
-  const participants = getAchievementAwardedParticipants(eventId, achievementId)
-  if (participants.length === 0) return 'Получили: никто'
-  return `Получили: ${participants.map((participant) => participant.displayName).join(', ')}`
-}
-
 function getAchievementToneStyle(achievement: EventAchievement) {
   const [start = '#ffd166', end = '#41d3bd'] = (achievement.tone ?? '#ffd166,#41d3bd')
     .split(',')
@@ -2284,25 +2266,12 @@ function isAchievementDetailsOpen(achievementId: string) {
   return openEventAchievementId.value === achievementId
 }
 
-function getParticipantVisibleAchievements(event: GalleryEvent) {
-  return [...event.achievements]
-    .filter((achievement) => !isAchievementHiddenForCurrentParticipant(achievement))
-    .sort((left, right) => {
-      const leftUnlocked = isAchievementUnlockedForCurrentParticipant(left)
-      const rightUnlocked = isAchievementUnlockedForCurrentParticipant(right)
-      if (leftUnlocked !== rightUnlocked) return leftUnlocked ? -1 : 1
+function sortEventAchievements(achievements: EventAchievement[]) {
+  return [...achievements].sort((left, right) => {
+    const leftUnlocked = isAchievementUnlockedForCurrentParticipant(left)
+    const rightUnlocked = isAchievementUnlockedForCurrentParticipant(right)
+    if (leftUnlocked !== rightUnlocked) return leftUnlocked ? -1 : 1
 
-      const order: Record<AchievementVisibility, number> = { visible: 0, hint: 1, hidden: 2 }
-      const leftRank = order[getNormalizedAchievementVisibility(left)]
-      const rightRank = order[getNormalizedAchievementVisibility(right)]
-      if (leftRank !== rightRank) return leftRank - rightRank
-
-      return (left.createdAt ?? '').localeCompare(right.createdAt ?? '') || left.title.localeCompare(right.title)
-    })
-}
-
-function getOrganizerVisibleAchievements(event: GalleryEvent) {
-  return [...event.achievements].sort((left, right) => {
     const order: Record<AchievementVisibility, number> = { visible: 0, hint: 1, hidden: 2 }
     const leftRank = order[getNormalizedAchievementVisibility(left)]
     const rightRank = order[getNormalizedAchievementVisibility(right)]
@@ -2310,6 +2279,19 @@ function getOrganizerVisibleAchievements(event: GalleryEvent) {
 
     return (left.createdAt ?? '').localeCompare(right.createdAt ?? '') || left.title.localeCompare(right.title)
   })
+}
+
+function getVisibleEventAchievements(event: GalleryEvent) {
+  const achievements = isCurrentUserOrganizer(activeEvent.value)
+    ? event.achievements
+    : event.achievements.filter((achievement) => !isAchievementHiddenForCurrentParticipant(achievement))
+
+  return sortEventAchievements(achievements)
+}
+
+function getAchievementProgressPercent(event: GalleryEvent) {
+  if (!event.achievements.length) return 0
+  return (activeParticipantAchievementIds.value.size / event.achievements.length) * 100
 }
 
 function getHiddenAchievementCount(event: GalleryEvent) {
@@ -2331,11 +2313,15 @@ async function openAchievementAwardModal(achievement: EventAchievement) {
   if (!activeEvent.value) return
   achievementAwardEventId.value = activeEvent.value.id
   achievementAwardTarget.value = achievement
-  achievementAwardSelections.value = []
   achievementAwardError.value = ''
   achievementAwardModalOpen.value = true
   await syncEventParticipantsFromService(activeEvent.value.id)
   await syncEventAchievementAwardsFromService(activeEvent.value.id)
+  achievementAwardSelections.value = achievementAwardParticipants.value
+    .filter((participant) =>
+      isAchievementAlreadyAwardedToParticipant(achievement.id, participant.id),
+    )
+    .map((participant) => participant.id)
 }
 
 function closeAchievementAwardModal() {
@@ -2367,25 +2353,40 @@ function toggleAchievementAwardSelection(participantId: string) {
 
 async function submitAchievementAwards() {
   const eventId = achievementAwardEventId.value ?? activeEvent.value?.id
-  if (!eventId || !achievementAwardTarget.value || !currentUser.id) return
+  const achievementId = achievementAwardTarget.value?.id
+  if (!eventId || !achievementId || !currentUser.id) return
 
-  const selectedParticipants = achievementAwardParticipants.value.filter((participant) =>
-    achievementAwardSelections.value.includes(participant.id),
+  const selectedIds = new Set(achievementAwardSelections.value)
+  const participants = achievementAwardParticipants.value
+  const toAward = participants.filter(
+    (participant) =>
+      selectedIds.has(participant.id) &&
+      !isAchievementAlreadyAwardedToParticipant(achievementId, participant.id),
+  )
+  const toRevoke = participants.filter(
+    (participant) =>
+      !selectedIds.has(participant.id) &&
+      isAchievementAlreadyAwardedToParticipant(achievementId, participant.id),
   )
 
-  if (selectedParticipants.length === 0) {
-    achievementAwardError.value = 'Выберите хотя бы одного участника.'
+  if (toAward.length === 0 && toRevoke.length === 0) {
+    closeAchievementAwardModal()
     return
   }
 
   try {
     achievementAwardError.value = ''
-    await achievementService.awardAchievementToParticipants(
-      eventId,
-      achievementAwardTarget.value.id,
-      selectedParticipants,
-      currentUser.id,
-    )
+    if (toRevoke.length > 0) {
+      await achievementService.revokeAchievementFromParticipants(eventId, achievementId, toRevoke)
+    }
+    if (toAward.length > 0) {
+      await achievementService.awardAchievementToParticipants(
+        eventId,
+        achievementId,
+        toAward,
+        currentUser.id,
+      )
+    }
 
     await syncEventAchievementAwardsFromService(eventId)
     await loadHomeEvents()
@@ -2394,15 +2395,16 @@ async function submitAchievementAwards() {
     }
     closeAchievementAwardModal()
   } catch (error) {
-    console.error('[achievements] award failed', {
+    console.error('[achievements] sync failed', {
       error,
       eventId,
-      achievementId: achievementAwardTarget.value.id,
+      achievementId,
       awardedByUserId: currentUser.id,
-      participants: selectedParticipants,
+      toAward,
+      toRevoke,
     })
     achievementAwardError.value =
-      error instanceof Error ? error.message : 'Не удалось выдать достижение. Проверьте права Appwrite.'
+      error instanceof Error ? error.message : 'Не удалось сохранить выдачу достижений. Проверьте права Appwrite.'
   }
 }
 
@@ -3655,35 +3657,29 @@ async function saveEvent() {
               <div class="event-achievements-header">
                 <div>
                   <strong>{{ isCurrentUserOrganizer(activeEvent) ? 'Управление достижениями' : 'Достижения' }}</strong>
-                  <p v-if="isCurrentUserOrganizer(activeEvent)">Выдавайте медали участникам вручную</p>
-                  <p v-else>{{ getAchievementSummaryText(eventPageData) }}</p>
+                  <p>{{ getAchievementSummaryText(eventPageData) }}</p>
                 </div>
-                <span v-if="!isCurrentUserOrganizer(activeEvent)" class="event-achievements-count">
+                <span class="event-achievements-count">
                   {{ getAchievementSummaryText(eventPageData) }}
                 </span>
               </div>
 
-              <div v-if="!isCurrentUserOrganizer(activeEvent)" class="event-achievements-progress">
+              <div class="event-achievements-progress">
                 <span
                   class="event-achievements-progress-fill"
-                  :style="{
-                    width: `${eventPageData.achievements.length ? (activeParticipantAchievementIds.size / eventPageData.achievements.length) * 100 : 0}%`,
-                  }"
+                  :style="{ width: `${getAchievementProgressPercent(eventPageData)}%` }"
                 ></span>
               </div>
 
               <div class="event-achievements-list">
                 <article
-                  v-for="achievement in isCurrentUserOrganizer(activeEvent)
-                    ? getOrganizerVisibleAchievements(eventPageData)
-                    : getParticipantVisibleAchievements(eventPageData)"
+                  v-for="achievement in getVisibleEventAchievements(eventPageData)"
                   :key="achievement.id"
                   class="event-achievement-card"
                   :class="{
                     'is-unlocked': isAchievementVisuallyEmphasized(achievement),
                     'is-hint':
                       getNormalizedAchievementVisibility(achievement) === 'hint' &&
-                      !isCurrentUserOrganizer(activeEvent) &&
                       !isAchievementUnlockedForCurrentParticipant(achievement),
                     'is-hidden':
                       getNormalizedAchievementVisibility(achievement) === 'hidden' &&
@@ -3706,17 +3702,8 @@ async function saveEvent() {
                           {{ getAchievementVisibilityBadge(achievement) }}
                         </span>
                       </div>
-                      <small>
-                        {{
-                          isCurrentUserOrganizer(activeEvent)
-                            ? getAchievementAwardedNamesLabel(eventPageData.id, achievement.id)
-                            : getAchievementAudienceLabel(eventPageData.id, achievement)
-                        }}
-                      </small>
+                      <small>{{ getAchievementAudienceLabel(eventPageData.id, achievement) }}</small>
                     </div>
-                    <span v-if="!isCurrentUserOrganizer(activeEvent)" class="event-achievement-state">
-                      {{ isAchievementUnlockedForCurrentParticipant(achievement) ? '✓' : getNormalizedAchievementVisibility(achievement) === 'hint' ? '?' : '•' }}
-                    </span>
                   </button>
                   <div v-if="isAchievementDetailsOpen(achievement.id)" class="event-achievement-details">
                     <p>{{ getAchievementCardDescription(achievement) }}</p>
@@ -4696,15 +4683,10 @@ async function saveEvent() {
           v-for="participant in achievementAwardParticipants"
           :key="participant.id"
           class="event-achievement-user-row"
-          :class="{ disabled: isAchievementAlreadyAwardedToParticipant(achievementAwardTarget.id, participant.id) }"
         >
           <input
             type="checkbox"
-            :checked="
-              isAchievementAlreadyAwardedToParticipant(achievementAwardTarget.id, participant.id) ||
-              achievementAwardSelections.includes(participant.id)
-            "
-            :disabled="isAchievementAlreadyAwardedToParticipant(achievementAwardTarget.id, participant.id)"
+            :checked="achievementAwardSelections.includes(participant.id)"
             @change="toggleAchievementAwardSelection(participant.id)"
           />
           <span class="guest-avatar-chip">{{ buildUserInitials(participant.displayName) }}</span>
@@ -4712,8 +4694,10 @@ async function saveEvent() {
             <strong>{{ participant.displayName }}</strong>
             <small>
               {{
-                isAchievementAlreadyAwardedToParticipant(achievementAwardTarget.id, participant.id)
-                  ? 'Уже получено'
+                achievementAwardSelections.includes(participant.id)
+                  ? isAchievementAlreadyAwardedToParticipant(achievementAwardTarget.id, participant.id)
+                    ? 'Получено — снимите галочку, чтобы отозвать'
+                    : 'Будет выдано'
                   : participant.role === 'organizer'
                     ? 'Организатор'
                     : 'Участник'
@@ -4727,7 +4711,7 @@ async function saveEvent() {
 
       <div class="create-actions">
         <button class="secondary-button" type="button" @click="closeAchievementAwardModal">Отмена</button>
-        <button class="primary-button" type="button" @click="submitAchievementAwards">Выдать выбранным</button>
+        <button class="primary-button" type="button" @click="submitAchievementAwards">Сохранить</button>
       </div>
     </section>
   </div>
