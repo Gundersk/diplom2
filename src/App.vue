@@ -451,12 +451,13 @@ async function resolveInviteFlow() {
   pendingInviteEventId.value = event.id
   upsertHomeEvent(event)
   activeTab.value = event.status
-  openEventPage(event.id, event)
+  await openEventPage(event.id, event)
 
   if (hasRealAuthenticatedUser()) {
     const participant = await ensureCurrentParticipant(event)
     if (participant) {
       await loadHomeEvents()
+      await refreshEventDataFromServices(event.id)
     }
   }
 }
@@ -1069,13 +1070,17 @@ const activeEventAwards = computed(() =>
 )
 
 const activeParticipantAchievementIds = computed(() => {
+  const event = activeEvent.value
   const participantId = currentParticipant.value?.id
-  if (!participantId) return new Set<string>()
-  return new Set(
-    activeEventAwards.value
-      .filter((award) => award.participantId === participantId)
-      .map((award) => award.achievementId),
-  )
+  if (!event || !participantId) return new Set<string>()
+
+  const ids = new Set<string>()
+  for (const achievement of event.achievements) {
+    if (getAwardsForAchievement(event, achievement).some((award) => award.participantId === participantId)) {
+      ids.add(achievement.id)
+    }
+  }
+  return ids
 })
 
 function getAssetById(list: AssetOption[], id: string) {
@@ -1355,6 +1360,7 @@ async function completeAuth() {
     await syncAllEventRsvpsFromService()
     await syncAllEventMessagesFromService()
     await syncAllEventAchievementsFromService()
+    await syncAllEventAchievementAwardsFromService()
     authOpen.value = false
     profileMenuOpen.value = false
     notificationsOpen.value = false
@@ -1571,19 +1577,18 @@ function closeGuestPreview() {
   previewDraftEvent.value = null
 }
 
-function openEventPage(eventId: string, eventOverride?: GalleryEvent | null) {
-  const event = eventOverride ?? getEventById(eventId)
+async function openEventPage(eventId: string, eventOverride?: GalleryEvent | null) {
+  if (eventOverride) {
+    upsertHomeEvent(eventOverride)
+  }
+
+  const event = getEventById(eventId) ?? eventOverride
   replaceInviteCodeInUrl(event?.inviteCode ?? pendingInviteCode.value ?? null)
   activeEventId.value = eventId
   achievementsPanelOpen.value = false
   openEventAchievementId.value = null
-  void syncEventRsvpsFromService(eventId)
-  void syncEventMessagesFromService(eventId)
-  void syncEventPhotosFromService(eventId)
-  void syncEventAchievementsFromService(eventId)
-  void syncEventParticipantsFromService(eventId)
-  void syncEventAchievementAwardsFromService(eventId)
   currentView.value = 'event'
+  await refreshEventDataFromServices(eventId)
   eventChatDraft.value = ''
   profileMenuOpen.value = false
   notificationsOpen.value = false
@@ -1719,6 +1724,128 @@ function getEventById(eventId: string) {
   return homeEvents.value.find((event) => event.id === eventId) ?? null
 }
 
+function getAchievementConfigKey(achievement: Pick<EventAchievement, 'id' | 'templateId'>) {
+  return achievement.templateId ?? achievement.id
+}
+
+function getAwardsForAchievement(event: GalleryEvent, achievement: EventAchievement) {
+  const configKey = getAchievementConfigKey(achievement)
+
+  return getEventAwards(event.id).filter((award) => {
+    if (award.achievementId === achievement.id) {
+      return true
+    }
+
+    const awardedAchievement = event.achievements.find((item) => item.id === award.achievementId)
+    if (!awardedAchievement) {
+      return false
+    }
+
+    return getAchievementConfigKey(awardedAchievement) === configKey
+  })
+}
+
+function normalizeParticipantAwards(event: GalleryEvent, awards: ParticipantAchievement[]) {
+  const deduped = new Map<string, ParticipantAchievement>()
+
+  for (const award of awards) {
+    const achievement =
+      event.achievements.find((item) => item.id === award.achievementId) ??
+      event.achievements.find((item) => getAchievementConfigKey(item) === award.achievementId)
+
+    if (!achievement) {
+      continue
+    }
+
+    const key = `${award.participantId}:${achievement.id}`
+    if (!deduped.has(key)) {
+      deduped.set(key, {
+        ...award,
+        achievementId: achievement.id,
+      })
+    }
+  }
+
+  return [...deduped.values()]
+}
+
+async function cleanupOrphanAchievementAwards(eventId: string, event: GalleryEvent, awards: ParticipantAchievement[]) {
+  const normalized = normalizeParticipantAwards(event, awards)
+  const orphans = awards.filter(
+    (award) => !normalized.some((item) => item.id === award.id),
+  )
+
+  if (!orphans.length) {
+    return
+  }
+
+  await Promise.all(
+    orphans.map((award) =>
+      achievementService.revokeAchievement({
+        eventId,
+        achievementId: award.achievementId,
+        participantId: award.participantId,
+      }),
+    ),
+  )
+}
+
+async function refreshEventDataFromServices(eventId: string) {
+  let event = getEventById(eventId)
+  if (!event) {
+    const loadedEvent = await eventService.getEventById(eventId)
+    if (!loadedEvent) {
+      return null
+    }
+    upsertHomeEvent(loadedEvent)
+    event = loadedEvent
+  }
+
+  const [photos, guestRsvps, chatMessages, achievements, participants, awards] = await Promise.all([
+    photoService.getEventPhotos(eventId, currentUser.id),
+    rsvpService.getEventRsvps(eventId),
+    chatService.getEventMessages(eventId),
+    achievementService.getEventAchievements(eventId),
+    participantService.getEventParticipants(eventId),
+    achievementService.getEventAchievementAwards(eventId),
+  ])
+
+  eventParticipantsByEventId.value = {
+    ...eventParticipantsByEventId.value,
+    [eventId]: participants,
+  }
+
+  const normalizedAwards = normalizeParticipantAwards(
+    {
+      ...event,
+      achievements,
+    },
+    awards,
+  )
+
+  await cleanupOrphanAchievementAwards(
+    eventId,
+    {
+      ...event,
+      achievements,
+    },
+    awards,
+  )
+
+  eventAchievementAwardsByEventId.value = {
+    ...eventAchievementAwardsByEventId.value,
+    [eventId]: normalizedAwards,
+  }
+
+  return replaceHomeEvent({
+    ...event,
+    photos,
+    guestRsvps,
+    chatMessages,
+    achievements,
+  })
+}
+
 async function syncEventPhotosFromService(eventId: string) {
   const event = getEventById(eventId)
   if (!event) return null
@@ -1806,11 +1933,25 @@ async function syncAllEventParticipantsFromService() {
 }
 
 async function syncEventAchievementAwardsFromService(eventId: string) {
+  const event = getEventById(eventId)
+  const awards = await achievementService.getEventAchievementAwards(eventId)
+
+  if (!event) {
+    eventAchievementAwardsByEventId.value = {
+      ...eventAchievementAwardsByEventId.value,
+      [eventId]: awards,
+    }
+    return awards
+  }
+
+  const normalizedAwards = normalizeParticipantAwards(event, awards)
+  await cleanupOrphanAchievementAwards(eventId, event, awards)
+
   eventAchievementAwardsByEventId.value = {
     ...eventAchievementAwardsByEventId.value,
-    [eventId]: await achievementService.getEventAchievementAwards(eventId),
+    [eventId]: normalizedAwards,
   }
-  return eventAchievementAwardsByEventId.value[eventId]
+  return normalizedAwards
 }
 
 async function syncAllEventAchievementAwardsFromService() {
@@ -1857,8 +1998,7 @@ async function persistEventAchievementsSelection(eventId: string) {
     })
   }
 
-  await syncEventAchievementAwardsFromService(eventId)
-  return syncEventAchievementsFromService(eventId)
+  return refreshEventDataFromServices(eventId)
 }
 
 async function updateEventInList(eventId: string, updater: (event: GalleryEvent) => GalleryEvent) {
@@ -2165,13 +2305,9 @@ function getHomeAwardedAchievements(event: GalleryEvent) {
   const participant = getHomeParticipant(event.id)
   if (!participant) return []
 
-  const awardedIds = new Set(
-    getEventAwards(event.id)
-      .filter((award) => award.participantId === participant.id)
-      .map((award) => award.achievementId),
+  return event.achievements.filter((achievement) =>
+    getAwardsForAchievement(event, achievement).some((award) => award.participantId === participant.id),
   )
-
-  return event.achievements.filter((achievement) => awardedIds.has(achievement.id))
 }
 
 function isAchievementUnlockedForCurrentParticipant(achievement: EventAchievement) {
@@ -2186,8 +2322,10 @@ function getNormalizedAchievementVisibility(achievement: EventAchievement): Achi
   return achievement.visibility ?? 'visible'
 }
 
-function getAchievementAwardCount(eventId: string, achievementId: string) {
-  return getEventAwards(eventId).filter((award) => award.achievementId === achievementId).length
+function getAchievementAwardCount(eventId: string, achievement: EventAchievement) {
+  const event = getEventById(eventId)
+  if (!event) return 0
+  return getAwardsForAchievement(event, achievement).length
 }
 
 function isAchievementHiddenForCurrentParticipant(achievement: EventAchievement) {
@@ -2225,7 +2363,7 @@ function getAchievementCardIcon(achievement: EventAchievement) {
 }
 
 function getAchievementAudienceLabel(eventId: string, achievement: EventAchievement) {
-  const count = getAchievementAwardCount(eventId, achievement.id)
+  const count = getAchievementAwardCount(eventId, achievement)
   const total = eventParticipantsByEventId.value[eventId]?.length ?? 0
   const unlocked = isAchievementUnlockedForCurrentParticipant(achievement)
 
@@ -2332,9 +2470,12 @@ function isAchievementAlreadyAwardedToParticipant(achievementId: string, partici
   const eventId = achievementAwardEventId.value ?? activeEventId.value
   if (!eventId) return false
 
-  return getEventAwards(eventId).some(
-    (award) => award.achievementId === achievementId && award.participantId === participantId,
-  )
+  const event = getEventById(eventId)
+  const achievement =
+    event?.achievements.find((item) => item.id === achievementId) ?? achievementAwardTarget.value
+  if (!event || !achievement) return false
+
+  return getAwardsForAchievement(event, achievement).some((award) => award.participantId === participantId)
 }
 
 function toggleAchievementAwardSelection(participantId: string) {
@@ -2384,8 +2525,7 @@ async function submitAchievementAwards() {
       )
     }
 
-    await syncEventAchievementAwardsFromService(eventId)
-    await syncEventAchievementsFromService(eventId)
+    await refreshEventDataFromServices(eventId)
     closeAchievementAwardModal()
   } catch (error) {
     console.error('[achievements] sync failed', {
@@ -2952,10 +3092,7 @@ async function saveEvent() {
     await participantService.joinEventAsParticipant(updated.id, updated.organizerName, 'organizer')
     await persistEventAchievementsSelection(updated.id)
     await loadHomeEvents()
-    const refreshedEvent = await eventService.getEventById(updated.id)
-    if (refreshedEvent) {
-      upsertHomeEvent(refreshedEvent)
-    }
+    await refreshEventDataFromServices(updated.id)
     activeTab.value = updated.status
     editingEventId.value = null
     createEventOpen.value = false
@@ -2963,7 +3100,7 @@ async function saveEvent() {
     medalBuilderOpen.value = false
     coverPickerOpen.value = false
     previewDraftEvent.value = null
-    openEventPage(updated.id, refreshedEvent ?? updated)
+    await openEventPage(updated.id)
     notifications.value = [
       {
         id: createId('notice'),
@@ -2982,10 +3119,7 @@ async function saveEvent() {
   await participantService.joinEventAsParticipant(nextEvent.id, nextEvent.organizerName, 'organizer')
   await persistEventAchievementsSelection(nextEvent.id)
   await loadHomeEvents()
-  const refreshedEvent = await eventService.getEventById(nextEvent.id)
-  if (refreshedEvent) {
-    upsertHomeEvent(refreshedEvent)
-  }
+  await refreshEventDataFromServices(nextEvent.id)
   expandedEvents.value = new Set()
   activeTab.value = nextEvent.status
   activeAchievement.value = null
@@ -2994,7 +3128,7 @@ async function saveEvent() {
   medalBuilderOpen.value = false
   coverPickerOpen.value = false
   previewDraftEvent.value = null
-  openEventPage(nextEvent.id, refreshedEvent ?? nextEvent)
+  await openEventPage(nextEvent.id)
   notifications.value = [
     {
       id: createId('notice'),

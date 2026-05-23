@@ -118,6 +118,41 @@ npm run build
 - Realtime пока не добавлялся: после выдачи UI просто перечитывает awards из сервиса.
 - После pull нужно вручную выполнить `npm run setup:appwrite`, иначе новые коллекции достижений не появятся в локальном Appwrite.
 
+## 2026-05-23. Шаг: синхронизация достижений для гостя и корректные awards
+
+### Цель
+
+Исправить сценарии после invite link и первой выдачи достижения: гость сразу видит достижения события, счётчик «Есть у N участников» совпадает с backend, прогресс не завышается, модалка выдачи помнит уже выданных.
+
+### Причина
+
+1. Параллельные `syncEventPhotos/Rsvps/Messages/Achievements` перезаписывали одно и то же событие и могли затирать `achievements` до завершения загрузки.
+2. При создании события в кэш попадали локальные id достижений из формы, а awards в Appwrite создавались уже с backend id — UI и счётчики расходились.
+3. Дублирующиеся awards давали прогресс `2/1` при одной медали.
+
+### Что сделано
+
+1. Добавлен единый `refreshEventDataFromServices(eventId)` — одна загрузка photos/rsvp/chat/achievements/participants/awards и одно обновление события.
+2. `openEventPage` и invite flow теперь `await` полной синхронизации.
+3. После гостевого входа добавлен `syncAllEventAchievementAwardsFromService()`.
+4. Подсчёт выдачи и прогресса переведён на `getAwardsForAchievement()` с учётом `templateId`.
+5. `normalizeParticipantAwards()` + `cleanupOrphanAchievementAwards()` убирают дубли и старые awards с неверными id.
+6. В Appwrite `createEvent` больше не кэширует локальные achievements из формы.
+
+### Файлы
+
+- `src/App.vue`
+- `src/services/eventService.ts`
+- `docs/development-log.md`
+
+### Проверка
+
+```bash
+npm run build
+```
+
+Сценарий: создать событие → invite → гость → достижения видны сразу → организатор выдаёт гостю → подпись «Есть у 1 участника», у гостя прогресс 1/N и подсвеченная карточка.
+
 ## 2026-05-23. Шаг: устранение бесконечного цикла loadHomeEvents
 
 ### Цель

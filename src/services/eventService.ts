@@ -710,7 +710,14 @@ export const eventService = {
     )
 
     const currentUser = await authService.getCurrentUser()
-    cacheCreatedEventIfLinked(normalizedEvent, currentUser?.id)
+    const cachePayload = normalizeGalleryEvent({
+      ...normalizedEvent,
+      achievements: [],
+      photos: [],
+      chatMessages: [],
+      guestRsvps: [],
+    })
+    cacheCreatedEventIfLinked(cachePayload, currentUser?.id)
     return normalizedEvent
   },
 
