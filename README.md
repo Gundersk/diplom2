@@ -83,7 +83,8 @@ Important after pull:
   - `accent`
   - `titleStyle`
   - `rsvpStyle`
-- This step does **not** migrate the photo album, saved photos, comments, or avatars to Storage yet.
+- User avatars in appwrite mode are uploaded to the `event_gallery_photos` bucket via `storageService.uploadUserAvatar()`. `profiles.avatarUrl` stores the short Appwrite view URL; `profiles.avatarFileId` stores the file id. Base64 data URLs are not persisted.
+- This step does **not** migrate saved photos or comments to Storage yet.
 - Old `coverUrl` / `themeColor` fallbacks are preserved for older documents and partial migration states.
 
 ## Multi-user Test
@@ -128,8 +129,9 @@ Important after pull:
 - Organizers manually award achievements from the event page.
 - Participants see a progress panel with:
   - unlocked achievements highlighted;
-  - visible but locked achievements shown in a muted state;
-  - secret achievements hidden as `Тайное достижение` until awarded.
+  - `visible` achievements shown openly before receiving;
+  - `hint` achievements shown with icon/title, but with hidden condition text;
+  - `hidden` achievements omitted from the list until receiving, with only a `Скрытых: X` summary.
 - Selected event achievements are **not** automatically granted anymore just because they were added to the event.
 - After pulling this step, run `npm run setup:appwrite` manually so Appwrite creates:
   - `event_achievements`

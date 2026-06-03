@@ -4,6 +4,7 @@ export type CurrentUser = {
   email?: string
   displayName?: string
   avatarUrl?: string
+  avatarFileId?: string
   avatarEmoji?: string
   createdAt: string
   updatedAt?: string

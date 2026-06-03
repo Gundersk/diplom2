@@ -7,4 +7,6 @@ export type EventParticipant = {
   points: number
   joinedAt: string
   updatedAt?: string
+  avatarUrl?: string
+  avatarFileId?: string
 }

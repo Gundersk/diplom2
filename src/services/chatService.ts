@@ -6,6 +6,8 @@ import { appwriteDatabases, appwriteId, appwriteQuery } from '../lib/appwrite'
 import type { EventChatMessage } from '../types/chat'
 import { buildChatInitials, normalizeChatMessage } from '../types/chat'
 import { isAppwriteMode } from './adapters/dataMode'
+import { resolveAvatarViewUrl } from '../utils/avatarUrl'
+import { sanitizePersistableUrl } from '../utils/persistableUrl'
 import { eventService } from './eventService'
 
 const CHAT_STORAGE_KEY = 'event-gallery:chat-messages'
@@ -184,7 +186,7 @@ export const chatService = {
         userId: input.userId,
         participantId: input.participantId,
         authorName: input.authorName,
-        authorAvatarUrl: input.authorAvatarUrl ?? '',
+        authorAvatarUrl: sanitizePersistableUrl(input.authorAvatarUrl),
         authorInitials: buildChatInitials(input.authorName),
         text: input.text,
         photoId: input.photoId ?? '',
@@ -222,6 +224,54 @@ export const chatService = {
     )
 
     return normalizeChatDocument(updated)
+  },
+
+  async syncAuthorProfileForUser(
+    userId: string,
+    profile: { displayName: string; avatarUrl?: string; avatarFileId?: string },
+  ) {
+    if (!isAppwriteMode()) {
+      const authorName = profile.displayName.trim() || 'Гость'
+      const authorAvatarUrl = profile.avatarUrl
+      const messages = readStoredMessages().map((message) =>
+        message.userId === userId
+          ? normalizeChatMessage({
+              ...message,
+              authorName,
+              authorAvatarUrl,
+              authorInitials: buildChatInitials(authorName),
+              updatedAt: new Date().toISOString(),
+            })
+          : message,
+      )
+      persistMessages(messages)
+      return
+    }
+
+    assertAppwriteReady('syncAuthorProfileForUser')
+    const authorName = profile.displayName.trim() || 'Гость'
+    const authorAvatarUrl = resolveAvatarViewUrl(profile.avatarUrl, profile.avatarFileId) ?? ''
+    const response = await appwriteDatabases.listDocuments<ChatMessageDocument>(
+      APPWRITE_DATABASE_ID,
+      APPWRITE_COLLECTIONS.chatMessages,
+      [appwriteQuery.equal('userId', userId), appwriteQuery.limit(5000)],
+    )
+
+    await Promise.allSettled(
+      response.documents.map((document) =>
+        appwriteDatabases.updateDocument(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_COLLECTIONS.chatMessages,
+          document.$id,
+          {
+            authorName,
+            authorAvatarUrl,
+            authorInitials: buildChatInitials(authorName),
+            updatedAt: new Date().toISOString(),
+          },
+        ),
+      ),
+    )
   },
 
   async deleteMessage(messageId: string): Promise<void> {

@@ -1,6 +1,6 @@
 export type AchievementScope = 'automatic' | 'personal' | 'group'
 export type AchievementMode = 'automatic' | 'manual'
-export type AchievementVisibility = 'visible' | 'secret'
+export type AchievementVisibility = 'visible' | 'hint' | 'hidden'
 export type AchievementConditionType =
   | 'first_photo'
   | 'most_photos'

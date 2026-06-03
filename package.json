@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
-    "setup:appwrite": "tsx scripts/setup-appwrite-schema.ts"
+    "setup:appwrite": "tsx scripts/setup-appwrite-schema.ts",
+    "repair:organizer": "tsx scripts/repair-organizer-permissions.ts"
   },
   "dependencies": {
     "appwrite": "^25.1.1",

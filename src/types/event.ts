@@ -1,4 +1,4 @@
-import type { EventAchievement } from './achievement'
+import type { AchievementVisibility, EventAchievement } from './achievement'
 import type { EventChatMessage } from './chat'
 import type { GalleryPhoto } from './photo'
 import type { EventRsvpEntry, EventRsvpStatus } from './rsvp'
@@ -52,6 +52,9 @@ export type EventPaymentInfo = {
 
 export type BackgroundMediaType = 'image' | 'gif' | 'video'
 
+export type EventTextThemeSetting = 'auto' | 'light' | 'dark'
+export type ResolvedEventTextTheme = 'light' | 'dark'
+
 export type GalleryEvent = {
   id: string
   title: string
@@ -81,6 +84,8 @@ export type GalleryEvent = {
   backgroundMode?: 'asset' | 'color'
   backgroundMediaType?: BackgroundMediaType
   backgroundColor?: string
+  backgroundLuminance?: number
+  textTheme?: EventTextThemeSetting
   accent: string
   allowGuestInvites?: boolean
   participantLimit?: null | number
@@ -121,6 +126,7 @@ export type CreateEventForm = {
   backgroundMode: 'asset' | 'color'
   backgroundMediaType: BackgroundMediaType
   backgroundColor: string
+  textTheme: EventTextThemeSetting
   paymentEnabled: boolean
   costPerPerson: string
   uploadedCoverUrl: null | string
@@ -136,7 +142,7 @@ export type CreateEventForm = {
   automaticTemplateIds: string[]
   selectedPersonalTemplateIds: string[]
   selectedGroupTemplateIds: string[]
-  secretTemplateIds: string[]
+  templateVisibility: Record<string, AchievementVisibility>
 }
 
 export type AssetOption = {

@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Плавный фон на весь экран</title>
+  <style>
+    body {
+      margin: 0;
+      background-color: #202124;
+      overflow: hidden;
+    }
+
+    .test-image {
+      width: 100vw;
+      height: 100vh;
+      object-fit: cover;
+      display: block;
+
+      /* Растворяем фон очень быстро, но плавно, оставляя огромный центр пустым */
+      -webkit-mask-image: linear-gradient(
+        to right, 
+        rgba(0,0,0, 1) 0%,      /* Плотный край */
+        rgba(0,0,0, 0.9) 4%,    /* Начинает тускнеть почти сразу */
+        rgba(0,0,0, 0.6) 9%,    /* Быстро теряет плотность */
+        rgba(0,0,0, 0.2) 14%,   /* Еле видно */
+        rgba(0,0,0, 0) 20%,     /* Всё, к 20% экрана фон полностью исчез */
+        
+        rgba(0,0,0, 0) 80%,     /* Пустота продолжается вплоть до 80% экрана */
+        
+        rgba(0,0,0, 0.2) 86%,   /* Начинает появляться у правого края */
+        rgba(0,0,0, 0.6) 91%, 
+        rgba(0,0,0, 0.9) 96%, 
+        rgba(0,0,0, 1) 100%
+      );
+      
+      mask-image: linear-gradient(
+        to right, 
+        rgba(0,0,0, 1) 0%, 
+        rgba(0,0,0, 0.9) 4%, 
+        rgba(0,0,0, 0.6) 9%, 
+        rgba(0,0,0, 0.2) 14%, 
+        rgba(0,0,0, 0) 20%, 
+        rgba(0,0,0, 0) 80%, 
+        rgba(0,0,0, 0.2) 86%, 
+        rgba(0,0,0, 0.6) 91%, 
+        rgba(0,0,0, 0.9) 96%, 
+        rgba(0,0,0, 1) 100%
+      );
+    }
+  </style>
+</head>
+<body>
+
+  <img src="Снимок экрана 2026-05-23 185939.png" class="test-image" alt="Фон">
+
+</body>
+</html>

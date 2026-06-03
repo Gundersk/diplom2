@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Просмотр фото события</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: Inter, system-ui, -apple-system, sans-serif;
+      /* Имитация сайта на фоне */
+      background-color: #202124; 
+      overflow: hidden;
+    }
+
+    /* Главный контейнер просмотра */
+    .gallery-lightbox {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      z-index: 1000;
+    }
+
+    /* Базовая темная подложка, чтобы приглушить основной сайт */
+    .lightbox-base {
+      position: absolute;
+      inset: 0;
+      background-color: rgba(15, 15, 18, 0.92);
+      z-index: 0;
+    }
+
+    /* Фон события (кадр из видео).
+      Маска делает его видимым по краям и прозрачным в центре.
+    */
+    .lightbox-event-bg {
+      position: absolute;
+      inset: 0;
+      /* ЗАМЕНИТЬ НА КАДР ИЗ ВИДЕО */
+      background-image: url('https://images.unsplash.com/photo-1436891620584-47fd0e565afb?auto=format&fit=crop&w=1920&q=80');
+      background-size: cover;
+      background-position: center;
+      
+      /* Плавное растворение к центру */
+      -webkit-mask-image: linear-gradient(
+        to right, 
+        rgba(0,0,0,1) 0%, 
+        rgba(0,0,0,0.6) 15%, 
+        rgba(0,0,0,0) 35%, 
+        rgba(0,0,0,0) 65%, 
+        rgba(0,0,0,0.6) 85%, 
+        rgba(0,0,0,1) 100%
+      );
+      mask-image: linear-gradient(
+        to right, 
+        rgba(0,0,0,1) 0%, 
+        rgba(0,0,0,0.6) 15%, 
+        rgba(0,0,0,0) 35%, 
+        rgba(0,0,0,0) 65%, 
+        rgba(0,0,0,0.6) 85%, 
+        rgba(0,0,0,1) 100%
+      );
+      
+      z-index: 1;
+      pointer-events: none; /* Чтобы фон не блокировал клики */
+      filter: saturate(1.2) brightness(1.1); /* Немного сочности для краев */
+    }
+
+    /* Верхняя панель */
+    .lightbox-header {
+      position: relative;
+      z-index: 10;
+      display: flex;
+      justify-content: flex-end;
+      padding: 20px 24px;
+    }
+
+    .close-btn {
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      color: white;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      font-size: 20px;
+      display: grid;
+      place-items: center;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.2s;
+    }
+
+    .close-btn:hover {
+      background: rgba(255, 255, 255, 0.2);
+      transform: scale(1.05);
+    }
+
+    /* Контейнер для кнопок и фото */
+    .lightbox-content {
+      position: relative;
+      z-index: 10;
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-bottom: 20px;
+    }
+
+    /* Зоны навигации (невидимые кнопки, растянутые по краям) */
+    .nav-zone {
+      position: relative;
+      width: 15%; /* Ширина активной зоны по краям */
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      color: rgba(255, 255, 255, 0.5);
+      transition: color 0.2s;
+    }
+
+    .nav-zone:hover {
+      color: white;
+    }
+
+    /* Сами стрелочки */
+    .nav-arrow {
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      background: rgba(0, 0, 0, 0.3);
+      backdrop-filter: blur(8px);
+      display: grid;
+      place-items: center;
+      font-size: 24px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    /* Центральная часть с фото */
+    .photo-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      flex: 1;
+      max-width: 70%;
+      height: 100%;
+    }
+
+    /* Имитация твоей квадратной фотки из майнкрафта */
+    .main-photo {
+      max-width: 100%;
+      max-height: 70vh;
+      object-fit: contain;
+      border-radius: 8px;
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6);
+    }
+
+    /* Метаданные под фото */
+    .photo-meta {
+      margin-top: 20px;
+      text-align: center;
+      color: white;
+    }
+
+    .photo-title {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 800;
+    }
+
+    .photo-date {
+      display: block;
+      margin: 4px 0 16px;
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.5);
+    }
+
+    .action-btn {
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: white;
+      padding: 8px 16px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .action-btn:hover {
+      background: rgba(255, 255, 255, 0.2);
+    }
+  </style>
+</head>
+<body>
+
+  <div class="gallery-lightbox">
+    <div class="lightbox-base"></div>
+    
+    <div class="lightbox-event-bg"></div>
+
+    <div class="lightbox-header">
+      <button class="close-btn">×</button>
+    </div>
+
+    <div class="lightbox-content">
+      <button class="nav-zone">
+        <div class="nav-arrow">❮</div>
+      </button>
+
+      <div class="photo-container">
+        <img src="https://images.unsplash.com/photo-1599577180572-88d44747eb16?auto=format&fit=crop&w=800&q=80" alt="Фото из галереи" class="main-photo">
+        
+        <div class="photo-meta">
+          <h3 class="photo-title">e6</h3>
+          <span class="photo-date">Сегодня, 17:28</span>
+          <button class="action-btn">Убрать из сохраненных</button>
+        </div>
+      </div>
+
+      <button class="nav-zone">
+        <div class="nav-arrow">❯</div>
+      </button>
+    </div>
+  </div>
+
+</body>
+</html>

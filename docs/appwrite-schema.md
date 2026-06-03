@@ -51,8 +51,8 @@ Current first implemented use:
 - `userId: string` (required, уникально)
 - `mode: 'guest' | 'profile'` (required)
 - `displayName: string` (optional)
-- `avatarFileId: string` (optional, ссылка на Storage в будущем)
-- `avatarUrl: string` (optional, если используем публичный URL/preview)
+- `avatarFileId: string` (optional, Appwrite Storage file id in `event_gallery_photos`)
+- `avatarUrl: string` (optional, short Appwrite Storage view URL — not base64)
 - `createdAt: datetime` (required)
 - `updatedAt: datetime` (optional)
 
@@ -96,6 +96,7 @@ Current first implemented use:
 - `timezone: string` (optional)
 - `titleStyle: string` (optional)
 - `rsvpStyle: string` (optional)
+- `textTheme: string` (optional, `auto` | `light` | `dark`)
 
 Важно:
 
@@ -128,6 +129,8 @@ Current first implemented use:
 - `points: number` (required)
 - `joinedAt: datetime` (required)
 - `updatedAt: datetime` (optional)
+- `avatarUrl: string` (optional, short Storage view URL)
+- `avatarFileId: string` (optional, Storage file id)
 
 Индексы:
 
@@ -440,7 +443,7 @@ MVP access model:
 - `description: string`
 - `icon: string`
 - `tone: string`
-- `visibility: 'visible' | 'secret'`
+- `visibility: 'visible' | 'hint' | 'hidden'`
 - `points: number | null`
 - `createdBy: string | null`
 - `createdAt: string`
@@ -477,8 +480,10 @@ MVP access model:
 ### UI-модель
 
 - Участник видит общий список достижений события и свой прогресс по ним.
-- Открытые достижения показывают реальное название и описание даже до получения.
-- Секретные достижения до выдачи отображаются как `Тайное достижение` / `Условие получения скрыто`.
+- `visible`: до получения участник видит icon, title и description.
+- `hint`: до получения участник видит icon и title, но вместо description получает `Условие скрыто`.
+- `hidden`: до получения участник не видит отдельную карточку, только общий счетчик скрытых достижений.
+- После выдачи любое достижение раскрывается полностью.
 - Организатор вручную выдает достижения выбранным участникам.
 - Appwrite realtime для достижений пока не используется: после действия экран просто перечитывает awards из сервиса.
 - `local` mode remains the fallback for demos and offline/backend-free development.

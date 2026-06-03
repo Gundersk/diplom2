@@ -9,6 +9,7 @@ import { hasAppwriteRuntimeConfig } from '../config/runtime'
 import { appwriteDatabases, appwriteId, appwriteQuery } from '../lib/appwrite'
 import type { EventPhotoLink } from '../types/eventPhoto'
 import type { GalleryPhoto } from '../types/photo'
+import { sanitizePersistableUrl } from '../utils/persistableUrl'
 import { isAppwriteMode } from './adapters/dataMode'
 import { eventService } from './eventService'
 import { photoCommentService } from './photoCommentService'
@@ -315,7 +316,7 @@ export const photoService = {
         userId: input.userId,
         participantId: input.participantId,
         authorName: input.authorName,
-        authorAvatarUrl: input.authorAvatarUrl ?? '',
+        authorAvatarUrl: sanitizePersistableUrl(input.authorAvatarUrl),
         storageFileId: uploadedFile.fileId,
         imageUrl: uploadedFile.viewUrl,
         caption: input.caption ?? '',
@@ -351,7 +352,7 @@ export const photoService = {
       photoId,
       {
         authorName: patch.authorName ?? existing.authorName,
-        authorAvatarUrl: patch.authorAvatarUrl ?? existing.authorAvatarUrl ?? '',
+        authorAvatarUrl: sanitizePersistableUrl(patch.authorAvatarUrl ?? existing.authorAvatarUrl),
         imageUrl: patch.imageUrl ?? existing.imageUrl,
         caption: patch.caption ?? existing.caption ?? '',
         likesCount: Number(patch.likesCount ?? existing.likesCount ?? 0) || 0,

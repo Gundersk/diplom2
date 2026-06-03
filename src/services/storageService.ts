@@ -6,7 +6,18 @@ import { authService } from './authService'
 import { isAppwriteMode } from './adapters/dataMode'
 
 export type EventVisualKind = 'cover' | 'background'
-export type EventStorageAssetKind = EventVisualKind | 'photo'
+export type EventStorageAssetKind = EventVisualKind | 'photo' | 'avatar'
+
+const ALLOWED_AVATAR_MIME_TYPES = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/webp',
+  'image/gif',
+  'image/avif',
+  'image/jfif',
+])
+
+const MAX_AVATAR_BYTES = 3 * 1024 * 1024
 
 function assertAppwriteStorageReady(methodName: string) {
   if (!hasAppwriteRuntimeConfig()) {
@@ -89,6 +100,43 @@ export const storageService = {
   getEventPhotoViewUrl(fileId: string): string {
     assertAppwriteStorageReady('getEventPhotoViewUrl')
     return appwriteStorage.getFileView(APPWRITE_BUCKETS.eventPhotos, fileId)
+  },
+
+  async uploadUserAvatar(file: File): Promise<{ fileId: string; previewUrl: string }> {
+    if (!isAppwriteMode()) {
+      throw new Error('uploadUserAvatar is available only in appwrite mode.')
+    }
+
+    assertAppwriteStorageReady('uploadUserAvatar')
+
+    if (!ALLOWED_AVATAR_MIME_TYPES.has(file.type)) {
+      throw new Error('Поддерживаются PNG, JPEG, WEBP, GIF, AVIF и JFIF.')
+    }
+
+    if (file.size > MAX_AVATAR_BYTES) {
+      throw new Error('Файл аватара должен быть не больше 3 МБ.')
+    }
+
+    const currentUser = await authService.getCurrentUser()
+    if (!currentUser?.id) {
+      throw new Error('Нужно войти в аккаунт, чтобы загрузить аватар.')
+    }
+
+    const uploadedFile = await appwriteStorage.createFile(
+      APPWRITE_BUCKETS.eventPhotos,
+      appwriteId.unique(),
+      file,
+      [
+        Permission.read(Role.users()),
+        Permission.update(Role.user(currentUser.id)),
+        Permission.delete(Role.user(currentUser.id)),
+      ],
+    )
+
+    return {
+      fileId: uploadedFile.$id,
+      previewUrl: this.getEventPhotoViewUrl(uploadedFile.$id),
+    }
   },
 
   async deleteFile(fileId: string): Promise<void> {

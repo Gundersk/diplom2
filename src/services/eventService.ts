@@ -5,9 +5,15 @@ import { hasAppwriteRuntimeConfig } from '../config/runtime'
 import { appwriteDatabases, appwriteId, appwriteQuery } from '../lib/appwrite'
 import { isAppwriteMode } from './adapters/dataMode'
 import { authService } from './authService'
+import { repairProfileOrganizerOwnership } from './guestMergeService'
 import { participantService } from './participantService'
 import { storageService } from './storageService'
 import type { EventInfoBlock, EventPaymentInfo, EventRole, GalleryEvent } from '../types/event'
+import { buildOrganizerEventPermissions } from '../utils/appwriteDocumentPermissions'
+import { normalizeEventTextThemeSetting } from '../utils/eventTextTheme'
+import { resolveAvatarViewUrl } from '../utils/avatarUrl'
+import { isMergedGuestUserId, readMergedGuestUserIds } from '../utils/mergedGuestIds'
+import { sanitizePersistableUrl } from '../utils/persistableUrl'
 
 const HOME_EVENTS_STORAGE_KEY = 'event-gallery.home-events'
 const INVITE_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
@@ -34,12 +40,14 @@ type EventDocument = Models.Document & {
   accent?: string
   titleStyle?: string
   rsvpStyle?: string
+  textTheme?: string
   guestsCanInvite?: boolean
   maxParticipants?: number | null
   isPaid?: boolean
   costPerPerson?: string
   paymentDetails?: string
   paymentComment?: string
+  infoBlocksJson?: string
 }
 
 type ParticipantRoleDocument = Models.Document & {
@@ -131,19 +139,42 @@ function parseInfoBlocks(value?: string): EventInfoBlock[] {
   }
 }
 
-function parsePayment(value?: string): EventPaymentInfo | null {
-  if (!value) return null
+function hasPersistedPaymentFields(document: Pick<EventDocument, 'isPaid' | 'costPerPerson' | 'paymentDetails' | 'paymentComment'>) {
+  return Boolean(
+    document.isPaid ||
+      document.costPerPerson?.trim() ||
+      document.paymentDetails?.trim() ||
+      document.paymentComment?.trim(),
+  )
+}
 
-  try {
-    const parsed = JSON.parse(value)
-    return parsed && typeof parsed === 'object' ? (parsed as EventPaymentInfo) : null
-  } catch {
+function paymentFromDocument(document: EventDocument): EventPaymentInfo | null {
+  if (!hasPersistedPaymentFields(document)) {
     return null
+  }
+
+  return {
+    amount: document.costPerPerson ?? '',
+    destination: document.paymentDetails ?? '',
+    comment: document.paymentComment ?? '',
   }
 }
 
+function resolveInfoBlocksFromDocument(document: EventDocument, cachedEvent?: GalleryEvent | null) {
+  if (typeof document.infoBlocksJson === 'string') {
+    return parseInfoBlocks(document.infoBlocksJson)
+  }
+
+  return cachedEvent?.infoBlocks ?? []
+}
+
 function getFallbackRole(event: GalleryEvent, currentUserId?: string, participantRole?: 'organizer' | 'guest'): EventRole {
-  if (participantRole === 'organizer' || (currentUserId && event.organizerId === currentUserId)) {
+  if (
+    participantRole === 'organizer' ||
+    (currentUserId &&
+      (event.organizerId === currentUserId ||
+        Boolean(event.organizerId && isMergedGuestUserId(event.organizerId))))
+  ) {
     return 'Организатор'
   }
 
@@ -193,16 +224,38 @@ async function resolveOrganizerDisplay(event: GalleryEvent) {
     return event
   }
 
-  const organizerParticipant = await participantService.getOrganizerParticipant(event.id, event.organizerId)
-  if (!organizerParticipant?.displayName) {
+  const [organizerParticipant, currentUser] = await Promise.all([
+    participantService.getOrganizerParticipant(event.id, event.organizerId),
+    authService.getCurrentUser(),
+  ])
+
+  const organizerName =
+    organizerParticipant?.displayName ||
+    (event.organizerId === currentUser?.id ? currentUser.displayName : '') ||
+    event.organizerName
+
+  if (!organizerName) {
     return event
   }
 
-  const organizerName = organizerParticipant.displayName
+  let organizerAvatarSrc =
+    resolveAvatarViewUrl(organizerParticipant?.avatarUrl, organizerParticipant?.avatarFileId) || undefined
+  const currentUserId = currentUser?.id
+  const isProfileOrganizer =
+    Boolean(currentUserId) &&
+    (event.organizerId === currentUserId ||
+      Boolean(event.organizerId && isMergedGuestUserId(event.organizerId)) ||
+      organizerParticipant?.userId === currentUserId)
+  if (isProfileOrganizer && currentUser) {
+    organizerAvatarSrc =
+      resolveAvatarViewUrl(currentUser.avatarUrl, currentUser.avatarFileId) || organizerAvatarSrc
+  }
+
   return normalizeGalleryEvent({
     ...event,
     organizerName,
     organizerInitials: buildInitials(organizerName),
+    organizerAvatarSrc,
   })
 }
 
@@ -302,12 +355,14 @@ function toAppwriteEventPayload(event: GalleryEvent) {
     accent: normalizedEvent.accent ?? '',
     titleStyle: normalizedEvent.titleStyle ?? 'classic',
     rsvpStyle: normalizedEvent.rsvpStyle ?? 'icons',
+    textTheme: normalizeEventTextThemeSetting(normalizedEvent.textTheme),
     guestsCanInvite: Boolean(normalizedEvent.allowGuestInvites),
     maxParticipants: normalizedEvent.participantLimit ?? null,
     isPaid: Boolean(payment?.amount || payment?.destination || payment?.comment),
     costPerPerson: payment?.amount ?? '',
     paymentDetails: payment?.destination ?? '',
     paymentComment: payment?.comment ?? '',
+    infoBlocksJson: JSON.stringify(normalizedEvent.infoBlocks ?? []),
     createdAt: normalizedEvent.createdAt ?? normalizedEvent.startsAt,
     updatedAt: normalizedEvent.updatedAt ?? new Date().toISOString(),
   }
@@ -351,8 +406,8 @@ function fromAppwriteEventDocument(
     document.backgroundColor ||
     (backgroundMode === 'color' ? document.themeColor || cachedEvent?.backgroundColor : cachedEvent?.backgroundColor)
   const accent = document.accent ?? cachedEvent?.accent ?? document.themeColor ?? '#ff7a59'
-  const coverStart = coverPreviewUrl || cachedEvent?.coverStart || document.coverUrl || accent
-  const coverEnd = coverPreviewUrl || cachedEvent?.coverEnd || document.coverUrl || accent
+  const coverStart = coverPreviewUrl || document.coverUrl || cachedEvent?.coverStart || accent
+  const coverEnd = coverPreviewUrl || document.coverUrl || cachedEvent?.coverEnd || accent
   const backgroundStart =
     backgroundMode === 'color'
       ? backgroundColor || cachedEvent?.backgroundStart || document.themeColor || '#f3f0ff'
@@ -391,7 +446,7 @@ function fromAppwriteEventDocument(
         organizerName: organizerFallbackName,
         organizerInitials: organizerFallbackInitials,
         organizerTone: cachedEvent?.organizerTone ?? '#ffd166,#41d3bd',
-        organizerAvatarSrc: cachedEvent?.organizerAvatarSrc,
+        organizerAvatarSrc: undefined,
         location: document.location ?? '',
         savedCount: 0,
         totalCount: 0,
@@ -412,7 +467,7 @@ function fromAppwriteEventDocument(
     organizerName: organizerFallbackName,
     organizerInitials: organizerFallbackInitials,
     organizerTone: cachedEvent?.organizerTone ?? '#ffd166,#41d3bd',
-    organizerAvatarSrc: cachedEvent?.organizerAvatarSrc || undefined,
+    organizerAvatarSrc: undefined,
     inviteCode: document.inviteCode || document.$id,
     description: document.description ?? '',
     location: document.location ?? '',
@@ -431,17 +486,12 @@ function fromAppwriteEventDocument(
     accent,
     allowGuestInvites: Boolean(document.guestsCanInvite),
     participantLimit: document.maxParticipants ?? null,
-    infoBlocks: cachedEvent?.infoBlocks ?? [],
-    payment: document.isPaid
-      ? {
-          amount: document.costPerPerson ?? '',
-          destination: document.paymentDetails ?? '',
-          comment: document.paymentComment ?? '',
-        }
-      : cachedEvent?.payment ?? null,
+    infoBlocks: resolveInfoBlocksFromDocument(document, cachedEvent),
+    payment: paymentFromDocument(document),
     timezoneLabel: document.timezone ?? cachedEvent?.timezoneLabel ?? 'Екатеринбург (UTC+5)',
     titleStyle: document.titleStyle ?? cachedEvent?.titleStyle ?? 'classic',
     rsvpStyle: document.rsvpStyle ?? cachedEvent?.rsvpStyle ?? 'icons',
+    textTheme: normalizeEventTextThemeSetting(document.textTheme ?? cachedEvent?.textTheme),
     achievements: [],
     photos: [],
     chatMessages: [],
@@ -514,22 +564,41 @@ async function getHomeEventsFromAppwrite() {
     return []
   }
 
-  const [organizerEventsResponse, participantEventsDocuments] = await Promise.all([
-    appwriteDatabases.listDocuments<EventDocument>(
-      APPWRITE_DATABASE_ID,
-      APPWRITE_COLLECTIONS.events,
-      [
-        appwriteQuery.equal('organizerId', participantMap.currentUserId),
-        appwriteQuery.limit(5000),
-        appwriteQuery.orderAsc('startsAt'),
-      ],
-    ),
+  const mergedGuestOrganizerIds = readMergedGuestUserIds().filter(
+    (userId) => userId && userId !== participantMap.currentUserId,
+  )
+
+  const [organizerEventsResponses, participantEventsDocuments] = await Promise.all([
+    Promise.all([
+      appwriteDatabases.listDocuments<EventDocument>(
+        APPWRITE_DATABASE_ID,
+        APPWRITE_COLLECTIONS.events,
+        [
+          appwriteQuery.equal('organizerId', participantMap.currentUserId),
+          appwriteQuery.limit(5000),
+          appwriteQuery.orderAsc('startsAt'),
+        ],
+      ),
+      ...mergedGuestOrganizerIds.map((guestUserId) =>
+        appwriteDatabases.listDocuments<EventDocument>(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_COLLECTIONS.events,
+          [
+            appwriteQuery.equal('organizerId', guestUserId),
+            appwriteQuery.limit(5000),
+            appwriteQuery.orderAsc('startsAt'),
+          ],
+        ),
+      ),
+    ]),
     getDocumentsByIds([...participantMap.rolesByEventId.keys()]),
   ])
 
   const linkedDocuments = new Map<string, EventDocument>()
-  for (const document of organizerEventsResponse.documents) {
-    linkedDocuments.set(document.$id, document)
+  for (const response of organizerEventsResponses) {
+    for (const document of response.documents) {
+      linkedDocuments.set(document.$id, document)
+    }
   }
   for (const document of participantEventsDocuments) {
     linkedDocuments.set(document.$id, document)
@@ -566,7 +635,10 @@ function cacheCreatedEventIfLinked(event: GalleryEvent, currentUserId?: string) 
     return
   }
 
-  if (event.organizerId === currentUserId) {
+  if (
+    event.organizerId === currentUserId ||
+    Boolean(event.organizerId && isMergedGuestUserId(event.organizerId))
+  ) {
     updateCachedEvent(event)
   }
 }
@@ -702,11 +774,20 @@ export const eventService = {
       })
     }
 
+    const organizerUserId = payload.organizerId || normalizedEvent.organizerId || (await authService.getCurrentUser())?.id
+    if (!organizerUserId) {
+      throw new Error('Не удалось определить организатора события.')
+    }
+
     await appwriteDatabases.createDocument<EventDocument>(
       APPWRITE_DATABASE_ID,
       APPWRITE_COLLECTIONS.events,
       normalizedEvent.id || appwriteId.unique(),
-      payload,
+      {
+        ...payload,
+        organizerId: organizerUserId,
+      },
+      buildOrganizerEventPermissions(organizerUserId),
     )
 
     const currentUser = await authService.getCurrentUser()
@@ -740,6 +821,8 @@ export const eventService = {
 
     assertAppwriteReady('updateEvent')
     const payload = toAppwriteEventPayload(normalizedEvent)
+    const currentUser = await authService.getCurrentUser()
+    const organizerUserId = payload.organizerId || currentUser?.id || normalizedEvent.organizerId
 
     if (import.meta.env.DEV) {
       console.log('[eventService] update payload background', {
@@ -751,12 +834,27 @@ export const eventService = {
       })
     }
 
-    await appwriteDatabases.updateDocument<EventDocument>(
-      APPWRITE_DATABASE_ID,
-      APPWRITE_COLLECTIONS.events,
-      normalizedEvent.id,
-      payload,
-    )
+    try {
+      await appwriteDatabases.updateDocument<EventDocument>(
+        APPWRITE_DATABASE_ID,
+        APPWRITE_COLLECTIONS.events,
+        normalizedEvent.id,
+        payload,
+      )
+    } catch (error) {
+      const message = error instanceof Error ? error.message.toLowerCase() : ''
+      if (currentUser?.id && (message.includes('authorized') || message.includes('unauthorized'))) {
+        await repairProfileOrganizerOwnership(currentUser.id)
+        await appwriteDatabases.updateDocument<EventDocument>(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_COLLECTIONS.events,
+          normalizedEvent.id,
+          payload,
+        )
+      } else {
+        throw error
+      }
+    }
 
     updateCachedEvent(normalizedEvent)
     return normalizedEvent

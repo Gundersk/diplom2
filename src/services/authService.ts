@@ -1,27 +1,49 @@
-import type { Models } from 'appwrite'
+import { Permission, Role, type Models } from 'appwrite'
 import { APPWRITE_COLLECTIONS, APPWRITE_DATABASE_ID } from '../config/appwriteSchema'
-import { hasAppwriteAuthConfig } from '../config/runtime'
-import { appwriteAccount, appwriteDatabases } from '../lib/appwrite'
+import { hasAppwriteAuthConfig, runtimeConfig } from '../config/runtime'
+import { appwriteAccount, appwriteDatabases, appwriteId } from '../lib/appwrite'
 import type { CurrentUser } from '../types/user'
+import { resolveAvatarViewUrl } from '../utils/avatarUrl'
+import { rememberMergedGuestUserId } from '../utils/mergedGuestIds'
+import { isPersistableUrl, sanitizePersistableUrl } from '../utils/persistableUrl'
 import { isAppwriteMode } from './adapters/dataMode'
+import {
+  clearGuestSessionLocalData,
+  mergeGuestSessionBeforeProfileLogin,
+  repairProfileOrganizerOwnership,
+} from './guestMergeService'
 
 const CURRENT_USER_STORAGE_KEY = 'event-gallery:current-user'
 const EMAIL_CODE_STORAGE_KEY = 'event-gallery:email-codes'
+const PENDING_EMAIL_LOGIN_STORAGE_KEY = 'event-gallery:pending-email-login'
+const EMAIL_CODE_COOLDOWN_MS = 60_000
+const PENDING_EMAIL_CODE_TTL_MS = 15 * 60_000
 const DEVELOPMENT_EMAIL_CODE = '000000'
 
 type StoredEmailCodes = Record<string, { code: string; requestedAt: string }>
+
+type PendingEmailLogin = {
+  email: string
+  userId: string
+  guestUserIdForMerge?: string
+  requestedAt: string
+}
+
+export type EmailCodeDelivery = 'appwrite' | 'local-dev'
 
 type ProfileDocument = Models.Document & {
   userId: string
   mode: 'guest' | 'profile'
   displayName?: string
   avatarUrl?: string
+  avatarFileId?: string
   createdAt: string
   updatedAt?: string
 }
 
+export { isPersistableUrl, sanitizePersistableUrl }
+
 let hasWarnedAboutProfiles = false
-let hasWarnedAboutEmailOtp = false
 
 function canUseLocalStorage() {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined'
@@ -84,6 +106,91 @@ function persistEmailCodes(codes: StoredEmailCodes) {
   window.localStorage.setItem(EMAIL_CODE_STORAGE_KEY, JSON.stringify(codes))
 }
 
+function readPendingEmailLogin(): PendingEmailLogin | null {
+  if (!canUseLocalStorage()) return null
+
+  const raw = window.localStorage.getItem(PENDING_EMAIL_LOGIN_STORAGE_KEY)
+  if (!raw) return null
+
+  try {
+    return JSON.parse(raw) as PendingEmailLogin
+  } catch {
+    window.localStorage.removeItem(PENDING_EMAIL_LOGIN_STORAGE_KEY)
+    return null
+  }
+}
+
+function persistPendingEmailLogin(payload: PendingEmailLogin) {
+  if (!canUseLocalStorage()) return
+  window.localStorage.setItem(PENDING_EMAIL_LOGIN_STORAGE_KEY, JSON.stringify(payload))
+}
+
+function clearPendingEmailLogin() {
+  if (!canUseLocalStorage()) return
+  window.localStorage.removeItem(PENDING_EMAIL_LOGIN_STORAGE_KEY)
+}
+
+function getAppwriteErrorCode(error: unknown) {
+  if (!(error instanceof Error)) return undefined
+  return (error as Error & { code?: number | string }).code
+}
+
+function formatAppwriteEmailTokenError(error: unknown) {
+  const message = error instanceof Error ? error.message : 'Не удалось запросить код.'
+  const normalized = message.toLowerCase()
+  const errorCode = getAppwriteErrorCode(error)
+  const errorType = getAppwriteErrorType(error)
+
+  if (
+    errorType === 'user_session_already_exists' ||
+    normalized.includes('session already exists') ||
+    normalized.includes('unauthorized')
+  ) {
+    return 'Не удалось запросить код из‑за активной гостевой сессии. Обновите страницу и нажмите «Получить код» ещё раз.'
+  }
+
+  if (errorCode === 429 || normalized.includes('too many') || normalized.includes('rate limit')) {
+    return `Слишком много запросов кода (лимит Appwrite). Подождите 1–2 минуты и попробуйте снова. Если используете Mailpit — проверьте http://localhost:8025: код мог уже уйти в предыдущем письме.`
+  }
+
+  if (normalized.includes('smtp') || normalized.includes('mail')) {
+    return `${message} Настройте SMTP в .env сервера Appwrite (_APP_SMTP_*), не во фронтенде. См. docs/email-otp-setup.md`
+  }
+
+  return `${message} Проверьте Appwrite Console → Auth (включён Email OTP) и SMTP сервера. См. docs/email-otp-setup.md`
+}
+
+function canReusePendingEmailCode(email: string, guestUserIdForMerge?: string) {
+  const pending = readPendingEmailLogin()
+  if (!pending || pending.email !== email) {
+    return false
+  }
+
+  if (guestUserIdForMerge && pending.guestUserIdForMerge !== guestUserIdForMerge) {
+    return false
+  }
+
+  const ageMs = Date.now() - new Date(pending.requestedAt).getTime()
+  return ageMs >= 0 && ageMs < PENDING_EMAIL_CODE_TTL_MS
+}
+
+function assertEmailCodeCooldown(email: string) {
+  const pending = readPendingEmailLogin()
+  if (!pending || pending.email !== email) {
+    return
+  }
+
+  const ageMs = Date.now() - new Date(pending.requestedAt).getTime()
+  if (ageMs < EMAIL_CODE_COOLDOWN_MS) {
+    const waitSeconds = Math.ceil((EMAIL_CODE_COOLDOWN_MS - ageMs) / 1000)
+    throw new Error(`Код уже запрошен. Подождите ${waitSeconds} сек. или проверьте Mailpit (http://localhost:8025).`)
+  }
+}
+
+function isGuestLikeMode(mode?: CurrentUser['mode']) {
+  return mode === 'guest' || mode === 'demo'
+}
+
 function assertDevelopmentCode(code: string) {
   if (code !== DEVELOPMENT_EMAIL_CODE) {
     throw new Error('Неверный код подтверждения. Для demo-режима используйте 000000.')
@@ -118,19 +225,136 @@ function isUnauthorizedError(error: unknown) {
   )
 }
 
+function getAppwriteErrorType(error: unknown) {
+  if (!(error instanceof Error)) return undefined
+  return (error as Error & { type?: string }).type
+}
+
+async function endCurrentAppwriteSession() {
+  try {
+    await appwriteAccount.deleteSession({ sessionId: 'current' })
+  } catch (error) {
+    if (!isUnauthorizedError(error) && getAppwriteErrorType(error) !== 'user_session_not_found') {
+      throw error
+    }
+  }
+}
+
+async function restoreGuestAppwriteSession(cachedGuest: CurrentUser) {
+  if (!isGuestLikeMode(cachedGuest.mode)) {
+    return null
+  }
+
+  try {
+    await endCurrentAppwriteSession()
+  } catch (error) {
+    if (!isUnauthorizedError(error) && getAppwriteErrorType(error) !== 'user_session_not_found') {
+      console.warn('[authService] failed to clear session before guest restore', error)
+    }
+  }
+
+  await appwriteAccount.createAnonymousSession()
+  const account = await appwriteAccount.get()
+  const profile = await ensureProfileDocumentForAccount(account, cachedGuest, {
+    mode: 'guest',
+    displayName: cachedGuest.displayName,
+    avatarUrl: cachedGuest.avatarUrl,
+    avatarFileId: cachedGuest.avatarFileId,
+  })
+
+  const restoredGuest = mapAppwriteAccountToCurrentUser(account, profile, {
+    ...cachedGuest,
+    id: account.$id,
+    mode: 'guest',
+    updatedAt: new Date().toISOString(),
+  })
+
+  persistCurrentUser(restoredGuest)
+  return restoredGuest
+}
+
+function resolveGuestUserIdForMergeFromCache() {
+  const currentUser = readCurrentUser()
+  if (!currentUser || !isGuestLikeMode(currentUser.mode)) {
+    return undefined
+  }
+
+  if (currentUser.id.startsWith('guest_') || currentUser.id.startsWith('user_')) {
+    return undefined
+  }
+
+  return currentUser.id
+}
+
+async function createAppwriteEmailTokenStateless(email: string) {
+  const projectId = runtimeConfig.appwriteProjectId
+  const endpoint = runtimeConfig.appwriteEndpoint.replace(/\/$/, '')
+  const userId = appwriteId.unique()
+
+  const response = await fetch(`${endpoint}/account/tokens/email`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Appwrite-Project': projectId,
+    },
+    body: JSON.stringify({ userId, email }),
+    credentials: 'omit',
+  })
+
+  if (!response.ok) {
+    let payload: { message?: string; code?: number; type?: string } = {}
+    try {
+      payload = await response.json()
+    } catch {
+      // ignore parse errors
+    }
+
+    const error = new Error(payload.message || 'Не удалось запросить код.') as Error & {
+      code?: number
+      type?: string
+    }
+    error.code = payload.code
+    error.type = payload.type
+    throw error
+  }
+
+  const token = (await response.json()) as { userId?: string }
+  return { userId: token.userId ?? userId }
+}
+
+async function deliverAppwriteEmailToken(email: string, userId: string) {
+  await endCurrentAppwriteSession()
+  const token = await appwriteAccount.createEmailToken({
+    userId,
+    email,
+  })
+  return { userId: token.userId }
+}
+
+function normalizeEmailOtpCode(code: string) {
+  return code.trim().replace(/\s+/g, '')
+}
+
+function formatEmailSessionError(error: unknown) {
+  const message = error instanceof Error ? error.message : 'Не удалось подтвердить код.'
+  const type = getAppwriteErrorType(error)
+
+  if (type === 'user_session_already_exists') {
+    return 'Уже есть активная сессия. Обновите страницу и попробуйте снова.'
+  }
+
+  if (type === 'user_invalid_token' || message.toLowerCase().includes('invalid')) {
+    return 'Неверный или просроченный код. Запросите новый в Mailpit (http://localhost:8025) или на почте.'
+  }
+
+  return `Не удалось войти: ${message}`
+}
+
 function warnProfilesUnavailable(reason?: string) {
   if (hasWarnedAboutProfiles) return
   hasWarnedAboutProfiles = true
   console.warn(
     `[authService] Profiles collection is unavailable. Auth will still work, but displayName/avatar mode data will fall back to local cache.${reason ? ` ${reason}` : ''}`,
-  )
-}
-
-function warnEmailOtpMockOnly() {
-  if (hasWarnedAboutEmailOtp) return
-  hasWarnedAboutEmailOtp = true
-  console.warn(
-    '[authService] Email OTP in appwrite mode is still mock-only and does not use real SMTP/Appwrite OTP yet.',
   )
 }
 
@@ -181,7 +405,9 @@ async function ensureProfileDocumentForAccount(
     mode?: 'guest' | 'profile'
     displayName?: string
     avatarUrl?: string
+    avatarFileId?: string
     email?: string
+    preserveEstablishedProfile?: boolean
   },
 ) {
   const existingProfile = await getProfileDocument(account.$id)
@@ -190,11 +416,21 @@ async function ensureProfileDocumentForAccount(
     overrides?.mode ??
     existingProfile?.mode ??
     (cachedUser?.mode === 'profile' ? 'profile' : account.email || overrides?.email ? 'profile' : 'guest')
-  const nextDisplayName = normalizeDisplayName(
-    overrides?.displayName ?? existingProfile?.displayName ?? cachedUser?.displayName ?? account.name,
-    fallbackName,
-  )
-  const nextAvatarUrl = overrides?.avatarUrl ?? existingProfile?.avatarUrl ?? cachedUser?.avatarUrl
+  const preserveEstablishedProfile =
+    overrides?.preserveEstablishedProfile ?? (existingProfile?.mode === 'profile' && nextMode === 'profile')
+
+  const nextDisplayName = preserveEstablishedProfile
+    ? normalizeDisplayName(existingProfile?.displayName ?? account.name, fallbackName)
+    : normalizeDisplayName(
+        overrides?.displayName ?? existingProfile?.displayName ?? cachedUser?.displayName ?? account.name,
+        fallbackName,
+      )
+  const nextAvatarUrl = preserveEstablishedProfile
+    ? existingProfile?.avatarUrl
+    : overrides?.avatarUrl ?? existingProfile?.avatarUrl ?? cachedUser?.avatarUrl
+  const nextAvatarFileId = preserveEstablishedProfile
+    ? existingProfile?.avatarFileId
+    : overrides?.avatarFileId ?? existingProfile?.avatarFileId ?? cachedUser?.avatarFileId
   const nextCreatedAt = existingProfile?.createdAt ?? cachedUser?.createdAt ?? account.$createdAt
   const nextUpdatedAt = new Date().toISOString()
 
@@ -202,7 +438,8 @@ async function ensureProfileDocumentForAccount(
     existingProfile &&
     existingProfile.mode === nextMode &&
     (existingProfile.displayName ?? '') === nextDisplayName &&
-    (existingProfile.avatarUrl ?? '') === (nextAvatarUrl ?? '')
+    (existingProfile.avatarUrl ?? '') === (nextAvatarUrl ?? '') &&
+    (existingProfile.avatarFileId ?? '') === (nextAvatarFileId ?? '')
   ) {
     return existingProfile
   }
@@ -212,6 +449,7 @@ async function ensureProfileDocumentForAccount(
     mode: nextMode,
     displayName: nextDisplayName,
     avatarUrl: nextAvatarUrl,
+    avatarFileId: nextAvatarFileId,
     createdAt: nextCreatedAt,
     updatedAt: nextUpdatedAt,
   })
@@ -232,6 +470,7 @@ function mapAppwriteAccountToCurrentUser(
     email: email || undefined,
     displayName: normalizeDisplayName(profile?.displayName ?? cachedUser?.displayName ?? account.name, fallbackName),
     avatarUrl: profile?.avatarUrl ?? cachedUser?.avatarUrl,
+    avatarFileId: profile?.avatarFileId ?? cachedUser?.avatarFileId,
     avatarEmoji: cachedUser?.avatarEmoji,
     createdAt: profile?.createdAt ?? account.$createdAt,
     updatedAt: profile?.updatedAt ?? account.$updatedAt ?? account.$createdAt,
@@ -243,6 +482,7 @@ async function upsertProfileDocument(input: {
   mode: 'guest' | 'profile'
   displayName?: string
   avatarUrl?: string
+  avatarFileId?: string
   createdAt?: string
   updatedAt?: string
 }) {
@@ -251,11 +491,17 @@ async function upsertProfileDocument(input: {
     return null
   }
 
+  const safeAvatarUrl = resolveAvatarViewUrl(input.avatarUrl, input.avatarFileId) ?? ''
+  if (input.avatarUrl?.startsWith('data:')) {
+    console.error('[authService] Refusing to persist base64 avatarUrl in profiles collection.')
+  }
+
   const payload = {
     userId: input.userId,
     mode: input.mode,
     displayName: input.displayName ?? '',
-    avatarUrl: input.avatarUrl ?? '',
+    avatarUrl: safeAvatarUrl,
+    avatarFileId: input.avatarFileId ?? '',
     createdAt: input.createdAt ?? new Date().toISOString(),
     updatedAt: input.updatedAt ?? new Date().toISOString(),
   }
@@ -283,6 +529,11 @@ async function upsertProfileDocument(input: {
           APPWRITE_COLLECTIONS.profiles,
           input.userId,
           payload,
+          [
+            Permission.read(Role.users()),
+            Permission.update(Role.user(input.userId)),
+            Permission.delete(Role.user(input.userId)),
+          ],
         )
       } catch (createError) {
         warnProfilesUnavailable(createError instanceof Error ? createError.message : undefined)
@@ -296,19 +547,39 @@ async function upsertProfileDocument(input: {
 }
 
 async function getAppwriteCurrentUser() {
-  const account = await getCurrentAccount()
-  if (!account) {
-    clearCurrentUserCache()
-    return null
+  const cachedUser = readCurrentUser()
+  let account = await getCurrentAccount()
+
+  if (!account && cachedUser && isGuestLikeMode(cachedUser.mode)) {
+    try {
+      return await restoreGuestAppwriteSession(cachedUser)
+    } catch (error) {
+      console.warn('[authService] failed to restore guest session from cache', error)
+      return cachedUser
+    }
   }
 
-  const cachedUser = readCurrentUser()
+  if (!account) {
+    if (!cachedUser || !isGuestLikeMode(cachedUser.mode)) {
+      clearCurrentUserCache()
+    }
+    return cachedUser && isGuestLikeMode(cachedUser.mode) ? cachedUser : null
+  }
+
   const matchingCachedUser = cachedUser?.id === account.$id ? cachedUser : null
+  const existingProfile = await getProfileDocument(account.$id)
+  const resolvedMode =
+    existingProfile?.mode === 'profile' || account.email || matchingCachedUser?.mode === 'profile'
+      ? 'profile'
+      : 'guest'
+
   const profile = await ensureProfileDocumentForAccount(account, matchingCachedUser, {
-    mode: matchingCachedUser?.mode === 'profile' ? 'profile' : account.email ? 'profile' : 'guest',
-    displayName: matchingCachedUser?.displayName,
-    avatarUrl: matchingCachedUser?.avatarUrl,
-    email: matchingCachedUser?.email,
+    mode: resolvedMode,
+    displayName: existingProfile?.displayName ?? matchingCachedUser?.displayName,
+    avatarUrl: existingProfile?.avatarUrl ?? matchingCachedUser?.avatarUrl,
+    avatarFileId: existingProfile?.avatarFileId ?? matchingCachedUser?.avatarFileId,
+    email: account.email || matchingCachedUser?.email,
+    preserveEstablishedProfile: existingProfile?.mode === 'profile',
   })
   const currentUser = mapAppwriteAccountToCurrentUser(account, profile, matchingCachedUser)
   persistCurrentUser(currentUser)
@@ -339,9 +610,24 @@ function verifyEmailCodeLocal(email: string, code: string): CurrentUser {
 
   const currentUser = readCurrentUser()
   const now = new Date().toISOString()
+  const guestUserIdForMerge =
+    currentUser && isGuestLikeMode(currentUser.mode) ? currentUser.id : undefined
 
-  if (currentUser && currentUser.mode !== 'profile') {
-    return upgradeGuestToProfileLocal(normalizedEmail, code)
+  if (currentUser && isGuestLikeMode(currentUser.mode)) {
+    const profileUser: CurrentUser = {
+      ...currentUser,
+      mode: 'profile',
+      email: normalizedEmail,
+      displayName: currentUser.displayName || normalizedEmail.split('@')[0],
+      updatedAt: now,
+    }
+
+    persistCurrentUser(profileUser)
+    if (guestUserIdForMerge) {
+      clearGuestSessionLocalData(guestUserIdForMerge, 'upgrade')
+    }
+    clearPendingEmailLogin()
+    return profileUser
   }
 
   const profileUser: CurrentUser = currentUser
@@ -362,78 +648,217 @@ function verifyEmailCodeLocal(email: string, code: string): CurrentUser {
       }
 
   persistCurrentUser(profileUser)
+  clearPendingEmailLogin()
   return profileUser
 }
 
 function upgradeGuestToProfileLocal(email: string, code: string): CurrentUser {
-  const currentUser = readCurrentUser()
+  return verifyEmailCodeLocal(email, code)
+}
+
+async function requestEmailCodeAppwrite(email: string): Promise<EmailCodeDelivery> {
+  assertAppwriteAuthReady('requestEmailCode')
   const normalizedEmail = email.trim().toLowerCase()
-  if (!currentUser || (currentUser.mode !== 'guest' && currentUser.mode !== 'demo')) {
-    return verifyEmailCodeLocal(normalizedEmail, code)
+  if (!normalizedEmail) {
+    throw new Error('Email обязателен для входа в профиль.')
   }
 
-  assertDevelopmentCode(code.trim())
+  const guestUserIdForMerge = resolveGuestUserIdForMergeFromCache()
+  const guestCachedUser = readCurrentUser()
 
-  const profileUser: CurrentUser = {
-    ...currentUser,
-    mode: 'profile',
-    email: normalizedEmail,
-    displayName: currentUser.displayName || normalizedEmail.split('@')[0],
-    updatedAt: new Date().toISOString(),
+  if (canReusePendingEmailCode(normalizedEmail, guestUserIdForMerge)) {
+    assertEmailCodeCooldown(normalizedEmail)
+    return 'appwrite'
   }
 
-  persistCurrentUser(profileUser)
-  return profileUser
+  clearPendingEmailLogin()
+
+  try {
+    let profileUserId = appwriteId.unique()
+    const guestAccount = guestUserIdForMerge ? await getCurrentAccount() : null
+    const guestSessionActive = Boolean(guestUserIdForMerge && guestAccount?.$id === guestUserIdForMerge)
+
+    if (guestSessionActive && guestUserIdForMerge) {
+      rememberMergedGuestUserId(guestUserIdForMerge)
+
+      try {
+        const stateless = await createAppwriteEmailTokenStateless(normalizedEmail)
+        profileUserId = stateless.userId
+      } catch (error) {
+        console.warn('[authService] stateless email token reservation failed, using generated userId', error)
+      }
+    } else {
+      const token = await deliverAppwriteEmailToken(normalizedEmail, profileUserId)
+      profileUserId = token.userId
+    }
+
+    persistPendingEmailLogin({
+      email: normalizedEmail,
+      userId: profileUserId,
+      guestUserIdForMerge,
+      requestedAt: new Date().toISOString(),
+    })
+    return 'appwrite'
+  } catch (error) {
+    if (getAppwriteErrorCode(error) === 429 && canReusePendingEmailCode(normalizedEmail, guestUserIdForMerge)) {
+      return 'appwrite'
+    }
+
+    throw new Error(formatAppwriteEmailTokenError(error))
+  }
 }
 
 async function verifyEmailCodeAppwrite(email: string, code: string): Promise<CurrentUser> {
-  requestEmailCodeLocal(email)
-  assertDevelopmentCode(code.trim())
-  warnEmailOtpMockOnly()
-
-  const account = await getCurrentAccount()
-  if (!account) {
-    throw new Error('Для mock email-кода в appwrite mode сначала войдите как гость.')
+  const normalizedEmail = email.trim().toLowerCase()
+  const trimmedCode = normalizeEmailOtpCode(code)
+  if (!normalizedEmail) {
+    throw new Error('Email обязателен для входа в профиль.')
+  }
+  if (!trimmedCode) {
+    throw new Error('Введите код подтверждения.')
   }
 
-  const cachedUser = readCurrentUser()
-  const nextUser = mapAppwriteAccountToCurrentUser(account, null, {
-    id: account.$id,
+  const pending = readPendingEmailLogin()
+  if (!pending || pending.email !== normalizedEmail) {
+    throw new Error('Сначала запросите код для этого email.')
+  }
+
+  const guestUserIdForMerge = pending.guestUserIdForMerge
+  const guestCachedUser = readCurrentUser()
+
+  const guestCachedForMerge =
+    guestCachedUser?.id === guestUserIdForMerge ? guestCachedUser : null
+  const profileDisplayNameForMerge = normalizeDisplayName(
+    guestCachedForMerge?.displayName,
+    normalizedEmail.split('@')[0],
+  )
+  const profileAvatarUrlForMerge = guestCachedForMerge?.avatarUrl
+  const profileAvatarFileIdForMerge = guestCachedForMerge?.avatarFileId
+
+  // Appwrite не создаёт session/token, пока активна гостевая (anonymous) сессия.
+  await endCurrentAppwriteSession()
+
+  try {
+    try {
+      await appwriteAccount.createSession({
+        userId: pending.userId,
+        secret: trimmedCode,
+      })
+    } catch (error) {
+      if (getAppwriteErrorType(error) === 'user_session_already_exists') {
+        await endCurrentAppwriteSession()
+        await appwriteAccount.createSession({
+          userId: pending.userId,
+          secret: trimmedCode,
+        })
+      } else {
+        throw error
+      }
+    }
+  } catch (error) {
+    if (guestCachedForMerge) {
+      await restoreGuestAppwriteSession(guestCachedForMerge)
+    }
+    throw new Error(formatEmailSessionError(error))
+  }
+
+  if (guestUserIdForMerge && guestCachedForMerge) {
+    try {
+      await mergeGuestSessionBeforeProfileLogin({
+        guestUserId: guestUserIdForMerge,
+        profileUserId: pending.userId,
+        profileDisplayName: profileDisplayNameForMerge,
+        profileAvatarUrl: profileAvatarUrlForMerge,
+        profileAvatarFileId: profileAvatarFileIdForMerge,
+      })
+    } catch (error) {
+      console.warn('[authService] guest merge after profile login failed', error)
+    }
+  }
+
+  const account = await appwriteAccount.get()
+  const profileUserId = account.$id
+  const existingProfile = await getProfileDocument(profileUserId)
+  const hasEstablishedProfile = existingProfile?.mode === 'profile'
+  const guestMatchesCurrentSession = Boolean(
+    guestCachedUser &&
+      guestCachedUser.id === guestUserIdForMerge &&
+      isGuestLikeMode(guestCachedUser.mode),
+  )
+
+  const profileDisplayName = normalizeDisplayName(
+    hasEstablishedProfile
+      ? existingProfile?.displayName ?? account.name
+      : guestMatchesCurrentSession && guestCachedUser
+        ? guestCachedUser.displayName
+        : account.name ?? normalizedEmail.split('@')[0],
+    normalizedEmail.split('@')[0],
+  )
+  const profileAvatarUrl = hasEstablishedProfile
+    ? existingProfile?.avatarUrl
+    : guestMatchesCurrentSession && guestCachedUser
+      ? guestCachedUser.avatarUrl
+      : undefined
+  const profileAvatarFileId = hasEstablishedProfile
+    ? existingProfile?.avatarFileId
+    : guestMatchesCurrentSession && guestCachedUser
+      ? guestCachedUser.avatarFileId
+      : undefined
+
+  if (account.name !== profileDisplayName) {
+    await appwriteAccount.updateName(profileDisplayName)
+    await appwriteAccount.get()
+  }
+
+  const profile = await ensureProfileDocumentForAccount(account, null, {
     mode: 'profile',
-    email: email.trim().toLowerCase(),
-    displayName:
-      cachedUser?.id === account.$id
-        ? cachedUser.displayName
-        : account.name || email.trim().toLowerCase().split('@')[0],
-    avatarUrl: cachedUser?.id === account.$id ? cachedUser.avatarUrl : undefined,
-    createdAt: cachedUser?.id === account.$id ? cachedUser.createdAt : account.$createdAt,
-    updatedAt: new Date().toISOString(),
+    displayName: profileDisplayName,
+    avatarUrl: profileAvatarUrl,
+    avatarFileId: profileAvatarFileId,
+    email: normalizedEmail,
+    preserveEstablishedProfile: hasEstablishedProfile,
   })
 
-  const profile = await ensureProfileDocumentForAccount(account, nextUser, {
-    mode: 'profile',
-    displayName: nextUser.displayName,
-    avatarUrl: nextUser.avatarUrl,
-    email: email.trim().toLowerCase(),
-  })
+  clearPendingEmailLogin()
+  if (guestUserIdForMerge) {
+    rememberMergedGuestUserId(guestUserIdForMerge)
+    clearGuestSessionLocalData(guestUserIdForMerge, 'upgrade')
+  }
 
   const currentUser = {
-    ...mapAppwriteAccountToCurrentUser(account, profile, nextUser),
-    email: email.trim().toLowerCase(),
+    ...mapAppwriteAccountToCurrentUser(account, profile, null),
+    email: normalizedEmail,
     mode: 'profile' as const,
+    displayName: profileDisplayName,
+    avatarUrl: profileAvatarUrl,
+    avatarFileId: profileAvatarFileId,
   }
 
   persistCurrentUser(currentUser)
+
+  if (guestUserIdForMerge) {
+    try {
+      await repairProfileOrganizerOwnership(profileUserId)
+    } catch (error) {
+      console.warn('[authService] repair organizer ownership after profile login failed', error)
+    }
+  }
+
   return currentUser
 }
 
 async function updateCurrentUserProfileAppwrite(payload: {
   displayName?: string
   avatarUrl?: string
+  avatarFileId?: string
 }): Promise<CurrentUser> {
   const account = await getCurrentAccount()
   if (!account) {
     throw new Error('Сначала выполните вход.')
+  }
+
+  if (payload.avatarUrl?.startsWith('data:') || payload.avatarUrl?.startsWith('blob:')) {
+    throw new Error('Аватар нужно загрузить через Storage, а не как локальный preview.')
   }
 
   const existingUser = (await getAppwriteCurrentUser()) ?? mapAppwriteAccountToCurrentUser(account)
@@ -453,10 +878,18 @@ async function updateCurrentUserProfileAppwrite(payload: {
     await appwriteAccount.updateName(nextDisplayName.trim())
   }
 
+  const nextAvatarFileId =
+    payload.avatarFileId !== undefined ? payload.avatarFileId : existingUser.avatarFileId
+  const nextAvatarUrl =
+    payload.avatarUrl !== undefined || payload.avatarFileId !== undefined
+      ? resolveAvatarViewUrl(payload.avatarUrl ?? existingUser.avatarUrl, nextAvatarFileId)
+      : resolveAvatarViewUrl(existingUser.avatarUrl, existingUser.avatarFileId)
+
   const provisionalUser: CurrentUser = {
     ...existingUser,
     displayName: nextDisplayName.trim(),
-    avatarUrl: payload.avatarUrl !== undefined ? payload.avatarUrl : existingUser.avatarUrl,
+    avatarUrl: nextAvatarUrl || undefined,
+    avatarFileId: nextAvatarFileId || undefined,
     updatedAt: new Date().toISOString(),
   }
 
@@ -465,6 +898,7 @@ async function updateCurrentUserProfileAppwrite(payload: {
     mode: provisionalUser.mode === 'demo' ? 'guest' : provisionalUser.mode,
     displayName: provisionalUser.displayName,
     avatarUrl: provisionalUser.avatarUrl,
+    avatarFileId: provisionalUser.avatarFileId,
     createdAt: provisionalUser.createdAt,
     updatedAt: provisionalUser.updatedAt,
   })
@@ -561,12 +995,26 @@ export const authService = {
     return guestUser
   },
 
-  async requestEmailCode(email: string): Promise<void> {
+  async requestEmailCode(email: string): Promise<EmailCodeDelivery> {
     if (isAppwriteMode()) {
-      warnEmailOtpMockOnly()
+      return await requestEmailCodeAppwrite(email)
     }
 
-    requestEmailCodeLocal(email)
+    const normalizedEmail = email.trim().toLowerCase()
+    if (!normalizedEmail) {
+      throw new Error('Email обязателен для входа в профиль.')
+    }
+
+    requestEmailCodeLocal(normalizedEmail)
+    const currentUser = readCurrentUser()
+    persistPendingEmailLogin({
+      email: normalizedEmail,
+      userId: currentUser?.id ?? createId('user'),
+      guestUserIdForMerge:
+        currentUser && isGuestLikeMode(currentUser.mode) ? currentUser.id : undefined,
+      requestedAt: new Date().toISOString(),
+    })
+    return 'local-dev'
   },
 
   async verifyEmailCode(email: string, code: string): Promise<CurrentUser> {
@@ -578,16 +1026,13 @@ export const authService = {
   },
 
   async upgradeGuestToProfile(email: string, code: string): Promise<CurrentUser> {
-    if (isAppwriteMode()) {
-      return await verifyEmailCodeAppwrite(email, code)
-    }
-
-    return upgradeGuestToProfileLocal(email, code)
+    return await this.verifyEmailCode(email, code)
   },
 
   async updateCurrentUserProfile(payload: {
     displayName?: string
     avatarUrl?: string
+    avatarFileId?: string
   }): Promise<CurrentUser> {
     if (isAppwriteMode()) {
       return await updateCurrentUserProfileAppwrite(payload)
@@ -610,6 +1055,7 @@ export const authService = {
       ...currentUser,
       displayName: nextDisplayName.trim(),
       avatarUrl: payload.avatarUrl !== undefined ? payload.avatarUrl : currentUser.avatarUrl,
+      avatarFileId: payload.avatarFileId !== undefined ? payload.avatarFileId : currentUser.avatarFileId,
       updatedAt: new Date().toISOString(),
     }
 
@@ -630,13 +1076,24 @@ export const authService = {
       throw new Error('Не удалось сохранить аватар.')
     }
 
+    if (isAppwriteMode() && !isPersistableUrl(avatarUrl)) {
+      throw new Error('Аватар нужно загрузить через Storage.')
+    }
+
     return this.updateCurrentUserProfile({ avatarUrl })
   },
 
   async logout(): Promise<void> {
+    const currentUser = readCurrentUser()
+    const guestUserId =
+      currentUser && isGuestLikeMode(currentUser.mode) ? currentUser.id : undefined
+
     if (!isAppwriteMode()) {
-      if (!canUseLocalStorage()) return
-      window.localStorage.removeItem(CURRENT_USER_STORAGE_KEY)
+      if (guestUserId) {
+        clearGuestSessionLocalData(guestUserId)
+      }
+      clearPendingEmailLogin()
+      clearCurrentUserCache()
       return
     }
 
@@ -649,6 +1106,10 @@ export const authService = {
         throw error
       }
     } finally {
+      if (guestUserId) {
+        clearGuestSessionLocalData(guestUserId)
+      }
+      clearPendingEmailLogin()
       clearCurrentUserCache()
     }
   },

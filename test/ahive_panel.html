@@ -1,0 +1,226 @@
+<div class="achievements-panel">
+  <div class="achievements-header">
+    <div>
+      <p class="eyebrow">Achievements</p>
+      <h3>Достижения</h3>
+    </div>
+
+    <span class="achievements-count">3 / 8</span>
+  </div>
+
+  <div class="achievements-progress">
+    <div class="achievements-progress-fill" style="width: 38%"></div>
+  </div>
+
+  <div class="achievement-list">
+    <article class="achievement-card unlocked">
+      <div class="achievement-icon">📸</div>
+      <div class="achievement-info">
+        <h4>Первый кадр</h4>
+        <p>Загрузить первое фото события</p>
+        <span>Получили 2 из 6 участников</span>
+      </div>
+      <div class="achievement-state">✓</div>
+    </article>
+
+    <article class="achievement-card unlocked rare">
+      <div class="achievement-icon">🎭</div>
+      <div class="achievement-info">
+        <h4>Мемолог</h4>
+        <p>Добавить самый смешной кадр вечера</p>
+        <span>Есть у 1 участника</span>
+      </div>
+      <div class="achievement-state">★</div>
+    </article>
+
+    <article class="achievement-card locked">
+      <div class="achievement-icon">🕵️</div>
+      <div class="achievement-info">
+        <h4>Тайное достижение</h4>
+        <p>Условие скрыто</p>
+        <span>Открыто у 0 из 6 участников</span>
+      </div>
+      <div class="achievement-state">?</div>
+    </article>
+
+    <article class="achievement-card locked">
+      <div class="achievement-icon">🏆</div>
+      <div class="achievement-info">
+        <h4>Фото вечера</h4>
+        <p>Особая награда от организатора</p>
+        <span>Ещё никто не получил</span>
+      </div>
+      <div class="achievement-state">—</div>
+    </article>
+  </div>
+
+  <button class="achievement-action">Смотреть все</button>
+</div>
+
+<style>
+  body {
+    min-height: 100vh;
+    margin: 0;
+    display: grid;
+    place-items: center;
+    background:
+      linear-gradient(rgba(10, 10, 12, 0.72), rgba(10, 10, 12, 0.72)),
+      repeating-linear-gradient(
+        90deg,
+        #202124 0,
+        #202124 8px,
+        #2b2c30 9px,
+        #15161a 18px
+      );
+    font-family: Inter, Arial, sans-serif;
+    color: white;
+  }
+
+  .achievements-panel {
+    width: 320px;
+    padding: 18px;
+    border-radius: 28px;
+    background: rgba(12, 12, 16, 0.42);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow:
+      0 24px 60px rgba(0, 0, 0, 0.35),
+      inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(18px);
+  }
+
+  .achievements-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
+    margin-bottom: 12px;
+  }
+
+  .eyebrow {
+    margin: 0 0 4px;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.56);
+  }
+
+  .achievements-header h3 {
+    margin: 0;
+    font-size: 22px;
+    line-height: 1;
+    letter-spacing: -0.04em;
+  }
+
+  .achievements-count {
+    padding: 7px 10px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.14);
+    font-size: 12px;
+    font-weight: 800;
+  }
+
+  .achievements-progress {
+    height: 8px;
+    margin-bottom: 16px;
+    border-radius: 999px;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.12);
+  }
+
+  .achievements-progress-fill {
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #ff8a50, #ffd166, #41d3bd);
+  }
+
+  .achievement-list {
+    display: grid;
+    gap: 10px;
+  }
+
+  .achievement-card {
+    display: grid;
+    grid-template-columns: 46px 1fr 28px;
+    align-items: center;
+    gap: 10px;
+    min-height: 72px;
+    padding: 10px;
+    border-radius: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  .achievement-card.unlocked {
+    background:
+      radial-gradient(circle at 0% 0%, rgba(255, 209, 102, 0.28), transparent 42%),
+      rgba(255, 255, 255, 0.12);
+  }
+
+  .achievement-card.rare {
+    background:
+      radial-gradient(circle at 0% 0%, rgba(255, 77, 109, 0.34), transparent 42%),
+      rgba(255, 255, 255, 0.12);
+  }
+
+  .achievement-card.locked {
+    opacity: 0.62;
+    filter: grayscale(0.85);
+  }
+
+  .achievement-icon {
+    width: 46px;
+    height: 46px;
+    display: grid;
+    place-items: center;
+    border-radius: 16px;
+    font-size: 23px;
+    background: rgba(255, 255, 255, 0.16);
+  }
+
+  .achievement-info h4 {
+    margin: 0 0 4px;
+    font-size: 14px;
+    line-height: 1.1;
+  }
+
+  .achievement-info p {
+    margin: 0 0 5px;
+    font-size: 12px;
+    line-height: 1.25;
+    color: rgba(255, 255, 255, 0.72);
+  }
+
+  .achievement-info span {
+    display: block;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.48);
+  }
+
+  .achievement-state {
+    width: 26px;
+    height: 26px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.14);
+    font-size: 13px;
+    font-weight: 900;
+  }
+
+  .achievement-action {
+    width: 100%;
+    margin-top: 14px;
+    padding: 12px 14px;
+    border: 0;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.9);
+    color: #151515;
+    font-weight: 900;
+    cursor: pointer;
+  }
+
+  .achievement-action:hover {
+    background: white;
+  }
+</style>

@@ -1962,3 +1962,78 @@ npm run dev
 ```bash
 npm run build
 ```
+
+## 2026-05-23. Шаг: MVP-галерея и просмотр фото без комментариев
+
+### Цель
+
+Упростить MVP: убрать комментарии к фото на home, сделать единообразные квадратные превью без обрезки содержимого, просмотр в стиле мессенджера/телефонной галереи с циклическим листанием и нативным сохранением через ПКМ.
+
+### Что сделано
+
+1. В `App.vue` удалены UI и логика комментариев к фото (`photoCommentService` в просмотрщике больше не используется).
+2. Превью в home-галерее и альбоме события переведены на `<img>` с `object-fit: contain` внутри квадратных ячеек; убраны `nth-child`-правила, из-за которых первое фото было крупнее остальных.
+3. Просмотрщик переработан:
+   - фон события (градиент/видео) + затемнение;
+   - фото в натуральном размере (`object-fit: contain`, без скруглений);
+   - боковые стрелки и клавиши `←` / `→` / `Escape`;
+   - циклическое листание;
+   - на home — плейлист по всем сохранённым фото текущей вкладки с переходом между событиями;
+   - в альбоме события — только фото этого события, без заголовка «Фото из события».
+4. Кнопка «Сохранить / Убрать из сохранённых» перенесена в нижний блок метаданных просмотрщика; подписи в альбоме под каждым превью убраны.
+
+### Изменённые файлы
+
+- `src/App.vue`
+- `src/style.css`
+- `docs/development-log.md`
+
+### Как проверить вручную
+
+1. `npm run dev`
+2. Home → раскрыть событие → убедиться, что все превью одинаковые квадраты, первое не больше остальных.
+3. Открыть фото → листать стрелками и клавиатурой, в конце списка переход на первое фото (цикл).
+4. На home при листании после последнего фото события открывается первое фото следующего события с его фоном и названием.
+5. В событии → альбом: открыть фото, проверить минимальные метаданные (автор · дата) и сохранение через ПКМ по изображению.
+6. `npm run build`
+
+## 2026-05-23. Шаг: аватары через Appwrite Storage
+
+### Цель
+
+Убрать сохранение base64 data URL в string-поля Appwrite (`profiles.avatarUrl`, `chat_messages.authorAvatarUrl`, `photos.authorAvatarUrl`), из-за которого возникал 400 при длине > 4096.
+
+### Что сделано
+
+1. `storageService.uploadUserAvatar()` — загрузка PNG/JPEG/WEBP/GIF/AVIF/JFIF до 3 МБ в bucket `event_gallery_photos`.
+2. `profiles.avatarFileId` + короткий `avatarUrl` (view URL) в `authService`, типах и `setup-appwrite-schema.ts`.
+3. `src/utils/persistableUrl.ts` — `isPersistableUrl` / `sanitizePersistableUrl`.
+4. `App.vue` — preview через `URL.createObjectURL`, сохранение через Storage в appwrite mode; local mode по-прежнему data URL.
+5. `chatService` / `photoService` — sanitize `authorAvatarUrl` перед записью в Appwrite.
+
+### После pull
+
+```bash
+npm run setup:appwrite
+npm run build
+```
+
+## 2026-05-23. Шаг: отображение аватаров через participants
+
+### Цель
+
+Показывать Storage-аватары в Home, чате и guest list — не только в профиле.
+
+### Что сделано
+
+1. `participants.avatarUrl` / `avatarFileId` — сохранение при join и update из `currentUser`.
+2. `updateParticipantProfile()` + синхронизация после сохранения профиля.
+3. `resolveOrganizerDisplay()` прокидывает `organizerAvatarSrc`.
+4. UI чата, организатора, RSVP и achievement modal — фото с fallback на initials.
+
+### После pull
+
+```bash
+npm run setup:appwrite
+npm run build
+```

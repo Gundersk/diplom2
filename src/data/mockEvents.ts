@@ -559,6 +559,7 @@ export function normalizeGalleryEvent(event: GalleryEvent): GalleryEvent {
     guestRsvps: (event.guestRsvps ?? []).map((entry) => normalizeRsvpEntry(entry as EventRsvpEntry)),
     titleStyle: event.titleStyle ?? 'classic',
     rsvpStyle: event.rsvpStyle ?? 'icons',
+    textTheme: event.textTheme ?? 'auto',
   }
 }
 
