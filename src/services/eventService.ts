@@ -1,5 +1,5 @@
 import type { Models } from 'appwrite'
-import { normalizeGalleryEvent } from '../data/mockEvents'
+import { normalizeGalleryEvent } from '../utils/galleryEvent'
 import { APPWRITE_COLLECTIONS, APPWRITE_DATABASE_ID } from '../config/appwriteSchema'
 import { hasAppwriteRuntimeConfig } from '../config/runtime'
 import { appwriteDatabases, appwriteId, appwriteQuery } from '../lib/appwrite'

@@ -1,7 +1,7 @@
 ﻿<script setup lang="ts">
 import 'emoji-picker-element'
 import { computed, nextTick, onUnmounted, reactive, ref, watch } from 'vue'
-import { buildEventStatus } from './data/mockEvents'
+import { buildEventStatus } from './utils/galleryEvent'
 import { authService, LOCAL_DEMO_USER_DISPLAY_NAME } from './services/authService'
 import { achievementService } from './services/achievementService'
 import { chatService } from './services/chatService'
@@ -300,14 +300,6 @@ function hasRealAuthenticatedUser() {
   if (!currentUser.id || currentUser.id === 'anonymous') return false
   if (isAppwriteMode()) {
     return currentUser.mode === 'guest' || currentUser.mode === 'profile'
-  }
-  return true
-}
-
-function isRestoredAppUser(user: CurrentUser | null) {
-  if (!user?.id || user.id === 'anonymous') return false
-  if (isAppwriteMode()) {
-    return user.mode === 'guest' || user.mode === 'profile'
   }
   return true
 }
@@ -865,10 +857,6 @@ async function resolveInviteFlow() {
   }
 }
 
-function getThemeById(themeId: string) {
-  return themes.find((theme) => theme.id === themeId) ?? themes[0]
-}
-
 function padNumber(value: number) {
   return String(value).padStart(2, '0')
 }
@@ -965,28 +953,6 @@ function onEmojiPickerSelect(event: Event) {
   const detail = (event as CustomEvent<{ unicode: string }>).detail
   medalForm.value.icon = detail.unicode
   emojiPickerOpen.value = false
-}
-
-function hexToRgba(hex: string, alpha: number) {
-  const normalized = hex.replace('#', '')
-  const source =
-    normalized.length === 3
-      ? normalized
-          .split('')
-          .map((item) => item + item)
-          .join('')
-      : normalized
-  const red = Number.parseInt(source.slice(0, 2), 16)
-  const green = Number.parseInt(source.slice(2, 4), 16)
-  const blue = Number.parseInt(source.slice(4, 6), 16)
-  return `rgba(${red}, ${green}, ${blue}, ${alpha})`
-}
-
-function buildSoftColorGradient(color: string) {
-  return `
-    radial-gradient(circle at 50% 42%, rgba(255, 255, 255, 0.97) 0%, rgba(255, 255, 255, 0.92) 30%, ${hexToRgba(color, 0.72)} 100%),
-    linear-gradient(135deg, ${hexToRgba(color, 0.86)}, rgba(255, 255, 255, 0.94) 56%, ${hexToRgba(color, 0.64)})
-  `
 }
 
 function createEmptyInfoBlock(): EventInfoBlock {
@@ -1159,26 +1125,6 @@ function isAssetSource(value: string) {
     value.includes('/storage/buckets/') ||
     /\.(png|jpe?g|jfif|webp|avif|gif|mp4|webm)(\?.*)?$/i.test(value)
   )
-}
-
-function getCoverBackground(event: GalleryEvent) {
-  if (isAssetSource(event.coverStart)) {
-    return `url("${event.coverStart}")`
-  }
-
-  return `linear-gradient(135deg, ${event.coverStart}, ${event.coverEnd})`
-}
-
-function getBackgroundBackground(event: GalleryEvent) {
-  if (isAssetSource(event.backgroundStart)) {
-    return `url("${event.backgroundStart}")`
-  }
-
-  if (event.backgroundStart.startsWith('#')) {
-    return event.backgroundStart
-  }
-
-  return `linear-gradient(135deg, ${event.backgroundStart}, ${event.backgroundEnd})`
 }
 
 function isVideoBackground(event: Pick<GalleryEvent, 'backgroundMode' | 'backgroundMediaType' | 'backgroundStart'>) {
@@ -1975,21 +1921,6 @@ function closeProfileEditor() {
   }
 }
 
-function readFileAsDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        resolve(reader.result)
-      } else {
-        reject(new Error('Не удалось прочитать изображение.'))
-      }
-    }
-    reader.onerror = () => reject(new Error('Не удалось прочитать изображение.'))
-    reader.readAsDataURL(file)
-  })
-}
-
 function clearPendingEventVisualFiles() {
   uploadedCoverFile.value = null
   uploadedBackgroundFile.value = null
@@ -2258,10 +2189,6 @@ function closeEventPage() {
   inviteLinkStatus.value = ''
   clearEventNavigationFromUrl()
   closeRsvpSheet()
-}
-
-function addInfoBlock() {
-  createEventForm.value.infoBlocks.push(createEmptyInfoBlock())
 }
 
 function removeInfoBlock(blockId: string) {
@@ -3131,10 +3058,6 @@ function getAchievementKey(event: GalleryEvent, achievement: EventAchievement) {
 function toggleAchievement(event: GalleryEvent, achievement: EventAchievement) {
   const key = getAchievementKey(event, achievement)
   activeAchievement.value = activeAchievement.value === key ? null : key
-}
-
-function countAchievements(event: GalleryEvent, scope: AchievementScope) {
-  return event.achievements.filter((achievement) => achievement.scope === scope).length
 }
 
 function getTemplateVisibility(templateId: string): AchievementVisibility {
