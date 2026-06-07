@@ -24,6 +24,10 @@ export function resolveAvatarViewUrl(avatarUrl?: string, avatarFileId?: string) 
 
 export function withAvatarCacheToken(url: string, token?: string) {
   if (!token) return url
+  if (url.startsWith('blob:') || url.startsWith('data:')) {
+    return url
+  }
+
   const separator = url.includes('?') ? '&' : '?'
   return `${url}${separator}v=${encodeURIComponent(token)}`
 }

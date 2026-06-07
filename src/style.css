@@ -1256,13 +1256,19 @@ a {
   display: grid;
   width: 34px;
   height: 34px;
+  flex: 0 0 34px;
   place-items: center;
   border-radius: 50%;
-  background: linear-gradient(135deg, #ffd166, #41d3bd);
   color: #161616;
   font-weight: 900;
+  background-color: #ffd166;
   background-position: center;
+  background-repeat: no-repeat;
   background-size: cover;
+}
+
+.profile-avatar:not(.filled) {
+  background-image: linear-gradient(135deg, #ffd166, #41d3bd);
 }
 
 .profile-avatar.filled {
