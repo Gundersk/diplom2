@@ -316,7 +316,7 @@ function createAnonymousUserPlaceholder(): CurrentUser {
 }
 
 const coverAssetModules = import.meta.glob(
-  '../приеры страниц partiful/Ресурсы/Обложки/**/*.{png,jpg,jpeg,jfif,avif,webp,gif}',
+  '../../приеры страниц partiful/Ресурсы/Обложки/**/*.{png,jpg,jpeg,jfif,avif,webp,gif}',
   {
     eager: true,
     import: 'default',
@@ -324,7 +324,7 @@ const coverAssetModules = import.meta.glob(
 ) as Record<string, string>
 
 const backgroundAssetModules = import.meta.glob(
-  '../приеры страниц partiful/Ресурсы/Фон/*.{png,jpg,jpeg,jfif,avif,webp,mp4,webm}',
+  '../../приеры страниц partiful/Ресурсы/Фон/*.{png,jpg,jpeg,jfif,avif,webp,mp4,webm}',
   {
     eager: true,
     import: 'default',
