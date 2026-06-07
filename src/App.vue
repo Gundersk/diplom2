@@ -796,6 +796,7 @@ async function resolveInviteFlow() {
 
   inviteErrorMessage.value = ''
   pendingInviteEventId.value = event.id
+  eventService.cacheEventState(event)
   upsertHomeEvent(event)
   activeTab.value = event.status
   await openEventPage(event.id, event)

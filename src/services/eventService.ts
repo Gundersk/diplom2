@@ -1,5 +1,5 @@
 import type { Models } from 'appwrite'
-import { getMockHomeEvents, normalizeGalleryEvent } from '../data/mockEvents'
+import { normalizeGalleryEvent } from '../data/mockEvents'
 import { APPWRITE_COLLECTIONS, APPWRITE_DATABASE_ID } from '../config/appwriteSchema'
 import { hasAppwriteRuntimeConfig } from '../config/runtime'
 import { appwriteDatabases, appwriteId, appwriteQuery } from '../lib/appwrite'
@@ -16,6 +16,9 @@ import { isMergedGuestUserId, readMergedGuestUserIds } from '../utils/mergedGues
 import { sanitizePersistableUrl } from '../utils/persistableUrl'
 
 const HOME_EVENTS_STORAGE_KEY = 'event-gallery.home-events'
+const USER_HOME_EVENTS_PREFIX = 'event-gallery.home-events:'
+const LEGACY_HOME_EVENTS_MIGRATED_KEY = 'event-gallery.home-events:legacy-migrated'
+const CURRENT_USER_STORAGE_KEY = 'event-gallery:current-user'
 const INVITE_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 
 type EventDocument = Models.Document & {
@@ -93,14 +96,44 @@ export function getEventInviteUrl(event: GalleryEvent) {
   return url.toString()
 }
 
-function persistHomeEvents(events: GalleryEvent[]) {
-  if (!canUseLocalStorage()) return
-
-  const normalizedEvents = events.map((event) => normalizeGalleryEvent(event))
-  window.localStorage.setItem(HOME_EVENTS_STORAGE_KEY, JSON.stringify(normalizedEvents))
+function userHomeEventsStorageKey(userId: string) {
+  return `${USER_HOME_EVENTS_PREFIX}${userId}`
 }
 
-function readStoredHomeEvents() {
+function readCurrentUserIdSync() {
+  if (!canUseLocalStorage()) return undefined
+
+  const raw = window.localStorage.getItem(CURRENT_USER_STORAGE_KEY)
+  if (!raw) return undefined
+
+  try {
+    const parsed = JSON.parse(raw) as { id?: string }
+    return parsed.id?.trim() || undefined
+  } catch {
+    return undefined
+  }
+}
+
+function readStoredHomeEventsForUser(userId: string): GalleryEvent[] | null {
+  if (!canUseLocalStorage() || !userId.trim()) return null
+
+  const raw = window.localStorage.getItem(userHomeEventsStorageKey(userId))
+  if (!raw) return null
+
+  try {
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) {
+      throw new Error('Stored home events payload is not an array.')
+    }
+
+    return parsed.map((event) => normalizeGalleryEvent(event as GalleryEvent))
+  } catch {
+    window.localStorage.removeItem(userHomeEventsStorageKey(userId))
+    return null
+  }
+}
+
+function readLegacyStoredHomeEvents(): GalleryEvent[] | null {
   if (!canUseLocalStorage()) return null
 
   const stored = window.localStorage.getItem(HOME_EVENTS_STORAGE_KEY)
@@ -117,6 +150,118 @@ function readStoredHomeEvents() {
     window.localStorage.removeItem(HOME_EVENTS_STORAGE_KEY)
     return null
   }
+}
+
+function migrateLegacyHomeEventsOnce(userId: string) {
+  if (!canUseLocalStorage() || !userId.trim()) return
+  if (window.localStorage.getItem(LEGACY_HOME_EVENTS_MIGRATED_KEY) === 'true') {
+    return
+  }
+
+  const legacyEvents = readLegacyStoredHomeEvents()
+  if (legacyEvents?.length) {
+    const existingEvents = readStoredHomeEventsForUser(userId) ?? []
+    if (existingEvents.length === 0) {
+      const ownedEvents = legacyEvents.filter((event) => event.organizerId === userId)
+      if (ownedEvents.length > 0) {
+        persistHomeEventsForUser(userId, ownedEvents)
+      }
+    }
+  }
+
+  window.localStorage.removeItem(HOME_EVENTS_STORAGE_KEY)
+  window.localStorage.setItem(LEGACY_HOME_EVENTS_MIGRATED_KEY, 'true')
+}
+
+function persistHomeEventsForUser(userId: string, events: GalleryEvent[]) {
+  if (!canUseLocalStorage() || !userId.trim()) return
+
+  const normalizedEvents = events.map((event) => normalizeGalleryEvent(event))
+  if (normalizedEvents.length === 0) {
+    window.localStorage.removeItem(userHomeEventsStorageKey(userId))
+    return
+  }
+
+  window.localStorage.setItem(userHomeEventsStorageKey(userId), JSON.stringify(normalizedEvents))
+}
+
+function readAllStoredHomeEvents(): GalleryEvent[] {
+  if (!canUseLocalStorage()) return []
+
+  const byId = new Map<string, GalleryEvent>()
+
+  for (const legacyEvent of readLegacyStoredHomeEvents() ?? []) {
+    byId.set(legacyEvent.id, legacyEvent)
+  }
+
+  for (let index = 0; index < window.localStorage.length; index += 1) {
+    const key = window.localStorage.key(index)
+    if (!key?.startsWith(USER_HOME_EVENTS_PREFIX)) continue
+
+    const raw = window.localStorage.getItem(key)
+    if (!raw) continue
+
+    try {
+      const parsed = JSON.parse(raw)
+      if (!Array.isArray(parsed)) continue
+
+      for (const event of parsed) {
+        const normalizedEvent = normalizeGalleryEvent(event as GalleryEvent)
+        byId.set(normalizedEvent.id, normalizedEvent)
+      }
+    } catch {
+      window.localStorage.removeItem(key)
+    }
+  }
+
+  return [...byId.values()]
+}
+
+function migrateHomeEventsUserId(fromUserId: string, toUserId: string) {
+  if (!fromUserId || !toUserId || fromUserId === toUserId) {
+    return 0
+  }
+
+  migrateLegacyHomeEventsOnce(toUserId)
+
+  const sourceEvents = readStoredHomeEventsForUser(fromUserId) ?? []
+  if (sourceEvents.length === 0) {
+    return 0
+  }
+
+  const targetById = new Map(
+    (readStoredHomeEventsForUser(toUserId) ?? []).map((event) => [event.id, event]),
+  )
+
+  for (const event of sourceEvents) {
+    targetById.set(
+      event.id,
+      normalizeGalleryEvent({
+        ...event,
+        organizerId: event.organizerId === fromUserId ? toUserId : event.organizerId,
+      }),
+    )
+  }
+
+  persistHomeEventsForUser(toUserId, [...targetById.values()])
+  window.localStorage.removeItem(userHomeEventsStorageKey(fromUserId))
+  return sourceEvents.length
+}
+
+function persistHomeEvents(events: GalleryEvent[]) {
+  const userId = readCurrentUserIdSync()
+  if (!userId) return
+
+  migrateLegacyHomeEventsOnce(userId)
+  persistHomeEventsForUser(userId, events)
+}
+
+function readStoredHomeEvents() {
+  const userId = readCurrentUserIdSync()
+  if (!userId) return null
+
+  migrateLegacyHomeEventsOnce(userId)
+  return readStoredHomeEventsForUser(userId)
 }
 
 function assertAppwriteReady(methodName: string) {
@@ -711,18 +856,22 @@ async function getAppwriteEventByInviteCode(inviteCode: string) {
 }
 
 function getLocalHomeEvents() {
-  const storedEvents = readStoredHomeEvents()
-  if (storedEvents) {
-    return storedEvents
+  const userId = readCurrentUserIdSync()
+  if (!userId) {
+    return []
   }
 
-  const mockEvents = getMockHomeEvents()
-  persistHomeEvents(mockEvents)
-  return mockEvents
+  migrateLegacyHomeEventsOnce(userId)
+  return readStoredHomeEventsForUser(userId) ?? []
 }
 
 async function getLocalEventById(eventId: string) {
-  return getLocalHomeEvents().find((event) => event.id === eventId) ?? null
+  const ownEvent = getLocalHomeEvents().find((event) => event.id === eventId)
+  if (ownEvent) {
+    return ownEvent
+  }
+
+  return readAllStoredHomeEvents().find((event) => event.id === eventId) ?? null
 }
 
 async function getLocalEventByInviteCode(inviteCode: string) {
@@ -730,11 +879,15 @@ async function getLocalEventByInviteCode(inviteCode: string) {
   if (!normalizedCode) return null
 
   return (
-    getLocalHomeEvents().find((event) => formatInviteCode(event.inviteCode || event.id) === normalizedCode) ?? null
+    readAllStoredHomeEvents().find(
+      (event) => formatInviteCode(event.inviteCode || event.id) === normalizedCode,
+    ) ?? null
   )
 }
 
 export const eventService = {
+  migrateHomeEventsUserId,
+
   async getHomeEvents(): Promise<GalleryEvent[]> {
     return isAppwriteMode() ? getHomeEventsFromAppwrite() : getLocalHomeEvents()
   },
@@ -895,6 +1048,11 @@ export const eventService = {
     await appwriteDatabases.deleteDocument(APPWRITE_DATABASE_ID, APPWRITE_COLLECTIONS.events, eventId)
 
     removeCachedEvent(eventId)
+  },
+
+  clearLocalHomeEventsForUser(userId: string) {
+    if (!canUseLocalStorage() || !userId.trim()) return
+    window.localStorage.removeItem(userHomeEventsStorageKey(userId))
   },
 }
 

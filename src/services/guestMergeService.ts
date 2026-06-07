@@ -402,12 +402,12 @@ export function clearGuestSessionLocalData(
 ) {
   if (typeof window === 'undefined' || !window.localStorage) return
 
-  window.localStorage.removeItem('event-gallery.home-events')
   window.localStorage.removeItem('event-gallery:pending-email-login')
 
-  if (reason !== 'logout' || !guestUserId || isAppwriteMode()) {
+  if (reason === 'upgrade' || !guestUserId || isAppwriteMode()) {
     return
   }
 
+  window.localStorage.removeItem(`event-gallery.home-events:${guestUserId}`)
   participantService.removeLocalParticipationsForUser(guestUserId)
 }
