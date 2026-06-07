@@ -4218,41 +4218,53 @@ a {
 /* Compact laptop: limited viewport height / ~1536px width at 125% OS scale */
 @media (min-width: 981px) and ((max-width: 1540px) or (max-height: 820px)) {
   .create-topbar {
-    padding: 16px 0 6px;
+    padding: 12px 0 4px;
   }
 
   .create-canvas {
     grid-template-columns: minmax(0, 1fr) 320px 64px;
-    gap: 20px;
-    padding: 12px 0 32px;
+    gap: 16px;
+    padding: 8px 0 24px;
   }
 
   .create-stream {
-    gap: 14px;
+    gap: 11px;
   }
 
   .create-primary-card,
   .create-panel-shell {
-    padding: 13px;
-    border-radius: 20px;
+    padding: 11px;
+    border-radius: 18px;
   }
 
   .create-panel-soft {
-    padding-top: 10px;
+    padding-top: 8px;
   }
 
   .create-page-shell .title-input {
-    font-size: clamp(40px, 4.4vw, 58px);
+    font-size: clamp(34px, 3.5vw, 46px);
     line-height: 1.02;
   }
 
   .title-style-row {
-    margin-top: 10px;
+    margin-top: 8px;
+    gap: 8px;
   }
 
   .create-core-stack {
+    gap: 6px;
+    margin-top: 8px;
+  }
+
+  .create-page-shell .title-style-chip,
+  .create-page-shell .quick-tag-chip,
+  .create-page-shell .rsvp-style-chip {
+    min-height: 36px;
+    padding: 0 12px;
+  }
+
+  .create-page-shell .datetime-card {
     gap: 8px;
-    margin-top: 10px;
   }
 
   .create-page-shell .stream-field input,
@@ -4262,136 +4274,140 @@ a {
   .create-page-shell .inline-tag-card input,
   .create-page-shell .field-block input,
   .create-page-shell .field-block textarea {
-    min-height: 46px;
-    border-radius: 16px;
+    min-height: 42px;
+    padding: 0 14px;
+    border-radius: 14px;
   }
 
   .create-page-shell .description-area textarea,
   .create-page-shell .field-block textarea {
-    min-height: 112px;
-    padding: 12px 14px;
+    min-height: 96px;
+    padding: 10px 12px;
   }
 
   .create-page-shell .time-select,
   .create-page-shell .timezone-select {
-    min-height: 46px;
-    border-radius: 16px;
+    min-height: 42px;
+    padding: 0 14px;
+    border-radius: 14px;
   }
 
   .create-page-shell .stream-inline-toggle {
-    min-height: 46px;
-    border-radius: 16px;
+    min-height: 42px;
+    padding: 0 14px;
+    border-radius: 14px;
   }
 
   .time-divider {
-    font-size: 18px;
+    font-size: 16px;
   }
 
   .payment-shell {
-    gap: 10px;
-    padding: 12px;
-    border-radius: 18px;
+    gap: 8px;
+    padding: 10px;
+    border-radius: 16px;
   }
 
   .inline-tag-card {
-    padding: 12px;
-    border-radius: 18px;
+    padding: 10px;
+    border-radius: 16px;
   }
 
   .create-side-stage {
-    top: 84px;
-    gap: 12px;
+    top: 72px;
+    gap: 10px;
   }
 
   .cover-stage-image,
   .guest-preview-cover img {
-    max-height: min(340px, 44vh);
+    max-height: min(260px, 34vh);
   }
 
   .cover-stage-note {
-    margin-top: 8px;
+    margin-top: 6px;
     font-size: 12px;
   }
 
   .rsvp-panel,
   .asset-browser {
-    padding: 13px;
-    border-radius: 20px;
+    padding: 11px;
+    border-radius: 18px;
   }
 
   .rsvp-panel-head {
-    margin-bottom: 8px;
+    margin-bottom: 6px;
   }
 
   .rsvp-preview-row,
   .guest-preview-rsvp {
-    gap: 10px;
-    margin-top: 12px;
-  }
-
-  .rsvp-preview-bubble,
-  .rsvp-preview-option .rsvp-preview-bubble {
-    min-height: 88px;
-    font-size: 28px;
-  }
-
-  .rsvp-label-row {
-    gap: 10px;
-    margin-top: 6px;
-  }
-
-  .asset-strip {
     gap: 8px;
     margin-top: 10px;
   }
 
+  .rsvp-preview-bubble,
+  .rsvp-preview-option .rsvp-preview-bubble {
+    min-height: 68px;
+    font-size: 24px;
+  }
+
+  .rsvp-label-row {
+    gap: 8px;
+    margin-top: 4px;
+  }
+
+  .asset-strip {
+    gap: 6px;
+    margin-top: 8px;
+  }
+
   .asset-thumb {
-    border-radius: 14px;
+    border-radius: 12px;
   }
 
   .asset-browser-group + .asset-browser-group {
-    margin-top: 12px;
+    margin-top: 10px;
   }
 
   .asset-browser-group > strong {
-    margin-bottom: 8px;
+    margin-bottom: 6px;
   }
 
   .upload-chip {
-    min-height: 36px;
-    margin-top: 10px;
+    min-height: 34px;
+    margin-top: 8px;
+    padding: 0 12px;
   }
 
   .custom-color-panel {
-    gap: 12px;
-    margin-top: 10px;
-    padding: 12px;
-    border-radius: 18px;
+    gap: 10px;
+    margin-top: 8px;
+    padding: 10px;
+    border-radius: 16px;
   }
 
   .custom-color-preview {
-    min-height: 108px;
-    border-radius: 14px;
+    min-height: 92px;
+    border-radius: 12px;
   }
 
   .create-side-bar {
-    top: 92px;
-    gap: 10px;
+    top: 80px;
+    gap: 8px;
   }
 
   .side-action-button {
     width: 64px;
-    min-height: 72px;
-    padding: 10px 8px;
-    border-radius: 18px;
+    min-height: 60px;
+    padding: 8px 6px;
+    border-radius: 16px;
   }
 
   .side-action-button span {
-    font-size: 22px;
+    font-size: 20px;
   }
 
   .side-action-button small {
-    font-size: 11px;
+    font-size: 10px;
   }
 }
 
