@@ -539,6 +539,7 @@ function applyCurrentUser(user: CurrentUser) {
   currentUser.name =
     user.displayName?.trim() || (user.mode === 'demo' ? 'Юрий' : `Гость ${String(user.id).slice(-4)}`)
   currentUser.initials = buildUserInitials(currentUser.name)
+  void loadAchievementTemplates()
 }
 
 async function syncPastEventAutomaticAchievements() {

@@ -17,6 +17,8 @@ import { authService } from './authService'
 import { eventService } from './eventService'
 
 const TEMPLATE_STORAGE_KEY = 'event-gallery:achievement-templates'
+const USER_TEMPLATE_STORAGE_PREFIX = 'event-gallery:achievement-templates:'
+const LEGACY_TEMPLATES_MIGRATED_KEY = 'event-gallery:achievement-templates:legacy-migrated'
 const EVENT_ACHIEVEMENT_STORAGE_KEY = 'event-gallery:event-achievements'
 const PARTICIPANT_ACHIEVEMENT_STORAGE_KEY = 'event-gallery:participant-achievements'
 
@@ -132,6 +134,175 @@ const defaultTemplates: AchievementTemplate[] = [
   },
 ]
 
+const builtInTemplateIds = new Set(defaultTemplates.map((template) => template.id))
+
+function userTemplateStorageKey(userId: string) {
+  return `${USER_TEMPLATE_STORAGE_PREFIX}${userId}`
+}
+
+function isUserOwnedCustomTemplate(template: AchievementTemplate) {
+  if (builtInTemplateIds.has(template.id)) {
+    return false
+  }
+
+  if (template.scope === 'automatic' || template.isSystem) {
+    return false
+  }
+
+  return template.isCustom !== false
+}
+
+function readLegacyStoredTemplates(): AchievementTemplate[] {
+  if (!canUseLocalStorage()) return []
+
+  const raw = window.localStorage.getItem(TEMPLATE_STORAGE_KEY)
+  if (!raw) return []
+
+  try {
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) {
+      throw new Error('Stored templates payload is not an array.')
+    }
+    return parsed.map((template) => normalizeTemplate(template as AchievementTemplate))
+  } catch {
+    window.localStorage.removeItem(TEMPLATE_STORAGE_KEY)
+    return []
+  }
+}
+
+function readUserCustomTemplatesRaw(userId: string): AchievementTemplate[] {
+  if (!canUseLocalStorage() || !userId.trim()) return []
+
+  const raw = window.localStorage.getItem(userTemplateStorageKey(userId))
+  if (!raw) return []
+
+  try {
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) {
+      throw new Error('Stored user templates payload is not an array.')
+    }
+    return parsed.map((template) => normalizeTemplate(template as AchievementTemplate))
+  } catch {
+    window.localStorage.removeItem(userTemplateStorageKey(userId))
+    return []
+  }
+}
+
+function persistUserCustomTemplates(userId: string, templates: AchievementTemplate[]) {
+  if (!canUseLocalStorage() || !userId.trim()) return
+
+  const normalizedTemplates = templates
+    .filter((template) => isUserOwnedCustomTemplate(template))
+    .map((template) =>
+      normalizeTemplate({
+        ...template,
+        createdBy: template.createdBy ?? userId,
+        isCustom: true,
+        isSystem: false,
+      }),
+    )
+
+  if (normalizedTemplates.length === 0) {
+    window.localStorage.removeItem(userTemplateStorageKey(userId))
+    return
+  }
+
+  window.localStorage.setItem(userTemplateStorageKey(userId), JSON.stringify(normalizedTemplates))
+}
+
+function migrateLegacyTemplatesOnce() {
+  if (!canUseLocalStorage()) return
+  if (window.localStorage.getItem(LEGACY_TEMPLATES_MIGRATED_KEY) === 'true') {
+    return
+  }
+
+  const legacyTemplates = readLegacyStoredTemplates()
+  for (const template of legacyTemplates) {
+    if (!isUserOwnedCustomTemplate(template)) {
+      continue
+    }
+
+    const ownerId = template.createdBy?.trim()
+    if (!ownerId) {
+      continue
+    }
+
+    const existing = readUserCustomTemplatesRaw(ownerId)
+    if (existing.some((item) => item.id === template.id)) {
+      continue
+    }
+
+    persistUserCustomTemplates(ownerId, [
+      ...existing,
+      normalizeTemplate({
+        ...template,
+        createdBy: ownerId,
+      }),
+    ])
+  }
+
+  window.localStorage.removeItem(TEMPLATE_STORAGE_KEY)
+  window.localStorage.setItem(LEGACY_TEMPLATES_MIGRATED_KEY, 'true')
+}
+
+async function resolveTemplateOwnerUserId(explicitUserId?: string) {
+  if (explicitUserId?.trim()) {
+    return explicitUserId.trim()
+  }
+
+  const user = await authService.getCurrentUser()
+  return user?.id
+}
+
+async function mergeTemplatesForUser(userId?: string | null) {
+  migrateLegacyTemplatesOnce()
+
+  const byId = new Map<string, AchievementTemplate>()
+  for (const template of defaultTemplates) {
+    byId.set(template.id, normalizeTemplate(template))
+  }
+
+  if (userId) {
+    for (const template of readUserCustomTemplatesRaw(userId)) {
+      byId.set(template.id, normalizeTemplate(template))
+    }
+  }
+
+  return [...byId.values()]
+}
+
+function migrateAchievementTemplatesUserId(fromUserId: string, toUserId: string) {
+  if (!fromUserId || !toUserId || fromUserId === toUserId) {
+    return 0
+  }
+
+  migrateLegacyTemplatesOnce()
+
+  const sourceTemplates = readUserCustomTemplatesRaw(fromUserId)
+  if (sourceTemplates.length === 0) {
+    return 0
+  }
+
+  const targetById = new Map(
+    readUserCustomTemplatesRaw(toUserId).map((template) => [template.id, template]),
+  )
+
+  for (const template of sourceTemplates) {
+    targetById.set(
+      template.id,
+      normalizeTemplate({
+        ...template,
+        createdBy: toUserId,
+        updatedAt: defaultNow(),
+      }),
+    )
+  }
+
+  persistUserCustomTemplates(toUserId, [...targetById.values()])
+  persistUserCustomTemplates(fromUserId, [])
+  return sourceTemplates.length
+}
+
 function normalizeConditionType(value?: string): AchievementConditionType | undefined {
   if (
     value === 'first_photo' ||
@@ -237,32 +408,6 @@ function normalizeParticipantAchievementDocument(
   })
 }
 
-function readStoredTemplates(): AchievementTemplate[] {
-  if (!canUseLocalStorage()) return []
-
-  const raw = window.localStorage.getItem(TEMPLATE_STORAGE_KEY)
-  if (!raw) return []
-
-  try {
-    const parsed = JSON.parse(raw)
-    if (!Array.isArray(parsed)) {
-      throw new Error('Stored templates payload is not an array.')
-    }
-    return parsed.map((template) => normalizeTemplate(template as AchievementTemplate))
-  } catch {
-    window.localStorage.removeItem(TEMPLATE_STORAGE_KEY)
-    return []
-  }
-}
-
-function persistTemplates(templates: AchievementTemplate[]) {
-  if (!canUseLocalStorage()) return
-  window.localStorage.setItem(
-    TEMPLATE_STORAGE_KEY,
-    JSON.stringify(templates.map((template) => normalizeTemplate(template))),
-  )
-}
-
 function readStoredEventAchievements(): EventAchievement[] {
   if (!canUseLocalStorage()) return []
 
@@ -313,23 +458,6 @@ function persistParticipantAchievements(awards: ParticipantAchievement[]) {
     PARTICIPANT_ACHIEVEMENT_STORAGE_KEY,
     JSON.stringify(awards.map((award) => normalizeParticipantAchievement(award))),
   )
-}
-
-function mergeTemplates() {
-  const storedTemplates = readStoredTemplates()
-  const byId = new Map<string, AchievementTemplate>()
-
-  for (const template of defaultTemplates) {
-    byId.set(template.id, normalizeTemplate(template))
-  }
-
-  for (const template of storedTemplates) {
-    byId.set(template.id, normalizeTemplate(template))
-  }
-
-  const nextTemplates = [...byId.values()]
-  persistTemplates(nextTemplates)
-  return nextTemplates
 }
 
 async function migrateEventAchievementsIfNeeded(eventId: string) {
@@ -449,8 +577,11 @@ async function deleteAwardsForAchievement(achievementId: string, eventId?: strin
 }
 
 export const achievementService = {
+  migrateAchievementTemplatesUserId,
+
   async getAchievementTemplates(scope?: AchievementScope): Promise<AchievementTemplate[]> {
-    const templates = mergeTemplates()
+    const userId = await resolveTemplateOwnerUserId()
+    const templates = await mergeTemplatesForUser(userId)
     return scope ? templates.filter((template) => template.scope === scope) : templates
   },
 
@@ -601,6 +732,11 @@ export const achievementService = {
     visibility?: AchievementVisibility
     createdBy?: string
   }): Promise<AchievementTemplate> {
+    const ownerUserId = await resolveTemplateOwnerUserId(input.createdBy)
+    if (!ownerUserId) {
+      throw new Error('Не удалось определить пользователя для сохранения шаблона.')
+    }
+
     const nextTemplate = normalizeTemplate({
       id: createId('template'),
       scope: input.scope,
@@ -610,24 +746,35 @@ export const achievementService = {
       tone: input.tone,
       points: input.points,
       visibility: normalizeVisibility(input.visibility),
-      createdBy: input.createdBy,
+      createdBy: ownerUserId,
       createdAt: defaultNow(),
       mode: 'manual',
       isCustom: true,
       isSystem: false,
     })
 
-    const nextTemplates = [...mergeTemplates().filter((template) => template.id !== nextTemplate.id), nextTemplate]
-    persistTemplates(nextTemplates)
+    const customTemplates = readUserCustomTemplatesRaw(ownerUserId)
+    persistUserCustomTemplates(ownerUserId, [
+      ...customTemplates.filter((template) => template.id !== nextTemplate.id),
+      nextTemplate,
+    ])
     return nextTemplate
   },
 
   async deleteAchievementTemplate(templateId: string): Promise<void> {
-    const templates = mergeTemplates()
+    const ownerUserId = await resolveTemplateOwnerUserId()
+    if (!ownerUserId) {
+      throw new Error('Не удалось определить пользователя для удаления шаблона.')
+    }
+
+    const templates = await mergeTemplatesForUser(ownerUserId)
     const template = templates.find((item) => item.id === templateId)
     if (!template) return
     if (template.scope === 'automatic' || template.isSystem) {
       throw new Error('Автоматические шаблоны удалять нельзя.')
+    }
+    if (template.createdBy && template.createdBy !== ownerUserId) {
+      throw new Error('Нельзя удалить чужой шаблон достижения.')
     }
 
     const isSelected = (await this.getAllEventAchievements()).some(
@@ -637,26 +784,46 @@ export const achievementService = {
       throw new Error('Нельзя удалить шаблон, пока он выбран в событии.')
     }
 
-    persistTemplates(templates.filter((item) => item.id !== templateId))
+    const customTemplates = readUserCustomTemplatesRaw(ownerUserId)
+    persistUserCustomTemplates(
+      ownerUserId,
+      customTemplates.filter((item) => item.id !== templateId),
+    )
   },
 
   async updateAchievementTemplate(
     templateId: string,
     patch: Partial<AchievementTemplate>,
   ): Promise<AchievementTemplate> {
-    const templates = mergeTemplates()
+    const ownerUserId = await resolveTemplateOwnerUserId()
+    if (!ownerUserId) {
+      throw new Error('Не удалось определить пользователя для обновления шаблона.')
+    }
+
+    const templates = await mergeTemplatesForUser(ownerUserId)
     const existing = templates.find((template) => template.id === templateId)
     if (!existing) {
       throw new Error('Шаблон достижения не найден.')
+    }
+    if (existing.scope === 'automatic' || existing.isSystem) {
+      throw new Error('Автоматические шаблоны редактировать нельзя.')
+    }
+    if (existing.createdBy && existing.createdBy !== ownerUserId) {
+      throw new Error('Нельзя редактировать чужой шаблон достижения.')
     }
 
     const nextTemplate = normalizeTemplate({
       ...existing,
       ...patch,
+      createdBy: ownerUserId,
       updatedAt: defaultNow(),
     })
 
-    persistTemplates(templates.map((template) => (template.id === templateId ? nextTemplate : template)))
+    const customTemplates = readUserCustomTemplatesRaw(ownerUserId)
+    persistUserCustomTemplates(
+      ownerUserId,
+      customTemplates.map((template) => (template.id === templateId ? nextTemplate : template)),
+    )
     return nextTemplate
   },
 

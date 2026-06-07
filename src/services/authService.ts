@@ -731,9 +731,12 @@ async function reconcileHistoricalGuestAssets(profileUserId: string, currentGues
     guestIds.add(currentGuestUserId)
   }
 
+  const { achievementService } = await import('./achievementService')
+
   for (const guestUserId of guestIds) {
     if (!guestUserId || guestUserId === profileUserId) continue
     savedPhotoService.migrateSavedPhotosUserId(guestUserId, profileUserId)
+    achievementService.migrateAchievementTemplatesUserId(guestUserId, profileUserId)
   }
 
   try {
