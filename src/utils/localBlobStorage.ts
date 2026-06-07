@@ -79,7 +79,39 @@ async function withStore<T>(mode: IDBTransactionMode, handler: (store: IDBObject
 }
 
 async function saveBlob(key: string, blob: Blob) {
+  invalidateResolvedBlobCacheForKey(key)
   await withStore('readwrite', (store) => store.put(blob, key))
+}
+
+function invalidateResolvedBlobCacheForKey(key: string) {
+  invalidateResolvedBlobCache(createLocalBlobRef(key))
+}
+
+export function invalidateResolvedBlobCache(ref?: string) {
+  if (!ref || !isLocalBlobRef(ref)) {
+    return
+  }
+
+  const cached = resolvedUrlCache.get(ref)
+  if (cached) {
+    URL.revokeObjectURL(cached)
+    resolvedUrlCache.delete(ref)
+  }
+}
+
+export async function replaceLocalImageFile(
+  file: File,
+  key: string,
+  options: { maxDimension: number; quality?: number },
+  previousRef?: string,
+) {
+  const nextRef = await saveLocalImageFile(file, key, options)
+
+  if (previousRef && previousRef !== nextRef) {
+    await deleteLocalBlobRef(previousRef)
+  }
+
+  return nextRef
 }
 
 async function readBlob(key: string) {
@@ -170,12 +202,16 @@ export async function saveLocalBlobFromDataUrl(dataUrl: string, key: string) {
   return createLocalBlobRef(key)
 }
 
-export async function resolveLocalBlobUrl(ref?: string) {
+export async function resolveLocalBlobUrl(ref?: string, options?: { force?: boolean }) {
   if (!ref) return undefined
 
-  const cached = getCachedLocalBlobUrl(ref)
-  if (cached && cached !== ref) {
-    return cached
+  if (!options?.force) {
+    const cached = getCachedLocalBlobUrl(ref)
+    if (cached && cached !== ref) {
+      return cached
+    }
+  } else {
+    invalidateResolvedBlobCache(ref)
   }
 
   if (!isLocalBlobRef(ref)) {

@@ -18,7 +18,7 @@ import { savedPhotoService } from './services/savedPhotoService'
 import { storageService } from './services/storageService'
 import { isAppwriteMode } from './services/adapters/dataMode'
 import { resolveAvatarViewUrl, withAvatarCacheToken } from './utils/avatarUrl'
-import { isLocalBlobRef, resolveLocalBlobUrl, saveLocalImageFile } from './utils/localBlobStorage'
+import { isLocalBlobRef, replaceLocalImageFile, resolveLocalBlobUrl } from './utils/localBlobStorage'
 import { isMergedGuestUserId, resolveCanonicalUserId } from './utils/mergedGuestIds'
 import { repairProfileOrganizerOwnership } from './services/guestMergeService'
 import { sanitizePersistableUrl } from './utils/persistableUrl'
@@ -78,6 +78,7 @@ type CurrentUserView = CurrentUser & {
   initials: string
   name: string
   role: 'Организатор'
+  avatarStorageRef?: string
 }
 
 const themes: EventTheme[] = [
@@ -366,7 +367,15 @@ function createId(prefix: string) {
 }
 
 function getCurrentUserAvatarUrlForDocuments() {
-  return resolveAvatarViewUrl(currentUser.avatarUrl, currentUser.avatarFileId)
+  if (isAppwriteMode()) {
+    return resolveAvatarViewUrl(currentUser.avatarUrl, currentUser.avatarFileId)
+  }
+
+  return currentUser.avatarUrl
+}
+
+function hasCurrentUserAvatarVisual() {
+  return Boolean(getCurrentUserAvatarUrlForDocuments())
 }
 
 function getParticipantAvatarUrl(
@@ -404,7 +413,7 @@ async function getPersistableAuthorAvatarUrl(participant?: EventParticipant | nu
     participant?.userId &&
     resolveCanonicalUserId(participant.userId, currentUser.id) === currentUser.id
   ) {
-    return (await authService.getCurrentUser())?.avatarUrl
+    return currentUser.avatarStorageRef ?? (await authService.getCurrentUser())?.avatarUrl
   }
 
   const participantAvatarUrl = participant?.avatarUrl
@@ -552,7 +561,7 @@ function applyCurrentUser(user: CurrentUser) {
   currentUser.mode = user.mode
   currentUser.email = user.email
   currentUser.displayName = user.displayName
-  currentUser.avatarUrl = user.avatarUrl
+  currentUser.avatarStorageRef = isLocalBlobRef(user.avatarUrl) ? user.avatarUrl : undefined
   currentUser.avatarFileId = user.avatarFileId
   currentUser.createdAt = user.createdAt
   currentUser.updatedAt = user.updatedAt
@@ -561,19 +570,27 @@ function applyCurrentUser(user: CurrentUser) {
     user.displayName?.trim() ||
     (user.mode === 'demo' ? LOCAL_DEMO_USER_DISPLAY_NAME : `Гость ${String(user.id).slice(-4)}`)
   currentUser.initials = buildUserInitials(currentUser.name)
-  void preloadLocalAvatarUrl(user.avatarUrl)
+  void refreshCurrentUserAvatarDisplay(user.avatarUrl, user.avatarFileId)
   void loadAchievementTemplates()
 }
 
-async function preloadLocalAvatarUrl(avatarUrl?: string) {
-  if (isAppwriteMode() || !avatarUrl || !isLocalBlobRef(avatarUrl)) {
+async function refreshCurrentUserAvatarDisplay(storedAvatarUrl?: string, avatarFileId?: string) {
+  if (isAppwriteMode()) {
+    currentUser.avatarUrl = resolveAvatarViewUrl(storedAvatarUrl, avatarFileId)
     return
   }
 
-  const resolvedUrl = await resolveLocalBlobUrl(avatarUrl)
-  if (resolvedUrl) {
-    currentUser.avatarUrl = resolvedUrl
+  if (isLocalBlobRef(storedAvatarUrl)) {
+    currentUser.avatarUrl = await resolveLocalBlobUrl(storedAvatarUrl, { force: true })
+    return
   }
+
+  if (storedAvatarUrl?.startsWith('blob:') || storedAvatarUrl?.startsWith('data:')) {
+    currentUser.avatarUrl = storedAvatarUrl
+    return
+  }
+
+  currentUser.avatarUrl = sanitizePersistableUrl(storedAvatarUrl) || undefined
 }
 
 async function syncPastEventAutomaticAchievements() {
@@ -1928,10 +1945,14 @@ function openProfileEditor(focus: 'name' | 'avatar' = 'name') {
   profileEditorName.value = currentUser.displayName?.trim() || ''
   revokeProfileAvatarPreview()
   profileEditorAvatarFile.value = null
-  profileEditorAvatarPreviewUrl.value = currentUser.avatarUrl ?? null
+  profileEditorAvatarPreviewUrl.value = getCurrentUserAvatarUrlForDocuments() ?? null
   profileEditorError.value = ''
   profileEditorOpen.value = true
   profileMenuOpen.value = false
+
+  if (profileAvatarInput.value) {
+    profileAvatarInput.value.value = ''
+  }
 
   if (focus === 'avatar') {
     void nextTick(() => triggerProfileAvatarPicker())
@@ -2070,7 +2091,8 @@ async function saveProfileEditor() {
   profileEditorError.value = ''
 
   try {
-    let avatarUrl = currentUser.avatarUrl
+    const storedUser = await authService.getCurrentUser()
+    let avatarUrl = currentUser.avatarStorageRef ?? storedUser?.avatarUrl
     let avatarFileId = currentUser.avatarFileId
 
     if (profileEditorAvatarFile.value) {
@@ -2079,10 +2101,15 @@ async function saveProfileEditor() {
         avatarUrl = uploadedAvatar.previewUrl
         avatarFileId = uploadedAvatar.fileId
       } else {
-        avatarUrl = await saveLocalImageFile(profileEditorAvatarFile.value, `avatar:${currentUser.id}`, {
-          maxDimension: 512,
-          quality: 0.86,
-        })
+        avatarUrl = await replaceLocalImageFile(
+          profileEditorAvatarFile.value,
+          `avatar:${currentUser.id}`,
+          {
+            maxDimension: 512,
+            quality: 0.86,
+          },
+          avatarUrl,
+        )
       }
     } else if (profileEditorAvatarPreviewUrl.value) {
       avatarUrl = isAppwriteMode()
@@ -2104,6 +2131,7 @@ async function saveProfileEditor() {
       avatarFileId,
     })
     applyCurrentUser(nextUser)
+    await refreshCurrentUserAvatarDisplay(nextUser.avatarUrl, nextUser.avatarFileId)
     await syncParticipantProfileAfterProfileChange(nextUser)
     await chatService.syncAuthorProfileForUser(nextUser.id, {
       displayName: nextUser.displayName?.trim() || 'Гость',
@@ -4313,10 +4341,10 @@ async function saveEvent() {
           <button class="profile-button" type="button" @click="toggleProfileMenu">
             <span
               class="profile-avatar"
-              :class="{ filled: Boolean(getCurrentUserAvatarUrlForDocuments()) }"
+              :class="{ filled: hasCurrentUserAvatarVisual() }"
               :style="getAvatarStyle(getCurrentUserAvatarUrlForDocuments(), currentUser.avatarFileId || currentUser.updatedAt)"
             >
-              {{ currentUser.avatarUrl ? '' : currentUser.initials }}
+              {{ hasCurrentUserAvatarVisual() ? '' : currentUser.initials }}
             </span>
             <span>{{ currentUser.name }}</span>
           </button>
@@ -5085,10 +5113,10 @@ async function saveEvent() {
                 <div class="stream-avatar-card">
                   <span
                     class="stream-avatar"
-                    :class="{ filled: Boolean(currentUser.avatarUrl) }"
+                    :class="{ filled: hasCurrentUserAvatarVisual() }"
                     :style="getAvatarStyle(getCurrentUserAvatarUrlForDocuments(), currentUser.avatarFileId || currentUser.updatedAt)"
                   >
-                    {{ currentUser.avatarUrl ? '' : currentUser.initials }}
+                    {{ hasCurrentUserAvatarVisual() ? '' : currentUser.initials }}
                   </span>
                 </div>
                 <input
