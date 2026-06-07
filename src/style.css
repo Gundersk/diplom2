@@ -4409,6 +4409,198 @@ a {
   .side-action-button small {
     font-size: 10px;
   }
+
+  /* Create: achievements block */
+  .create-page-shell .achievement-stream-section {
+    gap: 10px;
+  }
+
+  .create-page-shell .achievement-block-shell {
+    gap: 10px;
+    padding: 12px;
+    border-radius: 20px;
+  }
+
+  .create-page-shell .available-achievement-card,
+  .create-page-shell .achievement-selection-card,
+  .create-page-shell .template-picker-card {
+    min-height: 88px;
+    padding: 10px;
+    border-radius: 18px;
+    grid-template-columns: 56px minmax(0, 1fr) auto;
+    gap: 10px;
+  }
+
+  .create-page-shell .available-achievement-icon,
+  .create-page-shell .achievement-selection-icon,
+  .create-page-shell .template-achievement-icon {
+    width: 56px;
+    height: 56px;
+    border-radius: 18px;
+    font-size: 26px;
+  }
+
+  .create-page-shell .accordion-button {
+    min-height: 38px;
+    padding: 0 14px;
+  }
+
+  .create-page-shell .selected-achievement-pill {
+    min-height: 40px;
+    padding: 4px 12px 4px 6px;
+  }
+
+  .create-page-shell .selected-pill-icon {
+    width: 26px;
+    height: 26px;
+    font-size: 15px;
+  }
+
+  .create-page-shell .create-actions,
+  .create-page-shell .create-submit-row {
+    margin-top: 0;
+  }
+
+  /* Event view page */
+  .event-page-topbar {
+    padding: 14px 0 8px;
+  }
+
+  .event-page-stage {
+    padding: 8px 0 28px;
+  }
+
+  .event-page-layout {
+    grid-template-columns: minmax(0, 1fr) 280px;
+    gap: 20px;
+  }
+
+  .event-page-title {
+    margin-bottom: 6px;
+    font-size: clamp(30px, 3.8vw, 44px);
+    line-height: 1.04;
+  }
+
+  .event-page-meta,
+  .event-page-location,
+  .event-page-description {
+    margin-bottom: 6px;
+    font-size: 14px;
+  }
+
+  .event-page-host {
+    margin: 6px 0 12px;
+    font-size: 14px;
+  }
+
+  .event-page-section {
+    margin-top: 14px;
+    padding-top: 12px;
+  }
+
+  .event-page-section.event-text-surface {
+    margin-top: 12px;
+    padding: 11px 12px;
+    border-radius: 16px;
+  }
+
+  .event-page-section-head {
+    margin-bottom: 6px;
+  }
+
+  .event-page-section-copy {
+    margin-bottom: 8px;
+    font-size: 13px;
+  }
+
+  .event-info-list {
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+
+  .event-info-item.event-text-surface {
+    padding: 10px 12px;
+    border-radius: 14px;
+  }
+
+  .event-invite-link {
+    padding: 10px 12px;
+    border-radius: 14px;
+    font-size: 12px;
+  }
+
+  .event-page-poster {
+    border-radius: 16px;
+  }
+
+  .event-page-poster img,
+  .event-page-poster-fallback {
+    aspect-ratio: auto;
+    max-height: min(220px, 30vh);
+    object-fit: cover;
+  }
+
+  .rsvp-action-list {
+    gap: 8px;
+    margin-top: 12px;
+  }
+
+  .rsvp-action-button {
+    gap: 4px;
+    padding: 10px 10px;
+  }
+
+  .rsvp-action-symbol {
+    font-size: 26px;
+  }
+
+  .rsvp-action-label {
+    font-size: 13px;
+  }
+
+  .event-achievements-panel {
+    gap: 10px;
+    margin-top: 12px;
+    padding: 12px;
+    border-radius: 20px;
+  }
+
+  .event-achievements-toggle-main {
+    min-height: 36px;
+    padding: 0 12px;
+    font-size: 13px;
+  }
+
+  .event-album-grid {
+    gap: 8px;
+  }
+
+  .event-album-add-tile {
+    min-height: 108px;
+    padding: 8px;
+    border-radius: 14px;
+    font-size: 12px;
+  }
+
+  .event-album-photo {
+    border-radius: 14px;
+  }
+
+  .event-chat-composer {
+    gap: 8px;
+    margin-top: 8px;
+  }
+
+  .event-chat-composer input {
+    min-height: 38px;
+    padding: 0 10px;
+  }
+
+  .event-attach-button {
+    width: 38px;
+    min-height: 38px;
+    font-size: 18px;
+  }
 }
 
 @media (max-width: 980px) {
