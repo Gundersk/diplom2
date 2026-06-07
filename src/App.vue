@@ -165,8 +165,7 @@ const titleStyleOptions = [
   { id: 'literary', label: 'Literary' },
 ]
 
-const eventTextThemeOptions: Array<{ id: EventTextThemeSetting; label: string }> = [
-  { id: 'auto', label: 'Авто' },
+const eventTextThemeOptions: Array<{ id: 'light' | 'dark'; label: string }> = [
   { id: 'light', label: 'Светлая' },
   { id: 'dark', label: 'Тёмная' },
 ]
@@ -500,7 +499,7 @@ function getEventTextThemeClassForEvent(event?: GalleryEvent | null) {
 function getEventBackgroundScrimClassForEvent(event?: GalleryEvent | null) {
   if (!event) {
     return getEventBackgroundScrimClass({
-      textTheme: 'auto',
+      textTheme: 'light',
       backgroundMode: 'color',
       backgroundColor: '#f4efe7',
       backgroundStart: '#f4efe7',
@@ -515,6 +514,16 @@ function getEventBackgroundScrimClassForForm() {
 
 function getResolvedTextThemeLabel(theme: ReturnType<typeof resolveEventTextTheme>) {
   return theme === 'dark' ? 'тёмный текст' : 'светлый текст'
+}
+
+function normalizeFormTextTheme(
+  textTheme: EventTextThemeSetting | undefined,
+  source?: EventTextThemeSource,
+): 'light' | 'dark' {
+  if (textTheme === 'light' || textTheme === 'dark') {
+    return textTheme
+  }
+  return source ? resolveEventTextTheme(source) : 'light'
 }
 
 function applyCurrentUser(user: CurrentUser) {
@@ -969,7 +978,7 @@ function createEmptyEventForm(): CreateEventForm {
     backgroundMode: 'asset',
     backgroundMediaType: getAssetBackgroundMediaType(backgroundAssetOptions[0]),
     backgroundColor: softBackgroundColors[0],
-    textTheme: 'auto',
+    textTheme: 'light',
     uploadedCoverUrl: null,
     uploadedBackgroundUrl: null,
     infoBlocks: [],
@@ -3871,7 +3880,7 @@ function populateFormFromEvent(event: GalleryEvent) {
     paymentComment: event.payment?.comment ?? '',
     allowGuestInvites: Boolean(event.allowGuestInvites),
     rsvpStyle: normalizeRsvpStyleId(event.rsvpStyle ?? 'icons'),
-    textTheme: event.textTheme ?? 'auto',
+    textTheme: normalizeFormTextTheme(event.textTheme, event),
     automaticExpanded: false,
     personalExpanded: false,
     groupExpanded: false,
@@ -5552,8 +5561,7 @@ async function saveEvent() {
               </button>
             </div>
             <p class="text-theme-hint">
-              Сейчас: {{ getResolvedTextThemeLabel(createResolvedTextTheme) }}
-              <span v-if="createEventForm.textTheme === 'auto'"> (авто по фону)</span>.
+              Сейчас: {{ getResolvedTextThemeLabel(createResolvedTextTheme) }}.
               Меняет цвет текста и лёгкую подложку блоков, не общий фон события.
             </p>
           </div>
