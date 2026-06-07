@@ -4,7 +4,8 @@ import { hasAppwriteAuthConfig, runtimeConfig } from '../config/runtime'
 import { appwriteAccount, appwriteDatabases, appwriteId } from '../lib/appwrite'
 import type { CurrentUser } from '../types/user'
 import { resolveAvatarViewUrl } from '../utils/avatarUrl'
-import { rememberMergedGuestUserId } from '../utils/mergedGuestIds'
+import { getMergedGuestIdsForProfile, rememberMergedGuestUserId } from '../utils/mergedGuestIds'
+import { rememberProfileUserForEmail, resolveProfileUserIdForEmail } from '../utils/profileEmailRegistry'
 import { isPersistableUrl, sanitizePersistableUrl } from '../utils/persistableUrl'
 import { isAppwriteMode } from './adapters/dataMode'
 import {
@@ -38,6 +39,7 @@ type ProfileDocument = Models.Document & {
   displayName?: string
   avatarUrl?: string
   avatarFileId?: string
+  email?: string
   createdAt: string
   updatedAt?: string
 }
@@ -287,10 +289,10 @@ function resolveGuestUserIdForMergeFromCache() {
   return currentUser.id
 }
 
-async function createAppwriteEmailTokenStateless(email: string) {
+async function createAppwriteEmailTokenStateless(email: string, userId?: string) {
   const projectId = runtimeConfig.appwriteProjectId
   const endpoint = runtimeConfig.appwriteEndpoint.replace(/\/$/, '')
-  const userId = appwriteId.unique()
+  const resolvedUserId = userId ?? appwriteId.unique()
 
   const response = await fetch(`${endpoint}/account/tokens/email`, {
     method: 'POST',
@@ -298,7 +300,7 @@ async function createAppwriteEmailTokenStateless(email: string) {
       'Content-Type': 'application/json',
       'X-Appwrite-Project': projectId,
     },
-    body: JSON.stringify({ userId, email }),
+    body: JSON.stringify({ userId: resolvedUserId, email }),
     credentials: 'omit',
   })
 
@@ -320,7 +322,7 @@ async function createAppwriteEmailTokenStateless(email: string) {
   }
 
   const token = (await response.json()) as { userId?: string }
-  return { userId: token.userId ?? userId }
+  return { userId: token.userId ?? resolvedUserId }
 }
 
 async function deliverAppwriteEmailToken(email: string, userId: string) {
@@ -451,6 +453,7 @@ async function ensureProfileDocumentForAccount(
     displayName: nextDisplayName,
     avatarUrl: nextAvatarUrl,
     avatarFileId: nextAvatarFileId,
+    email: overrides?.email,
     createdAt: nextCreatedAt,
     updatedAt: nextUpdatedAt,
   })
@@ -484,6 +487,7 @@ async function upsertProfileDocument(input: {
   displayName?: string
   avatarUrl?: string
   avatarFileId?: string
+  email?: string
   createdAt?: string
   updatedAt?: string
 }) {
@@ -503,6 +507,7 @@ async function upsertProfileDocument(input: {
     displayName: input.displayName ?? '',
     avatarUrl: safeAvatarUrl,
     avatarFileId: input.avatarFileId ?? '',
+    email: input.email?.trim().toLowerCase() ?? '',
     createdAt: input.createdAt ?? new Date().toISOString(),
     updatedAt: input.updatedAt ?? new Date().toISOString(),
   }
@@ -583,6 +588,9 @@ async function getAppwriteCurrentUser() {
     preserveEstablishedProfile: existingProfile?.mode === 'profile',
   })
   const currentUser = mapAppwriteAccountToCurrentUser(account, profile, matchingCachedUser)
+  if (currentUser.mode === 'profile' && currentUser.email) {
+    rememberProfileUserForEmail(currentUser.email, currentUser.id)
+  }
   persistCurrentUser(currentUser)
   return currentUser
 }
@@ -674,22 +682,30 @@ async function requestEmailCodeAppwrite(email: string): Promise<EmailCodeDeliver
 
   clearPendingEmailLogin()
 
+  const knownProfileUserId = resolveProfileUserIdForEmail(normalizedEmail)
+
   try {
-    let profileUserId = appwriteId.unique()
+    let profileUserId = knownProfileUserId ?? appwriteId.unique()
     const guestAccount = guestUserIdForMerge ? await getCurrentAccount() : null
     const guestSessionActive = Boolean(guestUserIdForMerge && guestAccount?.$id === guestUserIdForMerge)
 
     if (guestSessionActive && guestUserIdForMerge) {
-      rememberMergedGuestUserId(guestUserIdForMerge)
+      rememberMergedGuestUserId(guestUserIdForMerge, knownProfileUserId)
 
       try {
-        const stateless = await createAppwriteEmailTokenStateless(normalizedEmail)
+        const stateless = await createAppwriteEmailTokenStateless(
+          normalizedEmail,
+          knownProfileUserId ?? profileUserId,
+        )
         profileUserId = stateless.userId
       } catch (error) {
+        if (knownProfileUserId) {
+          throw error
+        }
         console.warn('[authService] stateless email token reservation failed, using generated userId', error)
       }
     } else {
-      const token = await deliverAppwriteEmailToken(normalizedEmail, profileUserId)
+      const token = await deliverAppwriteEmailToken(normalizedEmail, knownProfileUserId ?? profileUserId)
       profileUserId = token.userId
     }
 
@@ -706,6 +722,24 @@ async function requestEmailCodeAppwrite(email: string): Promise<EmailCodeDeliver
     }
 
     throw new Error(formatAppwriteEmailTokenError(error))
+  }
+}
+
+async function reconcileHistoricalGuestAssets(profileUserId: string, currentGuestUserId?: string) {
+  const guestIds = new Set(getMergedGuestIdsForProfile(profileUserId))
+  if (currentGuestUserId) {
+    guestIds.add(currentGuestUserId)
+  }
+
+  for (const guestUserId of guestIds) {
+    if (!guestUserId || guestUserId === profileUserId) continue
+    savedPhotoService.migrateSavedPhotosUserId(guestUserId, profileUserId)
+  }
+
+  try {
+    await repairProfileOrganizerOwnership(profileUserId)
+  } catch (error) {
+    console.warn('[authService] repair organizer ownership after profile login failed', error)
   }
 }
 
@@ -736,6 +770,24 @@ async function verifyEmailCodeAppwrite(email: string, code: string): Promise<Cur
   const profileAvatarUrlForMerge = guestCachedForMerge?.avatarUrl
   const profileAvatarFileIdForMerge = guestCachedForMerge?.avatarFileId
 
+  if (guestUserIdForMerge && guestCachedForMerge) {
+    try {
+      const activeGuestAccount = await getCurrentAccount()
+      if (activeGuestAccount?.$id === guestUserIdForMerge) {
+        await mergeGuestSessionBeforeProfileLogin({
+          guestUserId: guestUserIdForMerge,
+          profileUserId: pending.userId,
+          profileDisplayName: profileDisplayNameForMerge,
+          profileAvatarUrl: profileAvatarUrlForMerge,
+          profileAvatarFileId: profileAvatarFileIdForMerge,
+        })
+        savedPhotoService.migrateSavedPhotosUserId(guestUserIdForMerge, pending.userId)
+      }
+    } catch (error) {
+      console.warn('[authService] guest merge before profile login failed', error)
+    }
+  }
+
   // Appwrite не создаёт session/token, пока активна гостевая (anonymous) сессия.
   await endCurrentAppwriteSession()
 
@@ -763,62 +815,36 @@ async function verifyEmailCodeAppwrite(email: string, code: string): Promise<Cur
     throw new Error(formatEmailSessionError(error))
   }
 
-  if (guestUserIdForMerge && guestCachedForMerge) {
-    try {
-      await mergeGuestSessionBeforeProfileLogin({
-        guestUserId: guestUserIdForMerge,
-        profileUserId: pending.userId,
-        profileDisplayName: profileDisplayNameForMerge,
-        profileAvatarUrl: profileAvatarUrlForMerge,
-        profileAvatarFileId: profileAvatarFileIdForMerge,
-      })
-      savedPhotoService.migrateSavedPhotosUserId(guestUserIdForMerge, pending.userId)
-    } catch (error) {
-      console.warn('[authService] guest merge after profile login failed', error)
-    }
-  }
-
   const account = await appwriteAccount.get()
   const profileUserId = account.$id
   const existingProfile = await getProfileDocument(profileUserId)
-  const hasEstablishedProfile = existingProfile?.mode === 'profile'
-  const guestMatchesCurrentSession = Boolean(
-    guestCachedUser &&
-      guestCachedUser.id === guestUserIdForMerge &&
-      isGuestLikeMode(guestCachedUser.mode),
-  )
+  const isGuestUpgrade = Boolean(guestUserIdForMerge && guestCachedForMerge)
+  const guestName = guestCachedForMerge?.displayName?.trim()
+  const guestHasAvatar = Boolean(guestCachedForMerge?.avatarUrl || guestCachedForMerge?.avatarFileId)
 
   const profileDisplayName = normalizeDisplayName(
-    hasEstablishedProfile
-      ? existingProfile?.displayName ?? account.name
-      : guestMatchesCurrentSession && guestCachedUser
-        ? guestCachedUser.displayName
-        : account.name ?? normalizedEmail.split('@')[0],
+    isGuestUpgrade && guestName
+      ? guestName
+      : existingProfile?.displayName ?? account.name ?? normalizedEmail.split('@')[0],
     normalizedEmail.split('@')[0],
   )
-  const profileAvatarUrl = hasEstablishedProfile
-    ? existingProfile?.avatarUrl
-    : guestMatchesCurrentSession && guestCachedUser
-      ? guestCachedUser.avatarUrl
-      : undefined
-  const profileAvatarFileId = hasEstablishedProfile
-    ? existingProfile?.avatarFileId
-    : guestMatchesCurrentSession && guestCachedUser
-      ? guestCachedUser.avatarFileId
-      : undefined
+  const profileAvatarUrl =
+    isGuestUpgrade && guestHasAvatar ? guestCachedForMerge?.avatarUrl : existingProfile?.avatarUrl
+  const profileAvatarFileId =
+    isGuestUpgrade && guestHasAvatar ? guestCachedForMerge?.avatarFileId : existingProfile?.avatarFileId
 
   if (account.name !== profileDisplayName) {
     await appwriteAccount.updateName(profileDisplayName)
     await appwriteAccount.get()
   }
 
-  const profile = await ensureProfileDocumentForAccount(account, null, {
+  const profile = await ensureProfileDocumentForAccount(account, guestCachedForMerge, {
     mode: 'profile',
     displayName: profileDisplayName,
     avatarUrl: profileAvatarUrl,
     avatarFileId: profileAvatarFileId,
     email: normalizedEmail,
-    preserveEstablishedProfile: hasEstablishedProfile,
+    preserveEstablishedProfile: !isGuestUpgrade,
   })
 
   clearPendingEmailLogin()
@@ -827,8 +853,10 @@ async function verifyEmailCodeAppwrite(email: string, code: string): Promise<Cur
     clearGuestSessionLocalData(guestUserIdForMerge, 'upgrade')
   }
 
+  rememberProfileUserForEmail(normalizedEmail, profileUserId)
+
   const currentUser = {
-    ...mapAppwriteAccountToCurrentUser(account, profile, null),
+    ...mapAppwriteAccountToCurrentUser(account, profile, guestCachedForMerge),
     email: normalizedEmail,
     mode: 'profile' as const,
     displayName: profileDisplayName,
@@ -838,13 +866,7 @@ async function verifyEmailCodeAppwrite(email: string, code: string): Promise<Cur
 
   persistCurrentUser(currentUser)
 
-  if (guestUserIdForMerge) {
-    try {
-      await repairProfileOrganizerOwnership(profileUserId)
-    } catch (error) {
-      console.warn('[authService] repair organizer ownership after profile login failed', error)
-    }
-  }
+  await reconcileHistoricalGuestAssets(profileUserId, guestUserIdForMerge)
 
   return currentUser
 }
@@ -1089,6 +1111,10 @@ export const authService = {
     const currentUser = readCurrentUser()
     const guestUserId =
       currentUser && isGuestLikeMode(currentUser.mode) ? currentUser.id : undefined
+
+    if (currentUser?.mode === 'profile' && currentUser.email) {
+      rememberProfileUserForEmail(currentUser.email, currentUser.id)
+    }
 
     if (!isAppwriteMode()) {
       if (guestUserId) {

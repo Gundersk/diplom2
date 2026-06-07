@@ -67,6 +67,22 @@ export function isMergedGuestUserId(userId: string) {
   return readMergedGuestUserIds().includes(userId)
 }
 
+export function getMergedGuestIdsForProfile(profileUserId: string) {
+  if (!profileUserId.trim()) return [] as string[]
+
+  const normalizedProfileUserId = profileUserId.trim()
+  const guestIds = new Set<string>()
+  const profileMap = readMergedGuestProfileMap()
+
+  for (const [guestUserId, mappedProfileUserId] of Object.entries(profileMap)) {
+    if (mappedProfileUserId === normalizedProfileUserId) {
+      guestIds.add(guestUserId)
+    }
+  }
+
+  return [...guestIds]
+}
+
 export function resolveCanonicalUserId(userId: string, currentUserId: string) {
   if (!userId) return userId
   if (userId === currentUserId) return currentUserId
