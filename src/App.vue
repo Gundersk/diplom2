@@ -154,7 +154,7 @@ const quickInfoOptions = infoBlockTypeOptions.filter((option) =>
 const rsvpStyleOptions = [
   { id: 'icons', label: 'Icons', emoji: '👍' },
   { id: 'bloom', label: 'Bloom', emoji: '🌷' },
-  { id: 'flirty', label: 'Flirty', emoji: '💋' },
+  { id: 'party', label: 'Party', emoji: '🎉' },
   { id: 'hearts', label: 'Hearts', emoji: '💖' },
 ]
 
@@ -3524,19 +3524,25 @@ function getTitleStyleClass(styleId: string) {
   return `title-style-${styleId}`
 }
 
+function normalizeRsvpStyleId(styleId: string) {
+  return styleId === 'flirty' ? 'party' : styleId
+}
+
 function getRsvpStyleOption(styleId: string) {
-  return rsvpStyleOptions.find((option) => option.id === styleId) ?? rsvpStyleOptions[0]
+  const normalizedId = normalizeRsvpStyleId(styleId)
+  return rsvpStyleOptions.find((option) => option.id === normalizedId) ?? rsvpStyleOptions[0]
 }
 
 function getRsvpPreviewSymbols(styleId: string) {
+  const normalizedId = normalizeRsvpStyleId(styleId)
   const symbolMap: Record<string, [string, string, string]> = {
     bloom: ['🌷', '🌼', '🥀'],
-    flirty: ['😘', '💋', '🥵'],
+    party: ['🎉', '🕐', '🏠'],
     hearts: ['💖', '🫶', '💔'],
     icons: ['✓', '?', '×'],
   }
 
-  return symbolMap[styleId] ?? symbolMap.icons
+  return symbolMap[normalizedId] ?? symbolMap.icons
 }
 
 function getRsvpChoices(styleId: string): RsvpChoice[] {
@@ -3864,7 +3870,7 @@ function populateFormFromEvent(event: GalleryEvent) {
     paymentDestination: event.payment?.destination ?? '',
     paymentComment: event.payment?.comment ?? '',
     allowGuestInvites: Boolean(event.allowGuestInvites),
-    rsvpStyle: event.rsvpStyle ?? 'icons',
+    rsvpStyle: normalizeRsvpStyleId(event.rsvpStyle ?? 'icons'),
     textTheme: event.textTheme ?? 'auto',
     automaticExpanded: false,
     personalExpanded: false,
