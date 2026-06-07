@@ -1,11 +1,22 @@
 import { APPWRITE_BUCKETS } from '../config/appwriteSchema'
 import { appwriteStorage } from '../lib/appwrite'
 import { isAppwriteMode } from '../services/adapters/dataMode'
+import { getCachedLocalBlobUrl, isLocalBlobRef } from './localBlobStorage'
 import { sanitizePersistableUrl } from './persistableUrl'
 
 export function resolveAvatarViewUrl(avatarUrl?: string, avatarFileId?: string) {
   if (isAppwriteMode() && avatarFileId) {
     return appwriteStorage.getFileView(APPWRITE_BUCKETS.eventPhotos, avatarFileId)
+  }
+
+  if (!isAppwriteMode()) {
+    if (avatarUrl?.startsWith('blob:') || avatarUrl?.startsWith('data:')) {
+      return avatarUrl
+    }
+
+    if (isLocalBlobRef(avatarUrl)) {
+      return getCachedLocalBlobUrl(avatarUrl)
+    }
   }
 
   return sanitizePersistableUrl(avatarUrl) || undefined

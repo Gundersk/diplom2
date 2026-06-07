@@ -7,6 +7,7 @@ import { resolveAvatarViewUrl } from '../utils/avatarUrl'
 import { getMergedGuestIdsForProfile, rememberMergedGuestUserId } from '../utils/mergedGuestIds'
 import { rememberProfileUserForEmail, resolveProfileUserIdForEmail } from '../utils/profileEmailRegistry'
 import { isPersistableUrl, sanitizePersistableUrl } from '../utils/persistableUrl'
+import { isPersistableLocalMediaRef } from '../utils/localBlobStorage'
 import { isAppwriteMode } from './adapters/dataMode'
 import {
   clearGuestSessionLocalData,
@@ -84,7 +85,21 @@ function readCurrentUser(): CurrentUser | null {
 
 function persistCurrentUser(user: CurrentUser) {
   if (!canUseLocalStorage()) return
-  window.localStorage.setItem(CURRENT_USER_STORAGE_KEY, JSON.stringify(user))
+
+  const avatarUrl =
+    user.avatarUrl?.startsWith('blob:') || user.avatarUrl?.startsWith('data:')
+      ? readCurrentUser()?.avatarUrl
+      : user.avatarUrl
+
+  const payload: CurrentUser = {
+    ...user,
+    avatarUrl:
+      avatarUrl && (isPersistableLocalMediaRef(avatarUrl) || isPersistableUrl(avatarUrl))
+        ? avatarUrl
+        : undefined,
+  }
+
+  window.localStorage.setItem(CURRENT_USER_STORAGE_KEY, JSON.stringify(payload))
 }
 
 function clearCurrentUserCache() {

@@ -18,6 +18,7 @@ import { savedPhotoService } from './services/savedPhotoService'
 import { storageService } from './services/storageService'
 import { isAppwriteMode } from './services/adapters/dataMode'
 import { resolveAvatarViewUrl, withAvatarCacheToken } from './utils/avatarUrl'
+import { isLocalBlobRef, resolveLocalBlobUrl, saveLocalImageFile } from './utils/localBlobStorage'
 import { isMergedGuestUserId, resolveCanonicalUserId } from './utils/mergedGuestIds'
 import { repairProfileOrganizerOwnership } from './services/guestMergeService'
 import { sanitizePersistableUrl } from './utils/persistableUrl'
@@ -394,6 +395,26 @@ function getCurrentAuthorAvatarUrl(participant?: EventParticipant | null) {
   return getParticipantAvatarUrl(participant) || getCurrentUserAvatarUrlForDocuments()
 }
 
+async function getPersistableAuthorAvatarUrl(participant?: EventParticipant | null) {
+  if (isAppwriteMode()) {
+    return getCurrentAuthorAvatarUrl(participant)
+  }
+
+  if (
+    participant?.userId &&
+    resolveCanonicalUserId(participant.userId, currentUser.id) === currentUser.id
+  ) {
+    return (await authService.getCurrentUser())?.avatarUrl
+  }
+
+  const participantAvatarUrl = participant?.avatarUrl
+  if (isLocalBlobRef(participantAvatarUrl) || sanitizePersistableUrl(participantAvatarUrl)) {
+    return participantAvatarUrl
+  }
+
+  return undefined
+}
+
 function findParticipantForAuthor(eventId: string | undefined, message: Pick<EventChatMessage, 'participantId' | 'userId' | 'eventId'>) {
   const resolvedEventId = eventId || activeEventId.value || message.eventId
   if (!resolvedEventId) return null
@@ -540,7 +561,19 @@ function applyCurrentUser(user: CurrentUser) {
     user.displayName?.trim() ||
     (user.mode === 'demo' ? LOCAL_DEMO_USER_DISPLAY_NAME : `Гость ${String(user.id).slice(-4)}`)
   currentUser.initials = buildUserInitials(currentUser.name)
+  void preloadLocalAvatarUrl(user.avatarUrl)
   void loadAchievementTemplates()
+}
+
+async function preloadLocalAvatarUrl(avatarUrl?: string) {
+  if (isAppwriteMode() || !avatarUrl || !isLocalBlobRef(avatarUrl)) {
+    return
+  }
+
+  const resolvedUrl = await resolveLocalBlobUrl(avatarUrl)
+  if (resolvedUrl) {
+    currentUser.avatarUrl = resolvedUrl
+  }
 }
 
 async function syncPastEventAutomaticAchievements() {
@@ -597,6 +630,10 @@ async function initializeApp() {
   appInitializing.value = true
 
   try {
+    if (!isAppwriteMode()) {
+      await photoService.migrateLocalStorageMedia()
+    }
+
     const storedUser = await authService.getCurrentUser()
     let activeUser: CurrentUser | null = storedUser
 
@@ -2042,12 +2079,17 @@ async function saveProfileEditor() {
         avatarUrl = uploadedAvatar.previewUrl
         avatarFileId = uploadedAvatar.fileId
       } else {
-        avatarUrl = await readFileAsDataUrl(profileEditorAvatarFile.value)
+        avatarUrl = await saveLocalImageFile(profileEditorAvatarFile.value, `avatar:${currentUser.id}`, {
+          maxDimension: 512,
+          quality: 0.86,
+        })
       }
     } else if (profileEditorAvatarPreviewUrl.value) {
       avatarUrl = isAppwriteMode()
         ? sanitizePersistableUrl(profileEditorAvatarPreviewUrl.value) || avatarUrl
-        : profileEditorAvatarPreviewUrl.value
+        : isLocalBlobRef(profileEditorAvatarPreviewUrl.value)
+          ? profileEditorAvatarPreviewUrl.value
+          : avatarUrl
     }
 
     const displayName = clampTextLength(profileEditorName.value, USER_NAME_MAX_LENGTH)
@@ -2588,9 +2630,21 @@ async function syncAllEventAchievementsFromService() {
 }
 
 async function syncEventParticipantsFromService(eventId: string) {
+  const participants = await participantService.getEventParticipants(eventId)
+
+  if (!isAppwriteMode()) {
+    await Promise.all(
+      participants.map(async (participant) => {
+        if (isLocalBlobRef(participant.avatarUrl)) {
+          await resolveLocalBlobUrl(participant.avatarUrl)
+        }
+      }),
+    )
+  }
+
   eventParticipantsByEventId.value = {
     ...eventParticipantsByEventId.value,
-    [eventId]: await participantService.getEventParticipants(eventId),
+    [eventId]: participants,
   }
   return eventParticipantsByEventId.value[eventId]
 }
@@ -2913,12 +2967,14 @@ async function sendEventChatMessage() {
   const participant = currentParticipant.value ?? (await ensureCurrentParticipant(event))
   if (!participant) return
 
+  const persistableAvatarUrl = await getPersistableAuthorAvatarUrl(participant)
+
   const nextMessage = await chatService.addEventMessage({
     eventId: event.id,
     userId: currentUser.id,
     participantId: participant.id,
     authorName: participant.displayName,
-    authorAvatarUrl: getCurrentAuthorAvatarUrl(participant),
+    authorAvatarUrl: persistableAvatarUrl,
     text,
   })
 
@@ -3661,6 +3717,8 @@ async function submitRsvpResponse() {
     ? `${participant.displayName} отметил(а) «${statusLabel}»: ${message}`
     : `${participant.displayName} отметил(а) «${statusLabel}».`
 
+  const persistableAvatarUrl = await getPersistableAuthorAvatarUrl(participant)
+
   let nextRsvp: EventRsvpEntry
   try {
     nextRsvp = await rsvpService.setParticipantRsvp({
@@ -3668,7 +3726,7 @@ async function submitRsvpResponse() {
       userId: currentUser.id,
       participantId: participant.id,
       displayName: participant.displayName,
-      avatarUrl: getCurrentAuthorAvatarUrl(participant),
+      avatarUrl: persistableAvatarUrl,
       status,
       message: message || undefined,
     })
@@ -3686,7 +3744,7 @@ async function submitRsvpResponse() {
     userId: currentUser.id,
     participantId: participant.id,
     authorName: participant.displayName,
-    authorAvatarUrl: getCurrentAuthorAvatarUrl(participant),
+    authorAvatarUrl: persistableAvatarUrl,
     text: chatText,
   })
 
@@ -3726,14 +3784,15 @@ async function addEventPhoto(eventId: string, file: File, source: 'album' | 'cha
   const participant = currentParticipant.value ?? (await ensureCurrentParticipant(event))
   if (!participant) return
 
+  const persistableAvatarUrl = await getPersistableAuthorAvatarUrl(participant)
+
   const photo = await photoService.addEventPhoto({
     eventId,
     userId: currentUser.id,
     participantId: participant.id,
     authorName: participant.displayName,
-    authorAvatarUrl: getCurrentAuthorAvatarUrl(participant),
-    imageUrl: isAppwriteMode() ? undefined : await readFileAsDataUrl(file),
-    file: isAppwriteMode() ? file : undefined,
+    authorAvatarUrl: persistableAvatarUrl,
+    file,
   })
 
   const photoChatMessage =
@@ -3743,7 +3802,7 @@ async function addEventPhoto(eventId: string, file: File, source: 'album' | 'cha
           userId: currentUser.id,
           participantId: participant.id,
           authorName: participant.displayName,
-          authorAvatarUrl: getCurrentAuthorAvatarUrl(participant),
+          authorAvatarUrl: persistableAvatarUrl,
           text: 'добавил(а) фото',
           photoId: photo.id,
         })

@@ -15,6 +15,13 @@ import { eventService } from './eventService'
 import { photoCommentService } from './photoCommentService'
 import { savedPhotoService } from './savedPhotoService'
 import { storageService } from './storageService'
+import {
+  isLocalBlobRef,
+  migrateLocalMediaFromLocalStorage,
+  resolveLocalBlobUrl,
+  saveLocalBlobFromDataUrl,
+  saveLocalImageFile,
+} from '../utils/localBlobStorage'
 
 const PHOTO_STORAGE_KEY = 'event-gallery:photos'
 const DEFAULT_PHOTO_TONE = '#ffffff,#d9e8ff,#5b8def'
@@ -73,10 +80,69 @@ function readStoredPhotos(): GalleryPhoto[] {
 function persistPhotos(photos: GalleryPhoto[]) {
   if (!canUseLocalStorage()) return
 
-  window.localStorage.setItem(
-    PHOTO_STORAGE_KEY,
-    JSON.stringify(photos.map((photo) => normalizePhoto(photo))),
-  )
+  try {
+    window.localStorage.setItem(
+      PHOTO_STORAGE_KEY,
+      JSON.stringify(
+        photos.map((photo) => {
+          const normalizedPhoto = normalizePhoto(photo)
+          const imageUrl = normalizedPhoto.imageUrl ?? normalizedPhoto.src
+          const safeImageUrl =
+            imageUrl?.startsWith('blob:') || imageUrl?.startsWith('data:') ? undefined : imageUrl
+
+          return normalizePhoto({
+            ...normalizedPhoto,
+            imageUrl: safeImageUrl,
+            src: safeImageUrl,
+          })
+        }),
+      ),
+    )
+  } catch (error) {
+    console.error('[photoService] Failed to persist photos in localStorage.', error)
+    throw new Error('Не удалось сохранить фото: локальное хранилище переполнено.')
+  }
+}
+
+async function ensurePersistableLocalPhotoUrl(photoId: string, imageUrl?: string, file?: File) {
+  if (file) {
+    return saveLocalImageFile(file, `photo:${photoId}`, {
+      maxDimension: 1600,
+      quality: 0.84,
+    })
+  }
+
+  if (!imageUrl) {
+    throw new Error('Для local mode нужен файл или imageUrl.')
+  }
+
+  if (isLocalBlobRef(imageUrl)) {
+    return imageUrl
+  }
+
+  if (imageUrl.startsWith('data:')) {
+    return saveLocalBlobFromDataUrl(imageUrl, `photo:${photoId}`)
+  }
+
+  return imageUrl
+}
+
+async function resolvePhotoForDisplay(photo: GalleryPhoto) {
+  const imageUrl = photo.imageUrl ?? photo.src
+  if (!imageUrl || isAppwriteMode() || !isLocalBlobRef(imageUrl)) {
+    return photo
+  }
+
+  const resolvedUrl = await resolveLocalBlobUrl(imageUrl)
+  if (!resolvedUrl) {
+    return photo
+  }
+
+  return normalizePhoto({
+    ...photo,
+    imageUrl: resolvedUrl,
+    src: resolvedUrl,
+  })
 }
 
 function uniqueStrings(values?: string[]) {
@@ -231,21 +297,31 @@ async function getSavedPhotosOverlay(userId?: string) {
 }
 
 export const photoService = {
+  async migrateLocalStorageMedia() {
+    if (!isAppwriteMode()) {
+      await migrateLocalMediaFromLocalStorage()
+    }
+  },
+
   async getEventPhotos(eventId: string, userId?: string): Promise<GalleryPhoto[]> {
     if (!isAppwriteMode()) {
       const storedPhotos = readStoredPhotos().filter((photo) => photo.eventId === eventId)
       const eventPhotos = storedPhotos.length > 0 ? storedPhotos : await migrateEventPhotosIfNeeded(eventId)
+      const resolvedPhotos = await Promise.all(eventPhotos.map((photo) => resolvePhotoForDisplay(photo)))
 
       if (!userId) {
-        return eventPhotos
+        return resolvedPhotos
       }
 
       const savedPhotoIds = await getSavedPhotosOverlay(userId)
-      return eventPhotos.map((photo) =>
-        normalizePhoto({
-          ...photo,
-          saved: savedPhotoIds.has(photo.id),
-        }, photo),
+      return resolvedPhotos.map((photo) =>
+        normalizePhoto(
+          {
+            ...photo,
+            saved: savedPhotoIds.has(photo.id),
+          },
+          photo,
+        ),
       )
     }
 
@@ -274,18 +350,17 @@ export const photoService = {
     file?: File
   }): Promise<GalleryPhoto> {
     if (!isAppwriteMode()) {
-      if (!input.imageUrl) {
-        throw new Error('Для local mode нужен imageUrl.')
-      }
+      const photoId = createId('photo')
+      const persistedImageUrl = await ensurePersistableLocalPhotoUrl(photoId, input.imageUrl, input.file)
 
       const photo = normalizePhoto({
-        id: createId('photo'),
+        id: photoId,
         eventId: input.eventId,
         userId: input.userId,
         participantId: input.participantId,
         authorName: input.authorName,
         authorAvatarUrl: input.authorAvatarUrl,
-        imageUrl: input.imageUrl,
+        imageUrl: persistedImageUrl,
         caption: input.caption ?? '',
         likesCount: 0,
         likedBy: [],
@@ -297,7 +372,7 @@ export const photoService = {
 
       const nextPhotos = [...readStoredPhotos(), photo]
       persistPhotos(nextPhotos)
-      return photo
+      return resolvePhotoForDisplay(photo)
     }
 
     assertAppwriteReady('addEventPhoto')
