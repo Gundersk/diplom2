@@ -22,6 +22,8 @@ const EMAIL_CODE_COOLDOWN_MS = 60_000
 const PENDING_EMAIL_CODE_TTL_MS = 15 * 60_000
 const DEVELOPMENT_EMAIL_CODE = '000000'
 
+export const LOCAL_DEMO_USER_DISPLAY_NAME = 'Demo Guest'
+
 type StoredEmailCodes = Record<string, { code: string; requestedAt: string }>
 
 type PendingEmailLogin = {
@@ -946,12 +948,12 @@ export const authService = {
     return isAppwriteMode() ? getAppwriteCurrentUser() : readCurrentUser()
   },
 
-  async createDemoUser(displayName = 'Юрий'): Promise<CurrentUser> {
+  async createDemoUser(displayName = LOCAL_DEMO_USER_DISPLAY_NAME): Promise<CurrentUser> {
     const now = new Date().toISOString()
     const demoUser: CurrentUser = {
       id: createId('demo'),
       mode: 'demo',
-      displayName: normalizeDisplayName(displayName, 'Юрий'),
+      displayName: normalizeDisplayName(displayName, LOCAL_DEMO_USER_DISPLAY_NAME),
       createdAt: now,
       updatedAt: now,
     }

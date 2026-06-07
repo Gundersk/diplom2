@@ -2,7 +2,7 @@
 import 'emoji-picker-element'
 import { computed, nextTick, onUnmounted, reactive, ref, watch } from 'vue'
 import { buildEventStatus } from './data/mockEvents'
-import { authService } from './services/authService'
+import { authService, LOCAL_DEMO_USER_DISPLAY_NAME } from './services/authService'
 import { achievementService } from './services/achievementService'
 import { chatService } from './services/chatService'
 import { eventService, getEventInviteUrl } from './services/eventService'
@@ -232,7 +232,7 @@ function buildUserInitials(name?: string) {
       .map((part) => part.slice(0, 1))
       .join('')
       .slice(0, 2)
-      .toUpperCase() || 'Ю'
+      .toUpperCase() || 'G'
   )
 }
 
@@ -285,12 +285,12 @@ function getAvatarStyle(avatarUrl?: string, cacheToken?: string) {
 const currentUser = reactive<CurrentUserView>({
   id: 'guest_demo',
   mode: 'demo',
-  displayName: 'Юрий',
+  displayName: LOCAL_DEMO_USER_DISPLAY_NAME,
   avatarUrl: undefined,
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
-  initials: 'Ю',
-  name: 'Юрий',
+  initials: buildUserInitials(LOCAL_DEMO_USER_DISPLAY_NAME),
+  name: LOCAL_DEMO_USER_DISPLAY_NAME,
   role: 'Организатор',
 })
 
@@ -537,7 +537,8 @@ function applyCurrentUser(user: CurrentUser) {
   currentUser.updatedAt = user.updatedAt
   currentUser.avatarEmoji = user.avatarEmoji
   currentUser.name =
-    user.displayName?.trim() || (user.mode === 'demo' ? 'Юрий' : `Гость ${String(user.id).slice(-4)}`)
+    user.displayName?.trim() ||
+    (user.mode === 'demo' ? LOCAL_DEMO_USER_DISPLAY_NAME : `Гость ${String(user.id).slice(-4)}`)
   currentUser.initials = buildUserInitials(currentUser.name)
   void loadAchievementTemplates()
 }
@@ -600,7 +601,7 @@ async function initializeApp() {
     let activeUser: CurrentUser | null = storedUser
 
     if (!activeUser && !isAppwriteMode()) {
-      activeUser = await authService.createDemoUser('Юрий')
+      activeUser = await authService.createDemoUser()
     }
 
     if (activeUser) {
