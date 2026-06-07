@@ -234,7 +234,7 @@ export async function mergeGuestSessionBeforeProfileLogin(input: {
     avatarUrl,
   })
 
-  rememberMergedGuestUserId(guestUserId)
+  rememberMergedGuestUserId(guestUserId, profileUserId)
 
   return { mergedEventIds: [...mergedEventIds] }
 }

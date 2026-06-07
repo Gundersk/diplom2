@@ -12,6 +12,7 @@ import {
   mergeGuestSessionBeforeProfileLogin,
   repairProfileOrganizerOwnership,
 } from './guestMergeService'
+import { savedPhotoService } from './savedPhotoService'
 
 const CURRENT_USER_STORAGE_KEY = 'event-gallery:current-user'
 const EMAIL_CODE_STORAGE_KEY = 'event-gallery:email-codes'
@@ -771,6 +772,7 @@ async function verifyEmailCodeAppwrite(email: string, code: string): Promise<Cur
         profileAvatarUrl: profileAvatarUrlForMerge,
         profileAvatarFileId: profileAvatarFileIdForMerge,
       })
+      savedPhotoService.migrateSavedPhotosUserId(guestUserIdForMerge, pending.userId)
     } catch (error) {
       console.warn('[authService] guest merge after profile login failed', error)
     }
@@ -821,7 +823,7 @@ async function verifyEmailCodeAppwrite(email: string, code: string): Promise<Cur
 
   clearPendingEmailLogin()
   if (guestUserIdForMerge) {
-    rememberMergedGuestUserId(guestUserIdForMerge)
+    rememberMergedGuestUserId(guestUserIdForMerge, profileUserId)
     clearGuestSessionLocalData(guestUserIdForMerge, 'upgrade')
   }
 

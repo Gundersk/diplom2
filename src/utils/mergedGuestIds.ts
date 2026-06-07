@@ -1,4 +1,5 @@
 const MERGED_GUEST_IDS_STORAGE_KEY = 'event-gallery:merged-guest-user-ids'
+const MERGED_GUEST_PROFILE_MAP_KEY = 'event-gallery:merged-guest-profile-map'
 
 function canUseLocalStorage() {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined'
@@ -19,11 +20,47 @@ export function readMergedGuestUserIds(): string[] {
   }
 }
 
-export function rememberMergedGuestUserId(guestUserId: string) {
+export function readMergedGuestProfileMap(): Record<string, string> {
+  if (!canUseLocalStorage()) return {}
+
+  const raw = window.localStorage.getItem(MERGED_GUEST_PROFILE_MAP_KEY)
+  if (!raw) return {}
+
+  try {
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return {}
+    }
+
+    return Object.fromEntries(
+      Object.entries(parsed).filter(
+        ([guestUserId, profileUserId]) =>
+          typeof guestUserId === 'string' &&
+          guestUserId.trim() &&
+          typeof profileUserId === 'string' &&
+          profileUserId.trim(),
+      ),
+    ) as Record<string, string>
+  } catch {
+    window.localStorage.removeItem(MERGED_GUEST_PROFILE_MAP_KEY)
+    return {}
+  }
+}
+
+export function rememberMergedGuestUserId(guestUserId: string, profileUserId?: string) {
   if (!canUseLocalStorage() || !guestUserId.trim()) return
 
-  const nextIds = [...new Set([...readMergedGuestUserIds(), guestUserId.trim()])]
+  const normalizedGuestUserId = guestUserId.trim()
+  const nextIds = [...new Set([...readMergedGuestUserIds(), normalizedGuestUserId])]
   window.localStorage.setItem(MERGED_GUEST_IDS_STORAGE_KEY, JSON.stringify(nextIds))
+
+  if (profileUserId?.trim()) {
+    const nextMap = {
+      ...readMergedGuestProfileMap(),
+      [normalizedGuestUserId]: profileUserId.trim(),
+    }
+    window.localStorage.setItem(MERGED_GUEST_PROFILE_MAP_KEY, JSON.stringify(nextMap))
+  }
 }
 
 export function isMergedGuestUserId(userId: string) {
