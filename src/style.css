@@ -3815,6 +3815,7 @@ a {
   display: grid;
   place-items: center;
   padding: 22px;
+  overflow-y: auto;
   background: rgba(18, 18, 18, 0.34);
   backdrop-filter: blur(16px);
 }
@@ -4085,8 +4086,34 @@ a {
 
 .medal-builder-dialog {
   width: min(620px, 100%);
+  max-height: min(88vh, 900px);
+  overflow: auto;
+  overscroll-behavior: contain;
   padding: 24px;
   border-radius: 28px;
+}
+
+@media (max-height: 820px) {
+  .medal-builder-overlay {
+    place-items: start center;
+    padding-top: 12px;
+    padding-bottom: 12px;
+  }
+
+  .medal-builder-dialog {
+    max-height: min(94vh, 900px);
+  }
+
+  .medal-emoji-picker {
+    height: min(240px, 36vh);
+  }
+
+  .medal-preview-row,
+  .medal-tone-row,
+  .medal-visibility-row {
+    margin-top: 14px;
+    margin-bottom: 0;
+  }
 }
 
 .form-field-grid {
@@ -4333,6 +4360,11 @@ a {
   .guest-preview-sheet,
   .medal-builder-dialog {
     border-radius: 24px;
+  }
+
+  .medal-builder-dialog {
+    max-height: min(92vh, 900px);
+    padding: 18px;
   }
 
   .home-section-head {
