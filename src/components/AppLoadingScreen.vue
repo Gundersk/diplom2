@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// Экран-заглушка на время восстановления сессии и загрузки данных с сервера.
 import { useEventGallery } from '../composables/eventGalleryContext'
 
 const app = useEventGallery()

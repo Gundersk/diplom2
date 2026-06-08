@@ -1,3 +1,8 @@
+/**
+ * Достижения события: шаблоны (системные + кастомные), выбор организатором, выдача участникам.
+ * Шаблоны кастомные — per-user в localStorage; награды — local или коллекции event/participant achievements.
+ * Автовыдача «Первый кадр» — в automaticAchievementService.
+ */
 import type { Models } from 'appwrite'
 import { Permission, Role } from 'appwrite'
 import { APPWRITE_COLLECTIONS, APPWRITE_DATABASE_ID } from '../config/appwriteSchema'
@@ -16,6 +21,7 @@ import { isAppwriteMode } from './adapters/dataMode'
 import { authService } from './authService'
 import { eventService } from './eventService'
 
+// --- Ключи localStorage: шаблоны, достижения события, выданные награды ---
 const TEMPLATE_STORAGE_KEY = 'event-gallery:achievement-templates'
 const USER_TEMPLATE_STORAGE_PREFIX = 'event-gallery:achievement-templates:'
 const LEGACY_TEMPLATES_MIGRATED_KEY = 'event-gallery:achievement-templates:legacy-migrated'
@@ -66,6 +72,7 @@ function assertAppwriteReady(methodName: string) {
   }
 }
 
+// --- Встроенные шаблоны (не удаляются; automatic — first_photo, most_photos) ---
 const defaultTemplates: AchievementTemplate[] = [
   {
     id: 'first-frame',
@@ -152,6 +159,7 @@ function isUserOwnedCustomTemplate(template: AchievementTemplate) {
   return template.isCustom !== false
 }
 
+// --- Пользовательские шаблоны и миграция legacy TEMPLATE_STORAGE_KEY ---
 function readLegacyStoredTemplates(): AchievementTemplate[] {
   if (!canUseLocalStorage()) return []
 
@@ -407,6 +415,7 @@ function normalizeParticipantAchievementDocument(
   })
 }
 
+// --- Достижения, привязанные к событию, и выдачи участникам ---
 function readStoredEventAchievements(): EventAchievement[] {
   if (!canUseLocalStorage()) return []
 
@@ -505,6 +514,7 @@ async function getAppwriteAchievementPermissions(ownerUserId?: string) {
   ]
 }
 
+// --- Appwrite: коллекции event_achievements и participant_achievements ---
 async function listEventAchievementDocuments(eventId: string) {
   const response = await appwriteDatabases.listDocuments<EventAchievementDocument>(
     APPWRITE_DATABASE_ID,

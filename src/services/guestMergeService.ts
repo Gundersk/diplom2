@@ -1,3 +1,8 @@
+/**
+ * Слияние гостевой сессии в профиль при email OTP (Appwrite).
+ * Переносит organizerId, participants, RSVP, чат; чинит права documentSecurity после входа.
+ * clearGuestSessionLocalData — очистка local-кэша гостя при logout/upgrade.
+ */
 import type { Models } from 'appwrite'
 import { APPWRITE_COLLECTIONS, APPWRITE_DATABASE_ID } from '../config/appwriteSchema'
 import { hasAppwriteRuntimeConfig } from '../config/runtime'
@@ -32,6 +37,7 @@ type ChatMessageDocument = Models.Document & {
   authorInitials?: string
 }
 
+// --- Appwrite: перенос событий и связанных документов по userId ---
 function assertAppwriteReady(methodName: string) {
   if (!hasAppwriteRuntimeConfig() || !APPWRITE_DATABASE_ID) {
     throw new Error(`[guestMergeService] ${methodName} requires Appwrite runtime config.`)
@@ -350,6 +356,7 @@ export async function repairProfileOrganizerOwnership(profileUserId: string) {
   return { repairedEventIds }
 }
 
+// --- После repair: права organizer/owner на events, participants, rsvps, chat ---
 async function finalizeVerifiedDocumentPermissions(profileUserId: string) {
   const participations = await participantService.getUserParticipations(profileUserId)
   const eventIds = new Set(participations.map((item) => item.eventId))

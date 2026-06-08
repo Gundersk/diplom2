@@ -1,3 +1,7 @@
+/**
+ * Дедупликация участников события по каноническому userId.
+ * При дубликатах выбирает организатора или самую свежую запись.
+ */
 import type { EventParticipant } from '../types/participant'
 import { resolveCanonicalUserId } from './mergedGuestIds'
 

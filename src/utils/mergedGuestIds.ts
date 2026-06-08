@@ -1,3 +1,7 @@
+/**
+ * Реестр слияния гостевых userId с профилем после входа.
+ * Хранится в localStorage; позволяет сопоставить старые гостевые id с текущим пользователем.
+ */
 const MERGED_GUEST_IDS_STORAGE_KEY = 'event-gallery:merged-guest-user-ids'
 const MERGED_GUEST_PROFILE_MAP_KEY = 'event-gallery:merged-guest-profile-map'
 
@@ -83,6 +87,7 @@ export function getMergedGuestIdsForProfile(profileUserId: string) {
   return [...guestIds]
 }
 
+/** Подменяет слитый гостевой id на id текущего профиля. */
 export function resolveCanonicalUserId(userId: string, currentUserId: string) {
   if (!userId) return userId
   if (userId === currentUserId) return currentUserId

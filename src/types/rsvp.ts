@@ -1,3 +1,6 @@
+/**
+ * RSVP-ответы гостей: статусы, запись и нормализация устаревших значений.
+ */
 export type EventRsvpStatus = 'going' | 'maybe' | 'not-going'
 export type LegacyRsvpStatus = EventRsvpStatus | 'cant_go'
 
@@ -16,6 +19,7 @@ export type EventRsvpEntry = {
   userInitials?: string
 }
 
+/** Приводит cant_go к not-going для совместимости со старыми данными. */
 export function normalizeRsvpStatus(status?: string): EventRsvpStatus {
   if (status === 'going' || status === 'maybe' || status === 'not-going') {
     return status

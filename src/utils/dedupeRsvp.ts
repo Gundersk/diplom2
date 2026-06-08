@@ -1,3 +1,7 @@
+/**
+ * Дедупликация записей RSVP по пользователю или участнику.
+ * При конфликте предпочитает запись текущего пользователя или более свежую по updatedAt.
+ */
 import type { EventRsvpEntry } from '../types/rsvp'
 import { resolveCanonicalUserId } from './mergedGuestIds'
 

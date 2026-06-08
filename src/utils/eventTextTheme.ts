@@ -1,3 +1,7 @@
+/**
+ * Выбор светлой/тёмной темы текста на карточке события.
+ * Режим auto опирается на относительную яркость фона (WCAG relative luminance).
+ */
 import type { EventTextThemeSetting, GalleryEvent, ResolvedEventTextTheme } from '../types/event'
 
 export type EventTextThemeSource = Pick<
@@ -5,6 +9,7 @@ export type EventTextThemeSource = Pick<
   'textTheme' | 'backgroundMode' | 'backgroundColor' | 'backgroundStart' | 'backgroundMediaType' | 'backgroundLuminance'
 >
 
+/** Порог яркости: выше — тёмный текст, ниже — светлый. */
 const LIGHT_TEXT_LUMINANCE_THRESHOLD = 0.55
 
 function channelToLinear(channel: number) {
@@ -148,6 +153,7 @@ function resolveBackgroundLuminance(event: EventTextThemeSource) {
     return rgbLuminance
   }
 
+  // Для медиа-фона без явного цвета — усреднённая тёмная яркость
   if (
     event.backgroundMediaType === 'image' ||
     event.backgroundMediaType === 'gif' ||

@@ -1,6 +1,8 @@
 <script setup lang="ts">
+// Главный экран: личная галерея событий, профиль и навигация по карточкам.
 import { useEventGallery } from '../composables/eventGalleryContext'
 
+// Вся бизнес-логика и состояние — в общем контексте приложения.
 const app = useEventGallery()
 </script>
 

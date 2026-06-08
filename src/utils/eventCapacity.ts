@@ -1,3 +1,7 @@
+/**
+ * Проверка лимита участников события по RSVP.
+ * Учитываются только ответы со статусом «going».
+ */
 import type { GalleryEvent } from '../types/event'
 import type { EventRsvpEntry } from '../types/rsvp'
 
@@ -28,6 +32,7 @@ export function isEventAtCapacity(event: Pick<GalleryEvent, 'participantLimit' |
   return countGoingRsvps(event.guestRsvps) >= limit
 }
 
+/** Разрешает «going», если пользователь уже идёт или остались свободные места. */
 export function canSetGoingRsvp(
   event: Pick<GalleryEvent, 'participantLimit' | 'guestRsvps'>,
   options: { userId?: string; participantId?: string },

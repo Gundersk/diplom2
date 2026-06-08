@@ -1,3 +1,7 @@
+/**
+ * Идентификаторы коллекций и бакетов Appwrite.
+ * Имена коллекций должны совпадать со схемой на сервере.
+ */
 import { runtimeConfig } from './runtime'
 
 export const APPWRITE_DATABASE_ID = runtimeConfig.appwriteDatabaseId

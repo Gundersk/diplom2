@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// Нижняя панель RSVP: выбор статуса, сообщение организатору и отправка ответа.
 import { useEventGallery } from '../composables/eventGalleryContext'
 
 const app = useEventGallery()

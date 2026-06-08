@@ -1,9 +1,15 @@
+/**
+ * Правила автоматической выдачи достижений (вызывается после загрузки фото и т.п.).
+ * Сейчас активен только шаблон first-frame («Первый кадр») — первый upload в альбом.
+ * most_photos («Папарацци») в ACTIVE_AUTOMATIC_TEMPLATE_IDS пока не подключён.
+ */
 import type { EventAchievement, ParticipantAchievement } from '../types/achievement'
 import type { GalleryEvent } from '../types/event'
 import type { GalleryPhoto } from '../types/photo'
 import type { EventParticipant } from '../types/participant'
 import { achievementService } from './achievementService'
 
+// --- Список шаблонов с реализованной автологикой ---
 export const ACTIVE_AUTOMATIC_TEMPLATE_IDS = ['first-frame'] as const
 
 export type ActiveAutomaticTemplateId = (typeof ACTIVE_AUTOMATIC_TEMPLATE_IDS)[number]
@@ -116,6 +122,7 @@ async function awardParticipantsIfNeeded(input: {
   return true
 }
 
+// --- Условие first_photo: самый ранний createdAt среди фото события ---
 async function processFirstPhotoAchievement(input: {
   event: GalleryEvent
   photos: GalleryPhoto[]

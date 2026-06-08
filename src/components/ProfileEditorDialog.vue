@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// Диалог редактирования глобального профиля: имя и аватар аккаунта.
 import { useEventGallery } from '../composables/eventGalleryContext'
 
 const app = useEventGallery()

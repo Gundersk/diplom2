@@ -1,387 +1,121 @@
-# Appwrite Event Persistence Audit
-
-Date: 2026-05-21
-
-Scope:
-- `C:/Users/Yurgirus/Desktop/diplom2/src/services/eventService.ts`
-- `C:/Users/Yurgirus/Desktop/diplom2/src/services/photoService.ts`
-- `C:/Users/Yurgirus/Desktop/diplom2/src/services/participantService.ts`
-- `C:/Users/Yurgirus/Desktop/diplom2/src/services/rsvpService.ts`
-- `C:/Users/Yurgirus/Desktop/diplom2/src/App.vue`
-- `C:/Users/Yurgirus/Desktop/diplom2/src/types/event.ts`
-
-Goal:
-Understand what the first Appwrite-backed event flow actually persists, what still lives only in browser-local state, and why event visuals diverge between the organizer and another invited guest.
-
-## 1. What event form fields are actually persisted to Appwrite `events`
-
-Current Appwrite payload is built in `toAppwriteEventPayload(...)` in `src/services/eventService.ts`.
-
-Persisted to `events`:
-
-- `title`
-- `description`
-- `startsAt`
-- `endsAt`
-- `timezone`
-- `location`
-- `organizerId`
-- `inviteCode`
-- `coverUrl`
-- `themeColor`
-- `guestsCanInvite`
-- `maxParticipants`
-- `isPaid`
-- `costPerPerson`
-- `paymentDetails`
-- `paymentComment`
-- `createdAt`
-- `updatedAt`
+# Аудит персистентности событий в Appwrite
 
-Notes:
-- `coverUrl` is derived from `event.coverStart` only when `coverStart` is not a color.
-- `themeColor` is currently used as a compressed fallback for the background/accent theme, not as a full representation of the event background state.
+**Дата:** 2026-05-21  
+**Статус:** архивный снимок. Часть проблем закрыта в последующих коммитах (см. блок «Обновление» в конце). Актуальное состояние — `README.md` и `docs/appwrite-schema.md`.
 
-## 2. What event form fields are currently lost in Appwrite mode
+**Файлы на момент аудита:** `eventService.ts`, `photoService.ts`, `participantService.ts`, `rsvpService.ts`, `App.vue`, `types/event.ts`.
 
-These fields exist in the frontend event model or form, but are not persisted to Appwrite `events`:
+**Цель:** понять, что реально уходит в Appwrite, что остаётся только в браузере и почему организатор и гость видят разное оформление события.
 
-- `organizerName`
-- `organizerInitials`
-- `organizerTone`
-- `organizerAvatarSrc`
-- `coverEnd`
-- `backgroundStart`
-- `backgroundEnd`
-- `accent`
-- `backgroundMode`
-- `backgroundAssetId`
-- `backgroundColor`
-- `coverAssetId`
-- `titleStyle`
-- `rsvpStyle`
-- `infoBlocks`
+## 1. Какие поля формы пишутся в коллекцию `events`
 
-Also not shared through Appwrite yet:
+Сборка payload: `toAppwriteEventPayload(...)` в `eventService.ts`.
 
-- event achievements selected in the create/edit flow
-- event photos
-- event chat messages
-- event RSVP list
+Пишутся в `events`:
 
-Those areas already have separate services or local models, but they still remain browser-local for now.
+- `title`, `description`, `startsAt`, `endsAt`, `timezone`, `location`
+- `organizerId`, `inviteCode`
+- `coverUrl`, `themeColor`
+- `guestsCanInvite`, `maxParticipants`
+- `isPaid`, `costPerPerson`, `paymentDetails`, `paymentComment`
+- `createdAt`, `updatedAt`
 
-## 3. What event fields are currently reconstructed from local cache or fallback
+Заметки:
 
-The Appwrite document is not enough to rebuild the full UI event state. The code currently compensates by mixing the Appwrite document with browser-local cached event state.
+- `coverUrl` берётся из `coverStart`, если это не цвет.
+- `themeColor` — сжатый fallback фона/акцента, не полное описание фона.
 
-### In `src/services/eventService.ts`
+## 2. Что на момент аудита терялось в Appwrite mode
 
-`fromAppwriteEventDocument(...)` restores or guesses these fields through cached state or fallback values:
+Поля есть в UI/модели, но **не** попадали в документ `events`:
 
-- `organizerName`
-- `organizerInitials`
-- `organizerTone`
-- `organizerAvatarSrc`
-- `coverStart`
-- `coverEnd`
-- `backgroundStart`
-- `backgroundEnd`
-- `accent`
-- `infoBlocks`
-- `payment` fallback
-- `timezoneLabel`
-- `titleStyle`
-- `rsvpStyle`
+- `organizerName`, `organizerInitials`, `organizerTone`, `organizerAvatarSrc`
+- `coverEnd`, `backgroundStart`, `backgroundEnd`, `accent`
+- `backgroundMode`, `backgroundAssetId`, `backgroundColor`, `coverAssetId`
+- `titleStyle`, `rsvpStyle`, `infoBlocks`
 
-`mergeEventWithCachedUiState(...)` additionally overlays:
+Отдельно не шарились через backend:
 
-- `achievements`
-- `photos`
-- `chatMessages`
-- `guestRsvps`
-- `savedCount`
-- `totalCount`
+- достижения из формы создания;
+- фото альбома, чат, список RSVP (жили в local-сервисах).
 
-This means the organizer can often still see a "complete" event immediately after creation because their browser keeps a richer local version in `event-gallery.home-events`, but another browser only sees what can be reconstructed from the Appwrite document plus its own local fallbacks.
+## 3. Восстановление из local-кэша
 
-## 4. Why custom cover/background is not visible for another user
+Документа Appwrite недостаточно для полного UI. `fromAppwriteEventDocument(...)` и `mergeEventWithCachedUiState(...)` подмешивают:
 
-There are two different issues here.
+- имя/аватар организатора, стили, блоки info;
+- `achievements`, `photos`, `chatMessages`, `guestRsvps`, счётчики.
 
-### 4.1 Uploaded cover/background files are currently stored as `blob:` URLs in the browser
+Организатор после создания видел «полное» событие из кэша `event-gallery.home-events`; гость — только то, что восстановилось из документа и своих fallback.
 
-In `src/App.vue`:
+## 4. Почему обложка/фон не совпадали у гостя
 
-- `handleCoverUpload(...)` uses `window.URL.createObjectURL(file)`
-- `handleBackgroundUpload(...)` uses `window.URL.createObjectURL(file)`
+### 4.1 `blob:` URL в браузере
 
-That value is written into:
+Загрузка обложки/фона через `URL.createObjectURL(file)` давала локальный `blob:` — недоступный другому браузеру.
 
-- `createEventForm.uploadedCoverUrl`
-- `createEventForm.uploadedBackgroundUrl`
+### 4.2 Фон не попадал в payload
 
-Then `createEventFromForm()` copies those values into:
+В `toAppwriteEventPayload` уходили `coverUrl` и `themeColor`, но не `backgroundStart`, `backgroundMode` и т.д.
 
-- `coverStart`
-- `backgroundStart`
+### 4.3 Иллюзия у организатора
 
-Problem:
+`createEvent` / `updateEvent` сохраняли полный объект в local-кэш — текущий браузер маскировал дыры backend.
 
-`blob:` / object URLs are local to the current browser session. Another browser, another device, or even a reloaded session cannot reliably use that URL.
+## 5. Минимальная схема без Storage (рекомендация аудита)
 
-So even when the organizer sees the image locally, it is not a portable shared asset.
+Для MVP без Storage:
 
-### 4.2 The background asset is not fully persisted to Appwrite at all
+- только пресеты из `src/assets/event-presets/` и цветовые темы;
+- persist: `backgroundMode`, `backgroundAssetId` / `backgroundColor`, `accent`, `titleStyle`, `rsvpStyle`, `infoBlocksJson`.
 
-`toAppwriteEventPayload(...)` currently sends:
+Пользовательские upload без Storage — ненадёжны.
 
-- `coverUrl`
-- `themeColor`
+## 6. Что без Appwrite Storage не сделать нормально
 
-But it does **not** send:
+- Свои обложки/фоны/GIF/video между браузерами.
+- Base64 в строках БД — слабое решение (размер, производительность).
 
-- `backgroundStart` as a URL
-- `backgroundEnd`
-- `backgroundMode`
+## 7. Создавать ли participant при входе по invite
 
-So for background visuals:
+**На момент аудита — да, намеренно:** при открытии страницы события вызывается `ensureCurrentParticipant` → `joinEventAsParticipant`.
 
-- a chosen background image is dropped from the Appwrite payload
-- another user reconstructs the event page from `themeColor` plus hardcoded fallbacks
-- result: they see a flat/fallback background instead of the chosen background asset
+- participant = доступ к приватному контексту;
+- RSVP = отдельный ответ.
 
-### 4.3 Why the organizer may still see "the correct" event after save
+Для MVP это согласованная модель.
 
-Because the organizer still has browser-local cached event state:
+## 8. Очки за RSVP
 
-- `eventService.createEvent(...)` and `eventService.updateEvent(...)` persist the full normalized event into local cache
-- `fromAppwriteEventDocument(...)` later overlays cached event UI state
+Раньше `submitRsvpResponse` давал +1 при каждом переключении (можно было «фармить»).
 
-So the current browser can mask missing backend persistence.
+**Рекомендация аудита:** убрать очки за RSVP или начислять один раз. В текущем коде переключения RSVP очки не дают.
 
-## 5. What needs to be added to Appwrite schema minimally to preserve visual event state without Storage
+## 9. `photoService` и обложки
 
-If the goal is a quick backend MVP **without Appwrite Storage**, the safest path is:
+`photoService` не отвечает за обложку/фон страницы события — это pipeline `eventService` + Storage для visuals.
 
-- support only predefined bundled assets and color themes
-- persist asset identifiers or explicit background fields
-- do not treat browser-uploaded files as shared assets yet
+## 10. Планы на момент аудита
 
-Minimal schema additions recommended for correct shared visuals:
+**План A** — быстрый MVP без Storage: только пресеты + поля цвета/ID в `events`.
 
-- `backgroundMode` (`asset` | `color`)
-- `backgroundAssetId` or `backgroundUrl`
-- `backgroundColor`
-- `accent`
-- `titleStyle`
-- `rsvpStyle`
-- `infoBlocksJson` or a separate future collection
+**План B** — Storage: `coverFileId`, `backgroundFileId`, upload через бакет.
 
-Optional but useful:
+## Итог аудита
 
-- `coverAssetId` instead of relying only on `coverUrl`
+Первый multi-user сценарий (profile → event → participant) работал, но визуальное состояние события было **частично** в backend.
 
-Why this is enough for a no-Storage MVP:
-
-- bundled poster/background assets can be re-resolved by ID on every client
-- solid color themes can be recreated from stored color values
-- preview and event page become deterministic across browsers
-
-## 6. What cannot be done correctly without Appwrite Storage
-
-These cases are not robust without Storage:
-
-- user-uploaded custom cover images
-- user-uploaded custom background images
-- uploaded GIF/video cover/background assets shared between browsers
-- durable cross-device file URLs
-- safe file lifecycle for replacing/deleting uploaded event visuals
-
-Technically it is possible to store base64 inside database string fields, but for this project it would be a weak solution:
-
-- large payloads
-- poor performance
-- bad maintainability
-- awkward limits for images/GIF/video
-
-Recommendation:
-Do not use database string fields as a fake file storage layer for event visuals.
-
-## 7. Should participant be created immediately on invite-link entry
-
-Current behavior is intentional in code.
-
-### Current flow
-
-When an authenticated user opens an event page:
-
-- `watch([activeEvent, currentUser.id, currentUser.displayName, currentView], ...)`
-- calls `ensureCurrentParticipant(event)`
-- which calls `participantService.joinEventAsParticipant(...)`
-
-So `participant` is created/upserted as soon as the user enters the event page.
-
-### Meaning of the current model
-
-Right now the model is:
-
-- `participant` = user who has entered / joined the private event context
-- `RSVP` = separate response inside that event
-
-This is a coherent model for invite-only events.
-
-### Recommendation
-
-For MVP, keep this behavior.
-
-Reason:
-
-- it matches the current private invite flow
-- it keeps access semantics simple
-- it separates "has access to event" from "answered RSVP"
-
-Change it only if you want a stricter future model like:
-
-- invited viewer
-- participant
-- RSVP responder
-
-That would require an extra entity or a more explicit invitation state.
-
-## 8. Where RSVP points are awarded and whether to keep it
-
-Current points gain for RSVP happens in `src/App.vue`.
-
-Flow:
-
-- `submitRsvpResponse()` calls `rsvpService.setParticipantRsvp(...)`
-- then updates local event/chat state
-- then calls `addCurrentParticipantPoints(1)`
-
-So right now:
-
-- every RSVP submission gives `+1`
-- changing RSVP again gives another `+1`
-- this can be farmed by toggling statuses
-
-### Recommendation for MVP
-
-Do **not** keep the current behavior as-is.
-
-Better options:
-
-1. Disable RSVP points entirely for MVP.
-2. Or award points only on the first RSVP creation, not on every update.
-
-Given the current lightweight gamification target, option 1 is the safest MVP choice.
-
-## 9. Notes about `photoService`
-
-`src/services/photoService.ts` is not involved in event cover/background persistence.
-
-It already has TODO comments about future Appwrite Storage for event album photos, but that is a different asset pipeline from:
-
-- event cover
-- event page background
-
-So the current cover/background sharing issue is not caused by `photoService`; it is caused by the create-event flow and the limited Appwrite `events` payload.
-
-## 10. Recommended next plans
-
-### Plan A: Quick MVP without Storage
-
-Goal:
-Make event visuals consistent across browsers fast, without introducing Appwrite Storage yet.
-
-Approach:
-
-- allow only predefined bundled cover/background assets for shared event visuals
-- keep custom upload UI disabled or explicitly local-only for now
-- persist:
-  - `coverAssetId`
-  - `backgroundMode`
-  - `backgroundAssetId`
-  - `backgroundColor`
-  - `accent`
-  - `titleStyle`
-  - `rsvpStyle`
-  - `infoBlocksJson`
-- render visuals from stored IDs/colors instead of relying on cached event state
-
-Pros:
-
-- fast to implement
-- no Storage dependency
-- deterministic cross-browser event page
-
-Cons:
-
-- no real custom uploaded cover/background sharing
-- uploaded event visuals remain unsupported as shared assets
-
-### Plan B: Proper MVP with Appwrite Storage
-
-Goal:
-Support shared custom event cover/background files correctly.
-
-Approach:
-
-- upload custom cover/background files to Appwrite Storage
-- store file metadata or URLs in `events`
-- recommended event fields:
-  - `coverFileId` or `coverUrl`
-  - `backgroundFileId` or `backgroundUrl`
-  - `backgroundMode`
-  - `backgroundColor`
-  - `accent`
-  - `titleStyle`
-  - `rsvpStyle`
-  - `infoBlocksJson`
-- keep `organizerName` outside `events`, resolved through `profiles` / `participants`
-
-Pros:
-
-- custom uploaded visuals work across browsers and devices
-- event page state becomes portable and backend-backed
-- aligns with the long-term Appwrite architecture
-
-Cons:
-
-- more moving parts
-- requires Storage bucket policy and upload flow
-- requires cleanup rules for replaced files
-
-## Bottom line
-
-The first Appwrite test succeeded for the core entity flow:
-
-- profile
-- event
-- participant
-
-But visual event state is currently only partially backend-backed.
-
-Today the shared truth of an Appwrite event is:
-
-- core metadata is real
-- visual/editor state is partly local illusion
-
-That is why the organizer can see more than the invited guest.
+Организатор видел больше из-за local-кэша.
 
 ---
 
-## 2026-05-21 update
+## Обновление 2026-05-21 (после аудита)
 
-The first shared-event repair pass is now implemented:
+Реализовано:
 
-- `coverFileId` and `backgroundFileId` are restored through separate branches;
-- background no longer falls back to `coverStart` when `backgroundFileId` is absent;
-- organizer display name is resolved through `participants`, not stored back into `events`;
-- create/edit flow now re-reads the updated event from Appwrite before reopening it in the UI.
+- отдельные ветки `coverFileId` и `backgroundFileId`;
+- фон больше не подменяется `coverStart`, если нет `backgroundFileId`;
+- `organizerName` из `participants`, не из `events`;
+- после create/edit — повторное чтение события из Appwrite перед показом в UI.
 
-This means:
-
-- cover and background are no longer intentionally mixed in `fromAppwriteEventDocument(...)`;
-- `organizerName` remains derived display state, not persisted event state;
-- appwrite-mode editing is now closer to a real shared backend roundtrip.
+Дальнейшие шаги: общий альбом, чат, достижения — см. журнал `docs/development-log.md`.

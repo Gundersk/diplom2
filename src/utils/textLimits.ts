@@ -1,3 +1,7 @@
+/**
+ * Ограничения длины текстовых полей и валидация ввода.
+ * Используется в формах события и профиля пользователя.
+ */
 export const EVENT_TITLE_MIN_LENGTH = 1
 export const EVENT_TITLE_MAX_LENGTH = 60
 export const USER_NAME_MIN_LENGTH = 1

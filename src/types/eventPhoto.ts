@@ -1,3 +1,6 @@
+/**
+ * Связь фотографии с событием (таблица event_photos в Appwrite).
+ */
 export type EventPhotoLink = {
   id: string
   eventId: string

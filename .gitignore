@@ -14,7 +14,7 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# Local HTML drafts and UX references (conclusions live in docs/).
+# Локальные HTML-черновики и UX-референсы (выводы — в docs/).
 test/
 приеры страниц partiful/
 scripts/test-email-token.json

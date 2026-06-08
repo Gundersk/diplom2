@@ -1,3 +1,7 @@
+/**
+ * Разовая починка прав organizer/owner на событиях и связанных документах Appwrite.
+ * Нужна после миграции гостя в профиль или смены organizerId.
+ */
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { Client, Databases, Permission, Role, Query } from 'node-appwrite'

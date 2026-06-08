@@ -1,1 +1,16 @@
+# Event Gallery — частые команды
+
+# Запуск dev-сервера (порт 5180, см. vite.config.ts)
 npm run dev -- --port 5180
+
+# Сборка для продакшена
+npm run build
+
+# Просмотр production-сборки
+npm run preview
+
+# Создание коллекций и бакета Appwrite (нужен .env.setup)
+npm run setup:appwrite
+
+# Починка прав organizer/owner после миграции гостя в профиль
+npm run repair:organizer

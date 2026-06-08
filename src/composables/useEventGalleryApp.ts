@@ -9,7 +9,6 @@ import { participantService } from '../services/participantService'
 import { photoService } from '../services/photoService'
 import { rsvpService } from '../services/rsvpService'
 import {
-  ACTIVE_AUTOMATIC_TEMPLATE_IDS,
   isSupportedAutomaticTemplateId,
   processAutomaticAchievementsForEvent,
 } from '../services/automaticAchievementService'
@@ -35,7 +34,6 @@ import {
 import {
   clampTextLength,
   EVENT_TITLE_MAX_LENGTH,
-  isValidEventTitle,
   isValidUserName,
   USER_NAME_MAX_LENGTH,
 } from '../utils/textLimits'
@@ -50,9 +48,7 @@ import type {
 import type {
   AssetOption,
   BackgroundMediaType,
-  CreateEventForm,
   EventInfoBlock,
-  EventInfoBlockType,
   EventPaymentInfo,
   EventTab,
   EventTextThemeSetting,
@@ -61,7 +57,6 @@ import type {
   HomeNotification,
   RsvpChoice,
   RsvpStatus,
-  TimezoneOption,
 } from '../types/event'
 import type { EventParticipant } from '../types/participant'
 import type { GalleryPhoto } from '../types/photo'
@@ -69,6 +64,18 @@ import type { EventChatMessage } from '../types/chat'
 import type { EventRsvpEntry } from '../types/rsvp'
 import type { CurrentUser } from '../types/user'
 import { useInviteFlow } from './useInviteFlow'
+import { buildEmptyCreateEventForm, useCreateEventForm } from './useCreateEventForm'
+import {
+  eventTextThemeOptions,
+  formatTimezoneLabel,
+  getInfoBlockTypeLabel,
+  quickInfoOptions,
+  rsvpStyleOptions,
+  russianTimezoneOptions,
+  softBackgroundColors,
+  titleStyleOptions,
+} from '../data/createEventFormOptions'
+import { padNumber } from '../utils/createEventDateTime'
 import {
   clearEventNavigationFromUrl,
   readEventIdFromLocation,
@@ -76,6 +83,11 @@ import {
   syncEventUrlInLocation,
 } from '../utils/eventInviteNavigation'
 
+/**
+ * Главный composable приложения Event Gallery.
+ * Собирает auth, home, создание события, страницу события, фото, RSVP, чат и достижения.
+ * Режим данных (local / appwrite) определяется в services/adapters/dataMode.ts.
+ */
 export function useEventGalleryApp() {
 type AuthMode = 'guest' | 'profile'
 type ViewMode = 'home' | 'create' | 'preview' | 'event'
@@ -147,38 +159,6 @@ const notifications = ref<HomeNotification[]>([
 
 const achievementTemplates = ref<AchievementTemplate[]>([])
 
-const infoBlockTypeOptions: Array<{ emoji: string; label: string; value: EventInfoBlockType }> = [
-  { value: 'dress-code', label: 'Дресс-код', emoji: '👔' },
-  { value: 'playlist', label: 'Плейлист', emoji: '🎵' },
-  { value: 'bring', label: 'Что взять', emoji: '👜' },
-  { value: 'schedule', label: 'Расписание', emoji: '🕒' },
-  { value: 'payment', label: 'Реквизиты', emoji: '💸' },
-  { value: 'other', label: 'Другое', emoji: '📝' },
-]
-
-const quickInfoOptions = infoBlockTypeOptions.filter((option) =>
-  ['playlist', 'dress-code', 'bring'].includes(option.value),
-)
-
-const rsvpStyleOptions = [
-  { id: 'icons', label: 'Icons', emoji: '👍' },
-  { id: 'bloom', label: 'Bloom', emoji: '🌷' },
-  { id: 'party', label: 'Party', emoji: '🎉' },
-  { id: 'hearts', label: 'Hearts', emoji: '💖' },
-]
-
-const titleStyleOptions = [
-  { id: 'classic', label: 'Classic' },
-  { id: 'eclectic', label: 'Eclectic' },
-  { id: 'fancy', label: 'Fancy' },
-  { id: 'literary', label: 'Literary' },
-]
-
-const eventTextThemeOptions: Array<{ id: 'light' | 'dark'; label: string }> = [
-  { id: 'light', label: 'Светлая' },
-  { id: 'dark', label: 'Тёмная' },
-]
-
 const medalToneOptions = [
   '#ff7a59,#ffd166',
   '#41d3bd,#5b8def',
@@ -186,32 +166,6 @@ const medalToneOptions = [
   '#ff4d6d,#ffffff',
   '#8a5cf6,#ffb703',
   '#151515,#ffffff',
-]
-
-const russianTimezoneOptions: TimezoneOption[] = [
-  { id: 'Europe/Kaliningrad', label: 'Калининград (UTC+2)' },
-  { id: 'Europe/Moscow', label: 'Москва (UTC+3)' },
-  { id: 'Europe/Samara', label: 'Самара (UTC+4)' },
-  { id: 'Asia/Yekaterinburg', label: 'Екатеринбург (UTC+5)' },
-  { id: 'Asia/Omsk', label: 'Омск (UTC+6)' },
-  { id: 'Asia/Krasnoyarsk', label: 'Красноярск (UTC+7)' },
-  { id: 'Asia/Irkutsk', label: 'Иркутск (UTC+8)' },
-  { id: 'Asia/Yakutsk', label: 'Якутск (UTC+9)' },
-  { id: 'Asia/Vladivostok', label: 'Владивосток (UTC+10)' },
-  { id: 'Asia/Sakhalin', label: 'Сахалин (UTC+11)' },
-  { id: 'Asia/Magadan', label: 'Магадан (UTC+11)' },
-  { id: 'Asia/Kamchatka', label: 'Камчатка (UTC+12)' },
-]
-
-const softBackgroundColors = [
-  '#ffd8d8',
-  '#ffdcb8',
-  '#ffe8a8',
-  '#d6f0b4',
-  '#cdeee2',
-  '#d9e8ff',
-  '#e6dcff',
-  '#f6d9f6',
 ]
 
 const emojiPickerOptions = [
@@ -322,6 +276,7 @@ function createAnonymousUserPlaceholder(): CurrentUser {
   }
 }
 
+// --- Пресеты обложек и фонов (src/assets/event-presets) для формы создания ---
 const coverAssetModules = import.meta.glob(
   '../assets/event-presets/covers/**/*.{png,jpg,jpeg,jfif,avif,webp,gif}',
   {
@@ -360,6 +315,39 @@ const coverAssetOptions = buildAssetOptions(coverAssetModules)
 const backgroundAssetOptions = buildAssetOptions(backgroundAssetModules, (path) =>
   path.endsWith('.mp4') || path.endsWith('.webm') ? 'video' : 'image',
 )
+
+function getCreateFormAssetDefaults() {
+  return {
+    coverAssetId: coverAssetOptions[0]?.id ?? '',
+    backgroundAssetId: backgroundAssetOptions[0]?.id ?? '',
+    backgroundMediaType: getAssetBackgroundMediaType(backgroundAssetOptions[0]),
+  }
+}
+
+function createEmptyEventForm() {
+  return buildEmptyCreateEventForm(currentUser.name, getCreateFormAssetDefaults())
+}
+
+const {
+  createEventForm,
+  backgroundColorHue,
+  resetForm: resetCreateEventForm,
+  enforceCreateDateTimeRules,
+  applyBackgroundColor,
+  updateBackgroundFromHue,
+  setCreatePaymentEnabled,
+  hourOptions,
+  minuteOptions,
+  availableEndHours,
+  availableEndMinutes,
+  startDateTime,
+  endDateTime,
+  endBeforeStart,
+  canSaveEvent,
+} = useCreateEventForm({
+  getHostAlias: () => currentUser.name,
+  getAssetDefaults: getCreateFormAssetDefaults,
+})
 
 function createId(prefix: string) {
   return `${prefix}-${Math.random().toString(36).slice(2, 8)}-${Date.now().toString(36)}`
@@ -631,6 +619,7 @@ async function syncPastEventAutomaticAchievements() {
   }
 }
 
+// --- Первичная загрузка после входа: события, шаблоны достижений, автонаграды ---
 async function loadInitialAppData() {
   await loadHomeEvents()
   await syncAllEventPhotosFromService()
@@ -700,10 +689,6 @@ async function copyInviteLink(event: GalleryEvent) {
   ]
 }
 
-function padNumber(value: number) {
-  return String(value).padStart(2, '0')
-}
-
 function toDateParts(value: string) {
   const date = new Date(value)
   return {
@@ -711,85 +696,6 @@ function toDateParts(value: string) {
     hour: padNumber(date.getHours()),
     minute: padNumber(date.getMinutes()),
   }
-}
-
-function buildDateTimeFromParts(date: string, hour: string, minute: string) {
-  return `${date}T${hour}:${minute}`
-}
-
-function formatTimezoneLabel(timezoneId: string) {
-  return (
-    russianTimezoneOptions.find((option) => option.id === timezoneId)?.label ??
-    russianTimezoneOptions[3].label
-  )
-}
-
-function hslToHex(hue: number, saturation: number, lightness: number) {
-  const sat = saturation / 100
-  const light = lightness / 100
-  const chroma = sat * Math.min(light, 1 - light)
-  const channel = (offset: number) => {
-    const segment = (offset + hue / 30) % 12
-    const color = light - chroma * Math.max(Math.min(segment - 3, 9 - segment, 1), -1)
-    return Math.round(255 * color)
-      .toString(16)
-      .padStart(2, '0')
-  }
-
-  return `#${channel(0)}${channel(8)}${channel(4)}`
-}
-
-function hexToHsl(hex: string) {
-  const normalized = hex.replace('#', '')
-  const source =
-    normalized.length === 3
-      ? normalized
-          .split('')
-          .map((item) => item + item)
-          .join('')
-      : normalized
-  const red = Number.parseInt(source.slice(0, 2), 16) / 255
-  const green = Number.parseInt(source.slice(2, 4), 16) / 255
-  const blue = Number.parseInt(source.slice(4, 6), 16) / 255
-  const max = Math.max(red, green, blue)
-  const min = Math.min(red, green, blue)
-  const delta = max - min
-  let hue = 0
-  const lightness = (max + min) / 2
-  const saturation =
-    delta === 0 ? 0 : delta / (1 - Math.abs(2 * lightness - 1))
-
-  if (delta !== 0) {
-    switch (max) {
-      case red:
-        hue = ((green - blue) / delta) % 6
-        break
-      case green:
-        hue = (blue - red) / delta + 2
-        break
-      default:
-        hue = (red - green) / delta + 4
-        break
-    }
-    hue *= 60
-    if (hue < 0) hue += 360
-  }
-
-  return {
-    h: Math.round(hue),
-    s: Math.round(saturation * 100),
-    l: Math.round(lightness * 100),
-  }
-}
-
-function applyBackgroundColor(color: string) {
-  createEventForm.value.backgroundColor = color
-  const hsl = hexToHsl(color)
-  backgroundColorHue.value = hsl.h
-}
-
-function updateBackgroundFromHue() {
-  createEventForm.value.backgroundColor = hslToHex(backgroundColorHue.value, 68, 88)
 }
 
 function onEmojiPickerSelect(event: Event) {
@@ -806,59 +712,6 @@ function createEmptyInfoBlock(): EventInfoBlock {
     title: '',
     description: '',
     link: '',
-  }
-}
-
-function createDefaultEndParts(startDate: string, startHour: string, startMinute: string) {
-  const endDate = new Date(`${startDate}T${startHour}:${startMinute}:00`)
-  endDate.setHours(endDate.getHours() + 4)
-
-  return {
-    date: getLocalDateString(endDate),
-    hour: padNumber(endDate.getHours()),
-    minute: padNumber(endDate.getMinutes()),
-  }
-}
-
-function createEmptyEventForm(): CreateEventForm {
-  const now = getNowParts()
-  const endDefault = createDefaultEndParts(now.date, now.hour, now.minute)
-  return {
-    title: '',
-    titleStyle: titleStyleOptions[0].id,
-    description: '',
-    startDate: now.date,
-    startHour: now.hour,
-    startMinute: now.minute,
-    endDate: endDefault.date,
-    endHour: endDefault.hour,
-    endMinute: endDefault.minute,
-    timezone: 'Asia/Yekaterinburg',
-    hostAlias: currentUser.name,
-    location: '',
-    participantLimit: '',
-    paymentEnabled: false,
-    costPerPerson: '',
-    coverAssetId: coverAssetOptions[0]?.id ?? '',
-    backgroundAssetId: backgroundAssetOptions[0]?.id ?? '',
-    backgroundMode: 'asset',
-    backgroundMediaType: getAssetBackgroundMediaType(backgroundAssetOptions[0]),
-    backgroundColor: softBackgroundColors[0],
-    textTheme: 'light',
-    uploadedCoverUrl: null,
-    uploadedBackgroundUrl: null,
-    infoBlocks: [],
-    paymentDestination: '',
-    paymentComment: '',
-    allowGuestInvites: false,
-    rsvpStyle: rsvpStyleOptions[2]?.id ?? rsvpStyleOptions[0].id,
-    automaticExpanded: false,
-    personalExpanded: false,
-    groupExpanded: false,
-    automaticTemplateIds: [...ACTIVE_AUTOMATIC_TEMPLATE_IDS],
-    selectedPersonalTemplateIds: [],
-    selectedGroupTemplateIds: [],
-    templateVisibility: {},
   }
 }
 
@@ -1172,77 +1025,10 @@ const coverSearchQuery = ref('')
 const uploadedCoverFile = ref<File | null>(null)
 const uploadedBackgroundFile = ref<File | null>(null)
 const emojiPickerOpen = ref(false)
-const backgroundColorHue = ref(28)
 const createAchievementPopover = ref<string | null>(null)
 const createAchievementPopoverAnchor = ref<DOMRect | null>(null)
 let createAchievementPopoverListenersAttached = false
-const createEventForm = ref<CreateEventForm>(createEmptyEventForm())
 const medalForm = ref<MedalForm>(createEmptyMedalForm())
-
-const hourOptions = Array.from({ length: 24 }, (_, index) => padNumber(index))
-const minuteOptions = Array.from({ length: 60 }, (_, index) => padNumber(index))
-
-function getLocalDateString(date = new Date()) {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
-
-function getNowParts() {
-  const now = new Date()
-  return {
-    date: getLocalDateString(now),
-    hour: padNumber(now.getHours()),
-    minute: padNumber(now.getMinutes()),
-  }
-}
-
-function filterHoursFrom(minHour: string) {
-  return hourOptions.filter((hour) => Number(hour) >= Number(minHour))
-}
-
-function filterMinutesFrom(minMinute: string) {
-  return minuteOptions.filter((minute) => Number(minute) >= Number(minMinute))
-}
-
-function clampEndDateTime() {
-  if (!createEventForm.value.startDate || !createEventForm.value.endDate) return
-
-  if (createEventForm.value.endDate < createEventForm.value.startDate) {
-    createEventForm.value.endDate = createEventForm.value.startDate
-  }
-
-  if (createEventForm.value.endDate === createEventForm.value.startDate) {
-    if (Number(createEventForm.value.endHour) < Number(createEventForm.value.startHour)) {
-      createEventForm.value.endHour = createEventForm.value.startHour
-    }
-    if (
-      createEventForm.value.endHour === createEventForm.value.startHour &&
-      Number(createEventForm.value.endMinute) < Number(createEventForm.value.startMinute)
-    ) {
-      createEventForm.value.endMinute = createEventForm.value.startMinute
-    }
-  }
-}
-
-function enforceCreateDateTimeRules() {
-  clampEndDateTime()
-}
-
-const availableEndHours = computed(() => {
-  if (!createEventForm.value.endDate) return hourOptions
-  if (createEventForm.value.endDate > createEventForm.value.startDate) return hourOptions
-  return filterHoursFrom(createEventForm.value.startHour)
-})
-
-const availableEndMinutes = computed(() => {
-  if (!createEventForm.value.endDate || createEventForm.value.endDate > createEventForm.value.startDate) {
-    return minuteOptions
-  }
-  if (Number(createEventForm.value.endHour) > Number(createEventForm.value.startHour)) return minuteOptions
-  return filterMinutesFrom(createEventForm.value.startMinute)
-})
 
 const visibleEvents = computed(() =>
   [...homeEvents.value]
@@ -1358,57 +1144,6 @@ const selectedBackgroundAsset = computed<AssetOption | null>(() => {
 
 const createResolvedTextTheme = computed(() => resolveEventTextTheme(getEventTextThemeSourceFromForm()))
 
-const startDateTime = computed(() =>
-  buildDateTimeFromParts(
-    createEventForm.value.startDate,
-    createEventForm.value.startHour,
-    createEventForm.value.startMinute,
-  ),
-)
-
-const endDateTime = computed(() =>
-  buildDateTimeFromParts(
-    createEventForm.value.endDate,
-    createEventForm.value.endHour,
-    createEventForm.value.endMinute,
-  ),
-)
-
-const endBeforeStart = computed(
-  () => new Date(endDateTime.value).getTime() < new Date(startDateTime.value).getTime(),
-)
-
-const canSaveEvent = computed(
-  () =>
-    isValidEventTitle(createEventForm.value.title) &&
-    isValidUserName(createEventForm.value.hostAlias || currentUser.name) &&
-    Boolean(createEventForm.value.startDate) &&
-    Boolean(createEventForm.value.endDate) &&
-    !endBeforeStart.value,
-)
-
-watch(
-  () => [
-    createEventForm.value.startDate,
-    createEventForm.value.startHour,
-    createEventForm.value.startMinute,
-  ],
-  () => {
-    clampEndDateTime()
-  },
-)
-
-watch(
-  () => [
-    createEventForm.value.endDate,
-    createEventForm.value.endHour,
-    createEventForm.value.endMinute,
-  ],
-  () => {
-    clampEndDateTime()
-  },
-)
-
 const selectedAutomaticTemplates = computed(() =>
   achievementTemplates.value.filter(
     (template) =>
@@ -1510,19 +1245,6 @@ const previewBackgroundStyle = computed(() => {
 
   return { background: '#f3f0ff' }
 })
-
-const previewDateLabel = computed(() => formatEventDateLabel(startDateTime.value))
-const previewTimezoneLabel = computed(() => formatTimezoneLabel(createEventForm.value.timezone))
-
-function setCreatePaymentEnabled(enabled: boolean) {
-  createEventForm.value.paymentEnabled = enabled
-
-  if (!enabled) {
-    createEventForm.value.costPerPerson = ''
-    createEventForm.value.paymentDestination = ''
-    createEventForm.value.paymentComment = ''
-  }
-}
 
 const selectedCountBySection = computed(() => ({
   automatic: selectedAutomaticTemplates.value.length,
@@ -1628,6 +1350,7 @@ async function requestAuthCode() {
   }
 }
 
+// --- Авторизация: гость, email+код, миграция данных гостя в профиль ---
 async function completeAuth() {
   authError.value = ''
 
@@ -1923,13 +1646,14 @@ async function saveProfileEditor() {
   }
 }
 
+// --- Создание и редактирование события (форма + превью + загрузка обложек) ---
 function openCreateEvent() {
   if (!hasRealAuthenticatedUser()) {
     openAuth('guest')
     return
   }
 
-  createEventForm.value = createEmptyEventForm()
+  resetCreateEventForm()
   clearPendingEventVisualFiles()
   medalForm.value = createEmptyMedalForm()
   applyBackgroundColor(createEventForm.value.backgroundColor)
@@ -1963,7 +1687,7 @@ async function closeCreateEvent() {
   editingEventId.value = null
   coverPickerOpen.value = false
   closeCreateAchievementPopover()
-  createEventForm.value = createEmptyEventForm()
+  resetCreateEventForm()
 
   if (eventIdBeingEdited) {
     await openEventPage(eventIdBeingEdited)
@@ -1989,6 +1713,7 @@ function closeGuestPreview() {
   previewDraftEvent.value = null
 }
 
+// --- Страница события: синхронизация данных, URL, фон просмотрщика ---
 async function openEventPage(eventId: string, eventOverride?: GalleryEvent | null) {
   if (eventOverride) {
     upsertHomeEvent(eventOverride)
@@ -2086,6 +1811,7 @@ watch([currentView, activeEventId], ([view, eventId]) => {
   eventGuestSyncTimer = setInterval(syncGuestData, 8000)
 })
 
+// --- Достижения: шаблоны, выдача, автоматические награды ---
 async function saveCustomMedal() {
   const trimmedTitle = medalForm.value.title.trim()
   const trimmedDescription = medalForm.value.description.trim()
@@ -2303,6 +2029,7 @@ async function refreshEventDataFromServices(eventId: string) {
   return replaceHomeEvent(eventSnapshot)
 }
 
+// --- Старт приложения и deep-link по invite / eventId ---
 const inviteFlow = useInviteFlow({
   currentView,
   activeTab,
@@ -2678,8 +2405,7 @@ async function ensureCurrentParticipant(event: GalleryEvent | null) {
     return null
   }
 
-  // Participant is the access/link between a user and an event.
-  // RSVP is a separate response and must not remove the participant record.
+  // Участник (participant) — связь пользователя с событием; RSVP на неё не влияет.
   const participant = await participantService.joinEventAsParticipant(
     event.id,
     getPreferredParticipantDisplayName(),
@@ -2823,6 +2549,7 @@ function canShowEventInvite(event: GalleryEvent | null | undefined) {
   return Boolean(event.allowGuestInvites) || isCurrentUserOrganizer(event)
 }
 
+// --- Чат события и вложения-фото в сообщениях ---
 async function sendEventChatMessage() {
   const event = activeEvent.value
   const text = eventChatDraft.value.trim()
@@ -3501,7 +3228,7 @@ function getRsvpSummary(event: GalleryEvent) {
 
 function getInfoBlockLabel(block: EventInfoBlock) {
   if (block.type === 'other') return block.title.trim() || 'Другое'
-  return infoBlockTypeOptions.find((option) => option.value === block.type)?.label ?? block.title
+  return getInfoBlockTypeLabel(block.type, block.title)
 }
 
 function hasEventPayment(event: GalleryEvent | null | undefined) {
@@ -3558,6 +3285,7 @@ function closeRsvpSheet() {
   rsvpSheetMessage.value = ''
 }
 
+// --- RSVP: ответ гостя, лимит мест, синхронизация с participant ---
 async function submitRsvpResponse() {
   const event = activeEvent.value
   const status = rsvpSheetStatus.value

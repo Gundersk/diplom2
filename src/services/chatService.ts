@@ -1,3 +1,8 @@
+/**
+ * Чат события: текстовые сообщения и опциональная привязка photoId.
+ * Local: localStorage + миграция из event.chatMessages; Appwrite: коллекция chat_messages.
+ * syncAuthorProfileForUser обновляет authorName/avatar во всех сообщениях пользователя.
+ */
 import type { Models } from 'appwrite'
 import { Permission, Role } from 'appwrite'
 import { APPWRITE_COLLECTIONS, APPWRITE_DATABASE_ID } from '../config/appwriteSchema'
@@ -10,6 +15,7 @@ import { resolveAvatarViewUrl } from '../utils/avatarUrl'
 import { sanitizePersistableUrl } from '../utils/persistableUrl'
 import { eventService } from './eventService'
 
+// --- LocalStorage ---
 const CHAT_STORAGE_KEY = 'event-gallery:chat-messages'
 
 type ChatMessageDocument = Models.Document & {
@@ -84,6 +90,7 @@ function normalizeChatDocument(document: ChatMessageDocument): EventChatMessage 
   })
 }
 
+// --- Миграция сообщений из вложенного event.chatMessages (legacy) ---
 async function migrateEventMessagesIfNeeded(eventId: string) {
   const stored = readStoredMessages()
   const existing = stored.filter((message) => message.eventId === eventId)

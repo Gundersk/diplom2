@@ -1,3 +1,6 @@
+/**
+ * Типы достижений события: шаблоны, настройки на событии и факты выдачи участникам.
+ */
 export type AchievementScope = 'automatic' | 'personal' | 'group'
 export type AchievementMode = 'automatic' | 'manual'
 export type AchievementVisibility = 'visible' | 'hint' | 'hidden'
@@ -42,6 +45,7 @@ export type AchievementTemplate = {
   isSystem?: boolean
 }
 
+/** Состояние формы создания/редактирования персональной или групповой медали. */
 export type MedalForm = {
   title: string
   description: string

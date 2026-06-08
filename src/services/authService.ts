@@ -1,3 +1,8 @@
+/**
+ * Аутентификация и профиль пользователя Event Gallery.
+ * Режимы: demo (локальный), guest (аноним Appwrite / local), profile (email OTP).
+ * При апгрейде гостя → профиль вызывает guestMergeService и миграции savedPhoto/achievements/events.
+ */
 import { Permission, Role, type Models } from 'appwrite'
 import { APPWRITE_COLLECTIONS, APPWRITE_DATABASE_ID } from '../config/appwriteSchema'
 import { hasAppwriteAuthConfig, runtimeConfig } from '../config/runtime'
@@ -16,6 +21,7 @@ import {
 } from './guestMergeService'
 import { savedPhotoService } from './savedPhotoService'
 
+// --- Ключи localStorage и константы OTP ---
 const CURRENT_USER_STORAGE_KEY = 'event-gallery:current-user'
 const EMAIL_CODE_STORAGE_KEY = 'event-gallery:email-codes'
 const PENDING_EMAIL_LOGIN_STORAGE_KEY = 'event-gallery:pending-email-login'
@@ -51,6 +57,7 @@ export { isPersistableUrl, sanitizePersistableUrl }
 
 let hasWarnedAboutProfiles = false
 
+// --- Локальный кэш текущего пользователя и OTP-состояния ---
 function canUseLocalStorage() {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined'
 }
@@ -150,6 +157,7 @@ function clearPendingEmailLogin() {
   window.localStorage.removeItem(PENDING_EMAIL_LOGIN_STORAGE_KEY)
 }
 
+// --- Appwrite: сессии, OTP по email, коллекция profiles ---
 function getAppwriteErrorCode(error: unknown) {
   if (!(error instanceof Error)) return undefined
   return (error as Error & { code?: number | string }).code
@@ -326,7 +334,7 @@ async function createAppwriteEmailTokenStateless(email: string, userId?: string)
     try {
       payload = await response.json()
     } catch {
-      // ignore parse errors
+      // ошибка разбора JSON ответа — используем пустой payload
     }
 
     const error = new Error(payload.message || 'Не удалось запросить код.') as Error & {
@@ -612,6 +620,7 @@ async function getAppwriteCurrentUser() {
   return currentUser
 }
 
+// --- Local mode: фиксированный код 000000 для демо-защиты ---
 function requestEmailCodeLocal(email: string) {
   const normalizedEmail = email.trim().toLowerCase()
   if (!normalizedEmail) {
@@ -742,6 +751,7 @@ async function requestEmailCodeAppwrite(email: string): Promise<EmailCodeDeliver
   }
 }
 
+// --- После входа в профиль: миграция данных всех известных guest userId ---
 async function reconcileHistoricalGuestAssets(profileUserId: string, currentGuestUserId?: string) {
   const guestIds = new Set(getMergedGuestIdsForProfile(profileUserId))
   if (currentGuestUserId) {
@@ -958,6 +968,7 @@ async function updateCurrentUserProfileAppwrite(payload: {
   return nextUser
 }
 
+// --- Публичный API: единая точка входа для composables и UI ---
 export const authService = {
   async getCurrentUser(): Promise<CurrentUser | null> {
     return isAppwriteMode() ? getAppwriteCurrentUser() : readCurrentUser()

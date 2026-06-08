@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// Модальное окно входа: гостевой режим или авторизация по email с кодом.
 import { useEventGallery } from '../composables/eventGalleryContext'
 
 const app = useEventGallery()

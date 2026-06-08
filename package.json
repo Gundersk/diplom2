@@ -1,6 +1,7 @@
 {
   "name": "event-gallery-diploma",
   "version": "0.1.0",
+  "description": "Дипломный проект: веб-галерея событий с фотоальбомами, RSVP и достижениями (Vue 3 + Appwrite/local).",
   "private": true,
   "type": "module",
   "scripts": {

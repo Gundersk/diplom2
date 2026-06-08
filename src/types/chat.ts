@@ -1,3 +1,6 @@
+/**
+ * Сообщения чата события и нормализация отображаемых полей автора.
+ */
 export type EventChatMessage = {
   id: string
   eventId?: string

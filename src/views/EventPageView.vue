@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// Страница события: детали, RSVP, альбом, чат и достижения (или preview для организатора).
 import { useEventGallery } from '../composables/eventGalleryContext'
 
 const app = useEventGallery()

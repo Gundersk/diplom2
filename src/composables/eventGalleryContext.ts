@@ -1,3 +1,7 @@
+/**
+ * Provide/inject для состояния приложения.
+ * Дочерние view и компоненты получают app через useEventGallery() без prop drilling.
+ */
 import type { InjectionKey } from 'vue'
 import { inject, provide } from 'vue'
 import type { useEventGalleryApp } from './useEventGalleryApp'
@@ -13,7 +17,7 @@ export function provideEventGalleryApp(app: EventGalleryApp) {
 export function useEventGallery() {
   const app = inject(eventGalleryAppKey)
   if (!app) {
-    throw new Error('Event Gallery app context is missing')
+    throw new Error('Контекст Event Gallery не найден — компонент вне App.vue')
   }
   return app
 }

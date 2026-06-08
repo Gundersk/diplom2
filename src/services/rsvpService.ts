@@ -1,3 +1,8 @@
+/**
+ * RSVP гостей: статус going/maybe/not_going, лимит участников, сообщение организатору.
+ * Local: localStorage + миграция из event.guestRsvps; Appwrite: коллекция rsvps.
+ * При слиянии гостя в профиль ищет RSVP по merged guest userId.
+ */
 import type { Models } from 'appwrite'
 import { Permission, Role } from 'appwrite'
 import { APPWRITE_COLLECTIONS, APPWRITE_DATABASE_ID } from '../config/appwriteSchema'
@@ -14,6 +19,7 @@ import { authService } from './authService'
 import { isAppwriteMode } from './adapters/dataMode'
 import { eventService } from './eventService'
 
+// --- LocalStorage и миграция legacy RSVP из объекта события ---
 const RSVP_STORAGE_KEY = 'event-gallery:rsvps'
 
 type RsvpDocument = Models.Document & {
@@ -164,6 +170,7 @@ async function findRsvpDocumentByUser(eventId: string, userId: string) {
   return response.documents[0] ?? null
 }
 
+// --- Appwrite: поиск RSVP с учётом merged guest ids ---
 async function findRsvpDocumentForCurrentUser(eventId: string, userId: string) {
   const directMatch = await findRsvpDocumentByUser(eventId, userId)
   if (directMatch) {

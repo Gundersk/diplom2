@@ -1,6 +1,8 @@
 ﻿# Журнал разработки Event Gallery
 
-Этот файл нужен для дипломной защиты: здесь фиксируются важные действия по проекту, архитектурные решения, созданные файлы и команды, которыми можно повторить работу вручную.
+Этот файл — шпаргалка для дипломной защиты: шаги, архитектура, изменённые файлы и команды для повторения.
+
+Записи до мая 2026 могут содержать английские заголовки (`Goal`, `Next step`) — смысл тот же, что у русских блоков ниже. Новые записи ведём на русском.
 
 Правило ведения журнала:
 
@@ -1185,7 +1187,7 @@ npm run build
 
 ## Step 14 - 2026-05-20
 
-### Goal
+### Цель
 
 Continue MVP auth work without connecting Appwrite yet:
 - separate `demo user`, `guest user`, and `profile user`;
@@ -1194,7 +1196,7 @@ Continue MVP auth work without connecting Appwrite yet:
 - make profile name and avatar editable through the existing UI;
 - keep account name separate from event participant name.
 
-### What was added
+### Что добавлено
 
 1. `authService` was cleaned up and extended:
    - `CurrentUser.mode` now supports `demo | guest | profile`;
@@ -1234,23 +1236,23 @@ Continue MVP auth work without connecting Appwrite yet:
 - Avatar storage is temporary MVP logic for frontend verification only.
 - This step prepares the UI and service layer so `authService` can later be replaced with an Appwrite adapter without rewriting the screens.
 
-### Verification
+### Проверка
 
 ```bash
 npm run build
 ```
 
-### Next step
+### Следующий шаг
 
 Extract auth/profile UI into smaller components or start building an Appwrite-backed adapter for `authService` and avatar storage one layer at a time.
 
 ## Step 15 - 2026-05-20
 
-### Goal
+### Цель
 
 Extract event photo operations into a separate `photoService` while keeping the current UI and mock/localStorage mode intact.
 
-### What was added
+### Что добавлено
 
 1. Created `src/services/photoService.ts`.
 2. Added a dedicated photo storage layer on top of `localStorage` with key `event-gallery:photos`.
@@ -1290,23 +1292,23 @@ Extract event photo operations into a separate `photoService` while keeping the 
 - `storageFileId` is kept optional for a later Appwrite Storage adapter.
 - This makes `photoService` the next clean candidate for backend replacement without rewriting the screens.
 
-### Verification
+### Проверка
 
 ```bash
 npm run build
 ```
 
-### Next step
+### Следующий шаг
 
 Either extract `achievementService`, or prepare an Appwrite adapter for `photoService` so uploaded images can move from `localStorage` to Storage + Database metadata.
 
 ## Step 16 - 2026-05-20
 
-### Goal
+### Цель
 
 Extract achievements into a dedicated `achievementService` while keeping the current create-event and home UI visually unchanged.
 
-### What was added
+### Что добавлено
 
 1. Created `src/services/achievementService.ts`.
 2. Added a separate localStorage-based data layer for:
@@ -1345,22 +1347,22 @@ Extract achievements into a dedicated `achievementService` while keeping the cur
 - The UI keeps the same achievement behavior: selected pills on top, available cards below, custom medal builder, remove via cross, and description popovers.
 - The data model is now much closer to a future Appwrite Database structure.
 
-### Verification
+### Проверка
 
 ```bash
 npm run build
 ```
 
-### Next step
+### Следующий шаг
 
 Either extract RSVP/chat into dedicated services too, or start preparing Appwrite adapters for `achievementService` and `photoService` one layer at a time.
 ## Step 17 - 2026-05-21
 
-### Goal
+### Цель
 
 Extract RSVP and event chat into dedicated services without changing the current UI behavior.
 
-### What was added
+### Что добавлено
 
 1. Created `src/types/rsvp.ts`.
 2. Created `src/types/chat.ts`.
@@ -1397,23 +1399,23 @@ Extract RSVP and event chat into dedicated services without changing the current
 - The UI keeps the same RSVP and chat behavior, but the data flow is now separated from the visual layer.
 - This makes RSVP and chat ready for a future Appwrite adapter one service at a time.
 
-### Verification
+### Проверка
 
 ```bash
 npm run build
 ```
 
-### Next step
+### Следующий шаг
 
 Prepare Appwrite adapters for `authService`, `eventService`, `participantService`, `photoService`, `achievementService`, `rsvpService`, and `chatService` one layer at a time, or extract any remaining direct UI data mutations into their own services first.
 
 ## Step 18 - 2026-05-21
 
-### Goal
+### Цель
 
 Prepare the runtime infrastructure for future Appwrite integration without switching the current services away from localStorage.
 
-### What was added
+### Что добавлено
 
 1. Created `src/config/runtime.ts`.
 2. Added `DataMode = 'local' | 'appwrite'`.
@@ -1465,24 +1467,24 @@ Prepare the runtime infrastructure for future Appwrite integration without switc
 - Missing Appwrite env values do not crash the app at import time.
 - This keeps the UI stable while making the project ready for gradual backend migration.
 
-### Verification
+### Проверка
 
 ```bash
 npm install
 npm run build
 ```
 
-### Next step
+### Следующий шаг
 
 Start connecting Appwrite one service at a time, most likely beginning with `authService` or `eventService`, while keeping `VITE_DATA_MODE=local` as the fallback development path.
 
 ## Step 19 - 2026-05-21
 
-### Goal
+### Цель
 
 Prepare an economical personal-gallery model where photos are stored once and personal saves are represented only as links.
 
-### What was added
+### Что добавлено
 
 1. Created `src/types/savedPhoto.ts`.
 2. Created `src/types/eventPhoto.ts`.
@@ -1527,23 +1529,23 @@ Prepare an economical personal-gallery model where photos are stored once and pe
   - `photo_likes`
 - Physical file deletion must happen only when a photo has no references from either `event_photos` or `saved_photos`.
 
-### Verification
+### Проверка
 
 ```bash
 npm run build
 ```
 
-### Next step
+### Следующий шаг
 
 Either extract photo likes into a dedicated `photoLikeService`, or start the first real Appwrite adapter for the photo stack using `photos`, `event_photos`, and `saved_photos`.
 
 ## Step 20 - 2026-05-21
 
-### Goal
+### Цель
 
 Replace photo-like emphasis in the MVP with photo comments, while keeping the current UI style and localStorage mode intact.
 
-### What was added
+### Что добавлено
 
 1. Accepted the product decision not to develop likes as an MVP mechanic.
 2. Added `src/types/photoComment.ts`.
@@ -1587,13 +1589,13 @@ Replace photo-like emphasis in the MVP with photo comments, while keeping the cu
 - Comments are stored separately and linked by `photoId + eventId`.
 - Personal gallery does not duplicate files and does not duplicate comments.
 
-### Verification
+### Проверка
 
 ```bash
 npm run build
 ```
 
-### Next step
+### Следующий шаг
 
 Either prepare the Appwrite collection schema for `photos`, `event_photos`, `saved_photos`, and `photo_comments`, or start the first real Appwrite adapter for the photo stack.
 
@@ -1601,7 +1603,7 @@ Either prepare the Appwrite collection schema for `photos`, `event_photos`, `sav
 
 ## 2026-05-21 - Appwrite schema plan
 
-### What changed
+### Что изменено
 
 1. Added a dedicated Appwrite schema plan doc with collections + Storage bucket, including indexes and access rules.
 2. Documented the "single physical photo file" rule:
@@ -1626,7 +1628,7 @@ Either prepare the Appwrite collection schema for `photos`, `event_photos`, `sav
 
 ## 2026-05-21 - First Appwrite adapter for events and participants
 
-### What changed
+### Что изменено
 
 1. Added the first real Appwrite adapter branch for `eventService`.
 2. Added the first real Appwrite adapter branch for `participantService`.
@@ -1659,20 +1661,20 @@ Either prepare the Appwrite collection schema for `photos`, `event_photos`, `sav
 - `photoService`, `savedPhotoService`, `photoCommentService`, `achievementService`, `rsvpService`, and `chatService` remain localStorage-based.
 - The UI was not redesigned; only the data access layer and minimal async loading paths were updated.
 
-### Verification
+### Проверка
 
 ```bash
 npm run build
 ```
 
-### Next step
+### Следующий шаг
 
 Start the next Appwrite adapter layer for either `authService` or the `photoService` stack (`photos`, `event_photos`, `saved_photos`, `photo_comments`).
 ---
 
 ## 2026-05-21 - Appwrite auth adapter
 
-### What changed
+### Что изменено
 
 1. Added the first Appwrite Auth adapter branch to `authService`.
 2. Guest login in `VITE_DATA_MODE=appwrite` now creates a real Appwrite anonymous session.
@@ -1696,13 +1698,13 @@ Start the next Appwrite adapter layer for either `authService` or the `photoServ
 - Real Appwrite Email OTP / SMTP is not connected yet.
 - `photoService`, `savedPhotoService`, `photoCommentService`, `achievementService`, `rsvpService`, and `chatService` remain localStorage-based.
 
-### Verification
+### Проверка
 
 ```bash
 npm run build
 ```
 
-### Next step
+### Следующий шаг
 
 Connect a real Appwrite Email OTP flow for `authService`, or start the Appwrite adapter for the photo stack once the `profiles` collection is ready.
 
@@ -1710,7 +1712,7 @@ Connect a real Appwrite Email OTP flow for `authService`, or start the Appwrite 
 
 ## 2026-05-21 - Invite flow for first multi-user scenario
 
-### What changed
+### Что изменено
 
 1. Added stable `inviteCode` generation and lookup for events.
 2. Added `getEventByInviteCode()` to `eventService` for both local and appwrite modes.
@@ -1732,13 +1734,13 @@ Connect a real Appwrite Email OTP flow for `authService`, or start the Appwrite 
 - In appwrite mode, another anonymous guest can now open the invite link and become a participant of the same event.
 - Photos, comments, achievements, RSVP, and chat still remain on localStorage for now.
 
-### Verification
+### Проверка
 
 ```bash
 npm run build
 ```
 
-### Next step
+### Следующий шаг
 
 Move the next shared event actions to Appwrite one by one, most likely RSVP/chat or the photo stack after Storage collections are ready.
 
@@ -1746,7 +1748,7 @@ Move the next shared event actions to Appwrite one by one, most likely RSVP/chat
 
 ## 2026-05-21 - Local Appwrite schema setup script
 
-### What changed
+### Что изменено
 
 1. Added a dedicated `scripts/setup-appwrite-schema.ts` bootstrap script for local Appwrite.
 2. Added `.env.setup.example` and ignored `.env.setup` in git so the API key stays local.
@@ -1775,13 +1777,13 @@ Move the next shared event actions to Appwrite one by one, most likely RSVP/chat
 - UI and frontend service wiring were not changed.
 - `photoService`, `savedPhotoService`, `photoCommentService`, `achievementService`, `rsvpService`, and `chatService` still remain localStorage-based.
 
-### Verification
+### Проверка
 
 ```bash
 npm run build
 ```
 
-### Next step
+### Следующий шаг
 
 Run `npm run setup:appwrite` after filling `.env.setup`, then verify the generated collections in Appwrite Console before moving the next data services to Appwrite.
 
@@ -1789,7 +1791,7 @@ Run `npm run setup:appwrite` after filling `.env.setup`, then verify the generat
 
 ## 2026-05-21 - Appwrite setup script fix for index order
 
-### What changed
+### Что изменено
 
 1. Fixed index creation in `scripts/setup-appwrite-schema.ts` to use `ASC` / `DESC` order values instead of lowercase variants.
 2. Added recovery logic for indexes stuck in `failed` or `stuck` status:
@@ -1811,13 +1813,13 @@ Run `npm run setup:appwrite` after filling `.env.setup`, then verify the generat
 - The warning about SDK `1.9.5` vs server `1.9.0` is treated as a patch-level mismatch, not as a blocker for the current setup.
 - Upgrading the local Appwrite server to a newer `1.9.x` patch is still recommended when convenient.
 
-### Verification
+### Проверка
 
 ```bash
 npm run build
 ```
 
-### Next step
+### Следующий шаг
 
 Re-run `npm run setup:appwrite` locally and confirm that the recreated `profiles.userId` index becomes `available`.
 
@@ -1825,7 +1827,7 @@ Re-run `npm run setup:appwrite` locally and confirm that the recreated `profiles
 
 ## 2026-05-22 - MP4 background support
 
-### What changed
+### Что изменено
 
 1. Added `backgroundMediaType` to the event model so shared event backgrounds no longer infer video-ness from the URL shape.
 2. Updated `scripts/setup-appwrite-schema.ts`:
@@ -1853,13 +1855,13 @@ Re-run `npm run setup:appwrite` locally and confirm that the recreated `profiles
 - `README.md`
 - `docs/development-log.md`
 
-### Verification
+### Проверка
 
 ```bash
 npm run build
 ```
 
-### Next step
+### Следующий шаг
 
 Run `npm run setup:appwrite` locally, then create/update an event with a bundled or uploaded MP4 background and verify that `backgroundMediaType=video` is saved in `events`.
 
@@ -1867,7 +1869,7 @@ Run `npm run setup:appwrite` locally, then create/update an event with a bundled
 
 ## 2026-05-22 - Bundled background persistence in Appwrite
 
-### What changed
+### Что изменено
 
 1. Added `backgroundUrl` to the persisted `events` shape for Appwrite.
 2. Bundled preset backgrounds are now restored for guests/incognito users without relying on local cache:

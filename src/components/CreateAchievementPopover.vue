@@ -1,8 +1,10 @@
 <script setup lang="ts">
+// Всплывающая панель при создании события: описание медали и настройка видимости.
 import { computed } from 'vue'
 import { useEventGallery } from '../composables/eventGalleryContext'
 
 const app = useEventGallery()
+// Шаблон медали, привязанный к активному popover-ключу в форме создания.
 const popoverTemplate = computed(() => app.createAchievementPopoverTemplate)
 </script>
 

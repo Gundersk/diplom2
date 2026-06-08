@@ -1,3 +1,7 @@
+/**
+ * Локальное хранение бинарных файлов в IndexedDB (офлайн-режим).
+ * Ссылки вида idb://event-gallery/<key> резолвятся в blob: URL с кэшем в памяти.
+ */
 import { isAppwriteMode } from '../services/adapters/dataMode'
 
 export const LOCAL_BLOB_URL_PREFIX = 'idb://event-gallery/'
@@ -156,6 +160,7 @@ function canvasToBlob(canvas: HTMLCanvasElement, type: string, quality: number) 
   })
 }
 
+/** Сжимает изображение до maxDimension; GIF сохраняется без перекодирования. */
 export async function prepareImageBlob(
   file: File,
   options: { maxDimension: number; quality?: number; mimeType?: string },
@@ -255,6 +260,7 @@ export function isPersistableLocalMediaRef(value?: string) {
   return isLocalBlobRef(value) || Boolean(value && !value.startsWith('data:') && !value.startsWith('blob:'))
 }
 
+/** Переносит data: URL из localStorage в IndexedDB (одноразовая миграция). */
 export async function migrateLocalMediaFromLocalStorage() {
   if (isAppwriteMode() || typeof window === 'undefined' || !window.localStorage) {
     return

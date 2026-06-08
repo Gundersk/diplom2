@@ -1,3 +1,8 @@
+/**
+ * CRUD событий и список «домашних» мероприятий пользователя.
+ * Appwrite: коллекция events + кэш UI-состояния (фото, чат, RSVP) в localStorage.
+ * Local: события per-user в localStorage; inviteCode генерируется на клиенте.
+ */
 import type { Models } from 'appwrite'
 import { normalizeGalleryEvent } from '../utils/galleryEvent'
 import { APPWRITE_COLLECTIONS, APPWRITE_DATABASE_ID } from '../config/appwriteSchema'
@@ -15,6 +20,7 @@ import { resolveAvatarViewUrl } from '../utils/avatarUrl'
 import { isMergedGuestUserId, readMergedGuestUserIds } from '../utils/mergedGuestIds'
 import { sanitizePersistableUrl } from '../utils/persistableUrl'
 
+// --- LocalStorage: кэш home-events (с миграцией legacy-ключа) ---
 const HOME_EVENTS_STORAGE_KEY = 'event-gallery.home-events'
 const USER_HOME_EVENTS_PREFIX = 'event-gallery.home-events:'
 const LEGACY_HOME_EVENTS_MIGRATED_KEY = 'event-gallery.home-events:legacy-migrated'
@@ -264,6 +270,7 @@ function readStoredHomeEvents() {
   return readStoredHomeEventsForUser(userId)
 }
 
+// --- Маппинг GalleryEvent ↔ документ Appwrite ---
 function assertAppwriteReady(methodName: string) {
   if (!hasAppwriteRuntimeConfig() || !APPWRITE_DATABASE_ID) {
     const message =
@@ -330,6 +337,7 @@ function getCachedEventUiState(eventId: string) {
   return readStoredHomeEvents()?.find((event) => event.id === eventId) ?? null
 }
 
+// --- Слияние серверного события с локальным кэшем (фото, чат, RSVP, счётчики) ---
 function mergeEventWithCachedUiState(
   baseEvent: GalleryEvent,
   cachedEvent?: GalleryEvent | null,
@@ -478,8 +486,7 @@ function toAppwriteEventPayload(event: GalleryEvent) {
       ? backgroundColor || normalizedEvent.accent
       : normalizedEvent.accent
 
-  // organizerName is intentionally not stored in the events collection.
-  // Organizer display data should come from participants/profiles or cached UI state.
+  // organizerName в коллекцию events не пишем — имя/аватар из participants, profiles или кэша.
   return {
     title: normalizedEvent.title,
     description: normalizedEvent.description ?? '',
@@ -700,6 +707,7 @@ async function getDocumentsByIds(documentIds: string[]) {
   })
 }
 
+// --- Appwrite: загрузка событий по роли organizer + участник + merged guest ids ---
 async function getHomeEventsFromAppwrite() {
   assertAppwriteReady('getHomeEvents')
 
@@ -855,6 +863,7 @@ async function getAppwriteEventByInviteCode(inviteCode: string) {
   return event
 }
 
+// --- Local mode: чтение событий без Appwrite ---
 function getLocalHomeEvents() {
   const userId = readCurrentUserIdSync()
   if (!userId) {

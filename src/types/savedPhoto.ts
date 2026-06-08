@@ -1,3 +1,6 @@
+/**
+ * Запись о фото, сохранённом пользователем в личную коллекцию.
+ */
 export type SavedPhoto = {
   id: string
   userId: string

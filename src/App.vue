@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// Корневой компонент: один composable на всё приложение, переключение экранов по currentView.
 import { useEventGalleryApp } from './composables/useEventGalleryApp'
 import { provideEventGalleryApp } from './composables/eventGalleryContext'
 import AppLoadingScreen from './components/AppLoadingScreen.vue'

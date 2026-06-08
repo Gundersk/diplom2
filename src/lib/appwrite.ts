@@ -1,3 +1,7 @@
+/**
+ * Единая точка инициализации SDK Appwrite.
+ * Клиент настраивается из runtimeConfig; сервисы экспортируются готовыми к использованию.
+ */
 import { Account, Client, Databases, ID, Query, Storage } from 'appwrite'
 import { runtimeConfig } from '../config/runtime'
 

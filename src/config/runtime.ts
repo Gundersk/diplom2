@@ -1,3 +1,7 @@
+/**
+ * Конфигурация окружения из Vite env-переменных.
+ * Определяет режим данных (local / appwrite) и параметры подключения к Appwrite.
+ */
 export type DataMode = 'local' | 'appwrite'
 
 type RuntimeConfig = {

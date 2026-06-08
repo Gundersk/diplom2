@@ -1,3 +1,7 @@
+/**
+ * Синхронизация URL с открытым событием.
+ * Организатору — invite-код (?event=), гостю — id (?eventId=).
+ */
 import type { GalleryEvent } from '../types/event'
 
 export function readInviteCodeFromLocation() {

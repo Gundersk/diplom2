@@ -1,4 +1,6 @@
 <script setup lang="ts">
+// Скрытые file-input: альбом события, вложение в чат и аватар профиля.
+// Refs пробрасываются в контекст, чтобы открывать диалог выбора файла из кода.
 import { useEventGallery } from '../composables/eventGalleryContext'
 
 const app = useEventGallery()

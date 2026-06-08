@@ -1,3 +1,7 @@
+/**
+ * Создание/обновление коллекций и бакетов Appwrite по схеме из docs/appwrite-schema.md.
+ * Запуск: npx tsx scripts/setup-appwrite-schema.ts (нужен .env с ключом API).
+ */
 import { readFile } from 'node:fs/promises'
 import * as path from 'node:path'
 import {

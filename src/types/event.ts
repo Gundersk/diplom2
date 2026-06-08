@@ -1,3 +1,6 @@
+/**
+ * Основные типы события галереи, формы создания и вспомогательные сущности UI.
+ */
 import type { AchievementVisibility, EventAchievement } from './achievement'
 import type { EventChatMessage } from './chat'
 import type { GalleryPhoto } from './photo'
@@ -55,6 +58,7 @@ export type BackgroundMediaType = 'image' | 'gif' | 'video'
 export type EventTextThemeSetting = 'auto' | 'light' | 'dark'
 export type ResolvedEventTextTheme = 'light' | 'dark'
 
+/** Полная модель события для экрана галереи и редактирования. */
 export type GalleryEvent = {
   id: string
   title: string
@@ -107,6 +111,7 @@ export type HomeNotification = {
   time: string
 }
 
+/** Состояние многошаговой формы создания события. */
 export type CreateEventForm = {
   title: string
   titleStyle: string

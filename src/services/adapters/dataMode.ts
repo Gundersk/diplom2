@@ -1,7 +1,9 @@
+/**
+ * Переключатель режима данных Event Gallery (диплом).
+ * VITE_DATA_MODE=local — localStorage + IndexedDB для медиа; appwrite — Appwrite Auth/DB/Storage.
+ * Все сервисы ветвятся через isAppwriteMode() / isLocalMode().
+ */
 import { runtimeConfig } from '../../config/runtime'
-
-// Сейчас все сервисы по умолчанию используют localStorage.
-// Appwrite mode будет подключаться по одному сервису, начиная с authService/eventService/photoService.
 
 export function getDataMode() {
   return runtimeConfig.dataMode

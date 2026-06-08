@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// Форма создания и редактирования события: поля, обложка, фон, RSVP и медали.
 import { useEventGallery } from '../composables/eventGalleryContext'
 
 const app = useEventGallery()

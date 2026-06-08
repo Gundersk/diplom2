@@ -1,7 +1,9 @@
-// TODO: replace localStorage imageUrl with Appwrite Storage fileId.
-// saved is UI-derived. Persistent personal gallery state lives in savedPhotoService.
-// likesCount/likedBy are legacy fallback fields kept for compatibility.
-
+/**
+ * Фотографии общего альбома события (коллекция photos / localStorage).
+ * «Сохранить в личную галерею» — только через savedPhotoService; поле saved здесь — оверлей для UI.
+ * Appwrite: файл в Storage (storageFileId), local: IndexedDB blob refs через localBlobStorage.
+ * Комментарии к фото в UI убраны; legacy-ключ photo-comments чистится при удалении снимка.
+ */
 import type { Models } from 'appwrite'
 import { Permission, Role } from 'appwrite'
 import { APPWRITE_COLLECTIONS, APPWRITE_DATABASE_ID } from '../config/appwriteSchema'
@@ -22,6 +24,7 @@ import {
   saveLocalImageFile,
 } from '../utils/localBlobStorage'
 
+// --- LocalStorage и legacy-комментарии (UI удалён, ключ остаётся для очистки) ---
 const PHOTO_STORAGE_KEY = 'event-gallery:photos'
 const PHOTO_COMMENT_STORAGE_KEY = 'event-gallery:photo-comments'
 
@@ -83,6 +86,7 @@ function assertAppwriteReady(methodName: string) {
   }
 }
 
+// --- Local mode: хранение и нормализация снимков ---
 function readStoredPhotos(): GalleryPhoto[] {
   if (!canUseLocalStorage()) return []
 
@@ -234,6 +238,7 @@ function normalizePhotoDocument(document: PhotoDocument): GalleryPhoto {
   })
 }
 
+// --- Appwrite: документы photos + миграция из вложенного event.photos ---
 async function listPhotoDocuments(eventId: string) {
   const response = await appwriteDatabases.listDocuments<PhotoDocument>(
     APPWRITE_DATABASE_ID,
@@ -313,6 +318,7 @@ function updateStoredPhoto(photoId: string, updater: (photo: GalleryPhoto) => Ga
   return nextPhoto
 }
 
+// --- Оверлей «сохранено» из savedPhotoService (не путать с togglePhotoSaved — legacy local) ---
 async function getSavedPhotosOverlay(userId?: string) {
   if (!userId) {
     return new Set<string>()
@@ -678,8 +684,7 @@ export const photoService = {
   },
 
   async deletePhotoIfUnreferenced(photoId: string): Promise<void> {
-    // TODO Appwrite:
-    // When using Storage, delete the physical file only after both event_photos and saved_photos have no references to photoId.
+    // Удаляем файл Storage только если нет ссылок из альбома события и savedPhotoService.
     await this.cleanupOrphanPhoto(photoId)
   },
 }

@@ -1,3 +1,7 @@
+/**
+ * Проверка URL, пригодных для сохранения в БД или localStorage.
+ * Исключает временные blob:/data: и слишком длинные строки.
+ */
 import { isLocalBlobRef } from './localBlobStorage'
 
 export function isPersistableUrl(value?: string) {

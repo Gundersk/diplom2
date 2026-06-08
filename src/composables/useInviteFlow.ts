@@ -1,3 +1,7 @@
+/**
+ * Вход по ссылке-приглашению (?event=CODE) и восстановление страницы (?eventId=...).
+ * В Appwrite без авторизации сначала открывается диалог входа.
+ */
 import { ref, type Ref } from 'vue'
 import { eventService } from '../services/eventService'
 import type { EventTab, GalleryEvent } from '../types/event'

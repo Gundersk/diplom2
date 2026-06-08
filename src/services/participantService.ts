@@ -1,3 +1,8 @@
+/**
+ * Участники события: роль (organizer/guest), очки, аватар для ленты и чата.
+ * Local: массив в localStorage; Appwrite: коллекция participants с documentSecurity.
+ * syncUserProfileToParticipations — прокидывает смену имени/аватара во все события пользователя.
+ */
 import { Permission, Role, type Models } from 'appwrite'
 import { APPWRITE_COLLECTIONS, APPWRITE_DATABASE_ID } from '../config/appwriteSchema'
 import { hasAppwriteRuntimeConfig } from '../config/runtime'
@@ -11,6 +16,7 @@ import { sanitizePersistableUrl } from '../utils/persistableUrl'
 import { isAppwriteMode } from './adapters/dataMode'
 import { authService } from './authService'
 
+// --- LocalStorage ---
 const PARTICIPANTS_STORAGE_KEY = 'event-gallery:participants'
 
 type ParticipantDocument = Models.Document & {
@@ -101,6 +107,7 @@ function normalizeParticipant(document: ParticipantDocument): EventParticipant {
   }
 }
 
+// --- Appwrite: поиск и нормализация документов ---
 async function findParticipantDocument(eventId: string, userId: string) {
   const response = await appwriteDatabases.listDocuments<ParticipantDocument>(
     APPWRITE_DATABASE_ID,
@@ -570,6 +577,7 @@ export const participantService = {
     persistParticipants(readParticipants().filter((item) => item.userId !== userId))
   },
 
+  // --- Слияние гостя в профиль: клон участия под profileUserId ---
   async cloneParticipationForProfileUser(input: {
     source: EventParticipant
     profileUserId: string

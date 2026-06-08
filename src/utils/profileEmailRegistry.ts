@@ -1,3 +1,7 @@
+/**
+ * Локальный реестр соответствия email → profileUserId.
+ * Нужен для восстановления профиля при повторном входе в офлайн-режиме.
+ */
 const PROFILE_EMAIL_REGISTRY_KEY = 'event-gallery:profile-user-by-email'
 
 function canUseLocalStorage() {

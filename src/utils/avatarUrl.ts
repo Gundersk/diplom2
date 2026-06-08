@@ -1,3 +1,7 @@
+/**
+ * Разрешение URL аватара с учётом режима данных.
+ * В Appwrite — через fileId; локально — blob/data URL или ссылка idb://.
+ */
 import { APPWRITE_BUCKETS } from '../config/appwriteSchema'
 import { appwriteStorage } from '../lib/appwrite'
 import { isAppwriteMode } from '../services/adapters/dataMode'
@@ -22,6 +26,7 @@ export function resolveAvatarViewUrl(avatarUrl?: string, avatarFileId?: string) 
   return sanitizePersistableUrl(avatarUrl) || undefined
 }
 
+/** Добавляет query-параметр v= для сброса кэша браузера после обновления аватара. */
 export function withAvatarCacheToken(url: string, token?: string) {
   if (!token) return url
   if (url.startsWith('blob:') || url.startsWith('data:')) {

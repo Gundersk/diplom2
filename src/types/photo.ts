@@ -1,3 +1,6 @@
+/**
+ * Модель фотографии в галерее события.
+ */
 export type GalleryPhoto = {
   id: string
   eventId?: string
@@ -8,10 +11,10 @@ export type GalleryPhoto = {
   storageFileId?: string
   imageUrl?: string
   caption?: string
-  // likesCount/likedBy are legacy fallback fields. MVP uses photo comments instead of likes.
+  /** Устаревшие поля лайков; в UI не используются, оставлены для совместимости со старыми данными. */
   likesCount?: number
   likedBy?: string[]
-  // saved is UI-derived. Persistent personal gallery state lives in savedPhotoService.
+  /** Флаг «сохранено» в UI; постоянное состояние — в savedPhotoService. */
   saved?: boolean
   badges?: string[]
   createdAt?: string

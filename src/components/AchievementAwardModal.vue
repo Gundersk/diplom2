@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// Модал организатора: выдача или отзыв достижения у выбранных участников.
 import { useEventGallery } from '../composables/eventGalleryContext'
 
 const app = useEventGallery()

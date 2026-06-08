@@ -1,9 +1,13 @@
-// TODO: add Appwrite implementation when VITE_DATA_MODE=appwrite
-
+/**
+ * Личная галерея «сохранённых» фото (связь userId ↔ photoId ↔ eventId).
+ * Пока только localStorage; Appwrite-коллекция saved_photos — в планах.
+ * Миграция: photo.saved из кэша событий + перенос userId при апгрейде гостя в профиль.
+ */
 import { readMergedGuestProfileMap, readMergedGuestUserIds } from '../utils/mergedGuestIds'
 import { eventService } from './eventService'
 import type { SavedPhoto } from '../types/savedPhoto'
 
+// --- LocalStorage: записи SavedPhoto и миграции guest → profile ---
 const SAVED_PHOTO_STORAGE_KEY = 'event-gallery:saved-photos'
 const SAVED_PHOTO_LEGACY_MIGRATION_KEY = 'event-gallery:saved-photos:legacy-migrated'
 
@@ -97,7 +101,7 @@ function migrateMappedGuestSavedPhotos(profileUserId: string) {
     migratedGuestIds.add(guestUserId)
   }
 
-  // Legacy merges recorded before guest->profile map existed.
+  // Слияния до появления карты guest→profile в mergedGuestIds.
   for (const guestUserId of readMergedGuestUserIds()) {
     if (guestUserId === profileUserId || migratedGuestIds.has(guestUserId)) continue
 
@@ -182,6 +186,7 @@ function getSavedPhotoLinksByPhotoId(photoId: string) {
   return readStoredSavedPhotos().filter((entry) => entry.photoId === photoId)
 }
 
+// --- Публичный API: save/unsave/toggle и подсчёт ссылок для cleanupOrphanPhoto ---
 export const savedPhotoService = {
   migrateSavedPhotosUserId(fromUserId: string, toUserId: string) {
     return migrateSavedPhotosUserId(fromUserId, toUserId)

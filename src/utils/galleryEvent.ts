@@ -1,9 +1,15 @@
+/**
+ * Нормализация события галереи перед отображением.
+ * Вычисляет статус (предстоящее / текущее / прошедшее), заполняет значения по умолчанию
+ * и приводит вложенные сущности (фото, чат, RSVP, достижения) к единому виду.
+ */
 import type { EventRole, EventTab, GalleryEvent } from '../types/event'
 import type { EventAchievement } from '../types/achievement'
 import { normalizeChatMessage } from '../types/chat'
 import { normalizeRsvpEntry } from '../types/rsvp'
 import type { EventRsvpEntry } from '../types/rsvp'
 
+/** Определяет тип медиа фона по расширению URL. */
 function inferBackgroundMediaType(source?: string) {
   if (!source) return 'image' as const
 
@@ -11,13 +17,14 @@ function inferBackgroundMediaType(source?: string) {
     return 'video' as const
   }
 
-  if (/\.gif(\?.*)?$/i.test(source)) {
+  if (/\.(gif)(\?.*)?$/i.test(source)) {
     return 'gif' as const
   }
 
   return 'image' as const
 }
 
+/** Соответствие id шаблона достижения и автоматического условия начисления. */
 const automaticById: Record<
   string,
   { conditionType: EventAchievement['conditionType']; mode: EventAchievement['mode'] }
@@ -29,6 +36,7 @@ const automaticById: Record<
   'warm-frame': { conditionType: 'most_likes', mode: 'automatic' },
 }
 
+/** Id достижений группового типа (scope = group). */
 const groupIds = new Set([
   'after-defense',
   'group-shot',

@@ -1,3 +1,8 @@
+/**
+ * Загрузка бинарных файлов в Appwrite Storage (только appwrite mode).
+ * Бакеты: eventVisuals (обложка/фон), eventPhotos (снимки альбома и аватары).
+ * Local mode использует localBlobStorage / data URL без этого сервиса.
+ */
 import { Permission, Role } from 'appwrite'
 import { APPWRITE_BUCKETS } from '../config/appwriteSchema'
 import { hasAppwriteRuntimeConfig } from '../config/runtime'
@@ -19,6 +24,7 @@ const ALLOWED_AVATAR_MIME_TYPES = new Set([
 
 const MAX_AVATAR_BYTES = 3 * 1024 * 1024
 
+// --- Проверка конфигурации Appwrite Storage ---
 function assertAppwriteStorageReady(methodName: string) {
   if (!hasAppwriteRuntimeConfig()) {
     const message =
@@ -29,6 +35,7 @@ function assertAppwriteStorageReady(methodName: string) {
 }
 
 export const storageService = {
+  // --- Обложка и фон события (бакет eventVisuals) ---
   async uploadEventVisual(file: File, kind: EventVisualKind): Promise<{ fileId: string; previewUrl: string }> {
     if (!isAppwriteMode()) {
       throw new Error('uploadEventVisual is available only in appwrite mode.')
@@ -68,6 +75,7 @@ export const storageService = {
     return appwriteStorage.getFileView(APPWRITE_BUCKETS.eventVisuals, fileId)
   },
 
+  // --- Фото альбома и аватар (бакет eventPhotos) ---
   async uploadEventPhoto(file: File): Promise<{ fileId: string; viewUrl: string }> {
     if (!isAppwriteMode()) {
       throw new Error('uploadEventPhoto is available only in appwrite mode.')

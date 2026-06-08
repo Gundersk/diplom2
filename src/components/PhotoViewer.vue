@@ -1,8 +1,10 @@
 <script setup lang="ts">
+// Полноэкранный просмотр фото: листание, сохранение, фон события.
 import { computed } from 'vue'
 import { useEventGallery } from '../composables/eventGalleryContext'
 
 const app = useEventGallery()
+// Пара «событие + фото» из контекста; null скрывает оверлей.
 const activePhotoEntry = computed(() => app.activePhotoEntry)
 </script>
 
