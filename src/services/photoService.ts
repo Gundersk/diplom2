@@ -1,6 +1,6 @@
 // TODO: replace localStorage imageUrl with Appwrite Storage fileId.
 // saved is UI-derived. Persistent personal gallery state lives in savedPhotoService.
-// likesCount/likedBy are legacy fallback fields. MVP uses photo comments instead of likes.
+// likesCount/likedBy are legacy fallback fields kept for compatibility.
 
 import type { Models } from 'appwrite'
 import { Permission, Role } from 'appwrite'
@@ -12,7 +12,6 @@ import type { GalleryPhoto } from '../types/photo'
 import { sanitizePersistableUrl } from '../utils/persistableUrl'
 import { isAppwriteMode } from './adapters/dataMode'
 import { eventService } from './eventService'
-import { photoCommentService } from './photoCommentService'
 import { savedPhotoService } from './savedPhotoService'
 import { storageService } from './storageService'
 import {
@@ -24,6 +23,32 @@ import {
 } from '../utils/localBlobStorage'
 
 const PHOTO_STORAGE_KEY = 'event-gallery:photos'
+const PHOTO_COMMENT_STORAGE_KEY = 'event-gallery:photo-comments'
+
+function deleteStoredPhotoComments(photoId: string) {
+  if (typeof window === 'undefined' || !window.localStorage) {
+    return
+  }
+
+  const raw = window.localStorage.getItem(PHOTO_COMMENT_STORAGE_KEY)
+  if (!raw) {
+    return
+  }
+
+  try {
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) {
+      return
+    }
+
+    const nextComments = parsed.filter(
+      (comment: { photoId?: string }) => comment?.photoId !== photoId,
+    )
+    window.localStorage.setItem(PHOTO_COMMENT_STORAGE_KEY, JSON.stringify(nextComments))
+  } catch {
+    window.localStorage.removeItem(PHOTO_COMMENT_STORAGE_KEY)
+  }
+}
 const DEFAULT_PHOTO_TONE = '#ffffff,#d9e8ff,#5b8def'
 
 type PhotoDocument = Models.Document & {
@@ -448,7 +473,7 @@ export const photoService = {
     assertAppwriteReady('deletePhoto')
     const photo = await getPhotoDocument(photoId)
     await appwriteDatabases.deleteDocument(APPWRITE_DATABASE_ID, APPWRITE_COLLECTIONS.photos, photoId)
-    await photoCommentService.deleteCommentsForPhoto(photoId)
+    deleteStoredPhotoComments(photoId)
 
     if (photo.storageFileId) {
       try {
@@ -633,7 +658,7 @@ export const photoService = {
       return
     }
 
-    await photoCommentService.deleteCommentsForPhoto(photoId)
+    deleteStoredPhotoComments(photoId)
 
     if (!isAppwriteMode()) {
       const nextPhotos = readStoredPhotos().filter((photo) => photo.id !== photoId)

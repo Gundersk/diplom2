@@ -68,6 +68,13 @@ import type { GalleryPhoto } from '../types/photo'
 import type { EventChatMessage } from '../types/chat'
 import type { EventRsvpEntry } from '../types/rsvp'
 import type { CurrentUser } from '../types/user'
+import { useInviteFlow } from './useInviteFlow'
+import {
+  clearEventNavigationFromUrl,
+  readEventIdFromLocation,
+  readInviteCodeFromLocation,
+  syncEventUrlInLocation,
+} from '../utils/eventInviteNavigation'
 
 export function useEventGalleryApp() {
 type AuthMode = 'guest' | 'profile'
@@ -316,7 +323,7 @@ function createAnonymousUserPlaceholder(): CurrentUser {
 }
 
 const coverAssetModules = import.meta.glob(
-  '../../приеры страниц partiful/Ресурсы/Обложки/**/*.{png,jpg,jpeg,jfif,avif,webp,gif}',
+  '../assets/event-presets/covers/**/*.{png,jpg,jpeg,jfif,avif,webp,gif}',
   {
     eager: true,
     import: 'default',
@@ -324,7 +331,7 @@ const coverAssetModules = import.meta.glob(
 ) as Record<string, string>
 
 const backgroundAssetModules = import.meta.glob(
-  '../../приеры страниц partiful/Ресурсы/Фон/*.{png,jpg,jpeg,jfif,avif,webp,mp4,webm}',
+  '../assets/event-presets/backgrounds/*.{png,jpg,jpeg,jfif,avif,webp,mp4,webm}',
   {
     eager: true,
     import: 'default',
@@ -635,43 +642,6 @@ async function loadInitialAppData() {
   await syncPastEventAutomaticAchievements()
 }
 
-async function initializeApp() {
-  appInitializing.value = true
-
-  try {
-    if (!isAppwriteMode()) {
-      await photoService.migrateLocalStorageMedia()
-    }
-
-    const storedUser = await authService.getCurrentUser()
-    let activeUser: CurrentUser | null = storedUser
-
-    if (!activeUser && !isAppwriteMode()) {
-      activeUser = await authService.createDemoUser()
-    }
-
-    if (activeUser) {
-      applyCurrentUser(activeUser)
-      await loadInitialAppData()
-    } else {
-      applyCurrentUser(createAnonymousUserPlaceholder())
-    }
-
-    if (readInviteCodeFromLocation()) {
-      await resolveInviteFlow()
-    } else if (readEventIdFromLocation()) {
-      await restoreEventPageFromUrl()
-    } else if (currentView.value !== 'event') {
-      currentView.value = 'home'
-    }
-  } catch (error) {
-    console.error('[app] initialization failed', error)
-    currentView.value = 'home'
-  } finally {
-    appInitializing.value = false
-  }
-}
-
 async function loadAchievementTemplates() {
   const templates = await achievementService.getAchievementTemplates()
   achievementTemplates.value = templates.filter(
@@ -705,89 +675,6 @@ function upsertHomeEvent(event: GalleryEvent) {
     : [...homeEvents.value, event]
 }
 
-function readInviteCodeFromLocation() {
-  if (typeof window === 'undefined') {
-    return ''
-  }
-
-  const url = new URL(window.location.href)
-  return url.searchParams.get('event')?.trim().toUpperCase() ?? ''
-}
-
-function readEventIdFromLocation() {
-  if (typeof window === 'undefined') {
-    return ''
-  }
-
-  const url = new URL(window.location.href)
-  return url.searchParams.get('eventId')?.trim() ?? ''
-}
-
-function clearEventNavigationFromUrl() {
-  if (typeof window === 'undefined') {
-    return
-  }
-
-  const url = new URL(window.location.href)
-  url.searchParams.delete('event')
-  url.searchParams.delete('eventId')
-  window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
-}
-
-function syncEventUrlInLocation(event: GalleryEvent | null | undefined) {
-  if (typeof window === 'undefined') {
-    return
-  }
-
-  const url = new URL(window.location.href)
-  url.searchParams.delete('event')
-  url.searchParams.delete('eventId')
-
-  if (event) {
-    if (isCurrentUserOrganizer(event)) {
-      const inviteCode = (event.inviteCode ?? pendingInviteCode.value ?? '').trim().toUpperCase()
-      if (inviteCode) {
-        url.searchParams.set('event', inviteCode)
-      }
-    } else {
-      url.searchParams.set('eventId', event.id)
-    }
-  }
-
-  window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
-}
-
-async function restoreEventPageFromUrl() {
-  const eventId = readEventIdFromLocation()
-  if (!eventId) {
-    currentView.value = 'home'
-    return
-  }
-
-  if (isAppwriteMode() && !hasRealAuthenticatedUser()) {
-    clearEventNavigationFromUrl()
-    currentView.value = 'home'
-    return
-  }
-
-  let event = getEventById(eventId)
-  if (!event) {
-    event = await eventService.getEventById(eventId)
-  }
-
-  if (!event) {
-    clearEventNavigationFromUrl()
-    inviteErrorMessage.value = 'Событие не найдено или у вас нет доступа.'
-    currentView.value = 'home'
-    return
-  }
-
-  inviteErrorMessage.value = ''
-  upsertHomeEvent(event)
-  activeTab.value = event.status
-  await openEventPage(event.id, event)
-}
-
 async function copyInviteLink(event: GalleryEvent) {
   const inviteUrl = getEventInviteUrl(event)
 
@@ -811,50 +698,6 @@ async function copyInviteLink(event: GalleryEvent) {
     },
     ...notifications.value,
   ]
-}
-
-async function resolveInviteFlow() {
-  const inviteCode = readInviteCodeFromLocation()
-  if (!inviteCode) {
-    pendingInviteCode.value = null
-    pendingInviteEventId.value = null
-    inviteErrorMessage.value = ''
-    return
-  }
-
-  pendingInviteCode.value = inviteCode
-
-  if (isAppwriteMode() && !hasRealAuthenticatedUser()) {
-    inviteErrorMessage.value = ''
-    authMode.value = 'guest'
-    authGuestName.value = ''
-    authError.value = ''
-    authOpen.value = true
-    return
-  }
-
-  const event = await eventService.getEventByInviteCode(inviteCode)
-  if (!event) {
-    pendingInviteEventId.value = null
-    inviteErrorMessage.value = `Событие с кодом ${inviteCode} не найдено.`
-    currentView.value = 'home'
-    return
-  }
-
-  inviteErrorMessage.value = ''
-  pendingInviteEventId.value = event.id
-  eventService.cacheEventState(event)
-  upsertHomeEvent(event)
-  activeTab.value = event.status
-  await openEventPage(event.id, event)
-
-  if (hasRealAuthenticatedUser()) {
-    const participant = await ensureCurrentParticipant(event)
-    if (participant) {
-      await loadHomeEvents()
-      await refreshEventDataFromServices(event.id)
-    }
-  }
 }
 
 function padNumber(value: number) {
@@ -1279,9 +1122,6 @@ const activeAchievement = ref<string | null>(null)
 const createEventOpen = ref(false)
 const medalBuilderOpen = ref(false)
 const activeEventId = ref<string | null>(null)
-const pendingInviteCode = ref<string | null>(null)
-const pendingInviteEventId = ref<string | null>(null)
-const inviteErrorMessage = ref('')
 const inviteLinkStatus = ref('')
 const previewDraftEvent = ref<GalleryEvent | null>(null)
 const eventChatDraft = ref('')
@@ -1312,7 +1152,6 @@ const achievementAwardError = ref('')
 const achievementsPanelOpen = ref(false)
 const openEventAchievementId = ref<string | null>(null)
 
-void initializeApp()
 void loadAchievementTemplates()
 
 const showGuestPersistBanner = computed(
@@ -1364,7 +1203,7 @@ function filterHoursFrom(minHour: string) {
 }
 
 function filterMinutesFrom(minMinute: string) {
-  return minuteOptions.filter((minute) => Number(minute) >= Number(minute))
+  return minuteOptions.filter((minute) => Number(minute) >= Number(minMinute))
 }
 
 function clampEndDateTime() {
@@ -1869,9 +1708,7 @@ async function logout() {
   authEmailCodeRequested.value = false
   authEmailDelivery.value = null
   authError.value = ''
-  pendingInviteCode.value = null
-  pendingInviteEventId.value = null
-  inviteErrorMessage.value = ''
+  resetInviteFlowState()
   inviteLinkStatus.value = ''
   clearEventNavigationFromUrl()
 }
@@ -2164,13 +2001,13 @@ async function openEventPage(eventId: string, eventOverride?: GalleryEvent | nul
   }
 
   const event = getEventById(eventId) ?? eventOverride
-  syncEventUrlInLocation(event)
+  syncEventUrlForActiveEvent(event)
   activeEventId.value = eventId
   achievementsPanelOpen.value = false
   openEventAchievementId.value = null
   currentView.value = 'event'
   await refreshEventDataFromServices(eventId)
-  syncEventUrlInLocation(getEventById(eventId) ?? eventOverride)
+  syncEventUrlForActiveEvent(getEventById(eventId) ?? eventOverride)
   eventChatDraft.value = ''
   profileMenuOpen.value = false
   notificationsOpen.value = false
@@ -2465,6 +2302,78 @@ async function refreshEventDataFromServices(eventId: string) {
 
   return replaceHomeEvent(eventSnapshot)
 }
+
+const inviteFlow = useInviteFlow({
+  currentView,
+  activeTab,
+  authMode,
+  authGuestName,
+  authError,
+  authOpen,
+  hasRealAuthenticatedUser,
+  isAppwriteMode,
+  getEventById,
+  upsertHomeEvent,
+  openEventPage,
+  ensureCurrentParticipant,
+  loadHomeEvents,
+  refreshEventDataFromServices,
+})
+
+const {
+  pendingInviteCode,
+  pendingInviteEventId,
+  inviteErrorMessage,
+  resolveInviteFlow,
+  restoreEventPageFromUrl,
+  resetInviteFlowState,
+} = inviteFlow
+
+function syncEventUrlForActiveEvent(event: GalleryEvent | null | undefined) {
+  syncEventUrlInLocation(event, {
+    isOrganizer: event ? isCurrentUserOrganizer(event) : false,
+    inviteCodeFallback: pendingInviteCode.value,
+  })
+}
+
+async function initializeApp() {
+  appInitializing.value = true
+
+  try {
+    if (!isAppwriteMode()) {
+      await photoService.migrateLocalStorageMedia()
+    }
+
+    const storedUser = await authService.getCurrentUser()
+    let activeUser: CurrentUser | null = storedUser
+
+    if (!activeUser && !isAppwriteMode()) {
+      activeUser = await authService.createDemoUser()
+    }
+
+    if (activeUser) {
+      applyCurrentUser(activeUser)
+      await loadInitialAppData()
+    } else {
+      applyCurrentUser(createAnonymousUserPlaceholder())
+    }
+
+    if (readInviteCodeFromLocation()) {
+      await resolveInviteFlow()
+    } else if (readEventIdFromLocation()) {
+      await restoreEventPageFromUrl()
+    } else if (currentView.value !== 'event') {
+      currentView.value = 'home'
+    }
+  } catch (error) {
+    console.error('[app] initialization failed', error)
+    currentView.value = 'home'
+  } finally {
+    appInitializing.value = false
+  }
+}
+
+void initializeApp()
 
 async function syncEventPhotosFromService(eventId: string) {
   const event = getEventById(eventId)

@@ -1,11 +1,7 @@
 export type AchievementScope = 'automatic' | 'personal' | 'group'
 export type AchievementMode = 'automatic' | 'manual'
 export type AchievementVisibility = 'visible' | 'hint' | 'hidden'
-export type AchievementConditionType =
-  | 'first_photo'
-  | 'most_photos'
-  | 'most_likes'
-  | 'most_photo_comments'
+export type AchievementConditionType = 'first_photo' | 'most_photos' | 'most_likes'
 
 export type EventAchievement = {
   id: string

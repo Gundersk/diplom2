@@ -307,8 +307,7 @@ function normalizeConditionType(value?: string): AchievementConditionType | unde
   if (
     value === 'first_photo' ||
     value === 'most_photos' ||
-    value === 'most_likes' ||
-    value === 'most_photo_comments'
+    value === 'most_likes'
   ) {
     return value
   }

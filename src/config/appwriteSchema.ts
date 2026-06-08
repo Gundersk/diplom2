@@ -9,7 +9,6 @@ export const APPWRITE_COLLECTIONS = {
   photos: 'photos',
   eventPhotos: 'event_photos',
   savedPhotos: 'saved_photos',
-  photoComments: 'photo_comments',
   achievementTemplates: 'achievement_templates',
   eventAchievements: 'event_achievements',
   participantAchievements: 'participant_achievements',
