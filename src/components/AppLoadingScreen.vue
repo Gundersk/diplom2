@@ -14,7 +14,7 @@ const app = useEventGallery()
   >
     <div class="app-loading-card">
       <span class="app-loading-mark">EG</span>
-      <strong>Event Gallery</strong>
+      <strong>Галерея событий</strong>
       <p>Восстанавливаем профиль и события…</p>
       <span class="app-loading-spinner" aria-hidden="true"></span>
     </div>

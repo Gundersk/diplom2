@@ -10,7 +10,7 @@ const app = useEventGallery()
     <section class="auth-dialog" aria-modal="true" role="dialog" aria-labelledby="auth-title">
       <button class="close-button" type="button" aria-label="Закрыть" @click="app.authOpen = false">×</button>
 
-      <p class="eyebrow">Event Gallery</p>
+      <p class="eyebrow">Галерея событий</p>
       <h2 id="auth-title">Вход</h2>
       <p class="auth-subtitle">
         Гостевой вход — самый быстрый способ попасть на событие. Профиль по email сохраняет сессию: после входа вы остаётесь авторизованы, пока не нажмёте «Выйти».

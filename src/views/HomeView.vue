@@ -9,9 +9,9 @@ const app = useEventGallery()
 <template>
   <main class="home-shell">
     <header class="home-topbar" aria-label="Навигация личного кабинета">
-      <a class="brand home-brand" href="#" aria-label="Event Gallery Home">
+      <a class="brand home-brand" href="#" aria-label="Галерея событий — главная">
         <span class="brand-mark">EG</span>
-        <span>Event Gallery</span>
+        <span>Галерея событий</span>
       </a>
 
       <div class="home-actions">

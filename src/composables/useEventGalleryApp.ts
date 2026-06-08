@@ -747,6 +747,15 @@ function formatEventDateLabel(startsAt: string) {
   })
 }
 
+function formatChatMessageCount(count: number) {
+  const abs = Math.abs(count) % 100
+  const last = abs % 10
+  if (abs > 10 && abs < 20) return `${count} сообщений`
+  if (last === 1) return `${count} сообщение`
+  if (last >= 2 && last <= 4) return `${count} сообщения`
+  return `${count} сообщений`
+}
+
 function formatShortEventDate(startsAt: string) {
   const date = new Date(startsAt)
   const now = new Date()
@@ -1701,7 +1710,7 @@ async function closeCreateEvent() {
 function openGuestPreview() {
   enforceCreateDateTimeRules()
   const draft = createEventFromForm()
-  draft.title = draft.title || 'Untitled Event'
+  draft.title = draft.title || 'Событие без названия'
   previewDraftEvent.value = draft
   currentView.value = 'preview'
   medalBuilderOpen.value = false
@@ -3850,7 +3859,7 @@ async function saveEvent() {
     activeAchievement.value = null
     await completeEventEditorTransition(nextEvent, {
       title: 'Событие создано',
-      text: `Новое событие "${nextEvent.title}" добавлено в ваш Home.`,
+      text: `Новое событие «${nextEvent.title}» добавлено на главную.`,
     })
     void syncEventAfterSave(nextEvent.id, nextEvent.organizerName)
   } catch (error) {
@@ -3941,6 +3950,7 @@ async function saveEvent() {
     achievementAwardTarget,
     authEmailCodeRequested,
     backgroundAssetOptions,
+    formatChatMessageCount,
     formatPhotoPostedLabel,
     getAchievementCardIcon,
     getPhotoThumbToneStyle,

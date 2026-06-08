@@ -31,9 +31,9 @@ const app = useEventGallery()
     </div>
 
     <header class="event-page-topbar">
-      <a class="brand home-brand" href="#" aria-label="Event Gallery" @click.prevent="app.currentView === 'preview' ? app.closeGuestPreview() : app.closeEventPage()">
+      <a class="brand home-brand" href="#" aria-label="Галерея событий" @click.prevent="app.currentView === 'preview' ? app.closeGuestPreview() : app.closeEventPage()">
         <span class="brand-mark">EG</span>
-        <span>Event Gallery</span>
+        <span>Галерея событий</span>
       </a>
 
       <div v-if="app.currentView === 'preview'" class="event-page-mode-banner">
@@ -50,7 +50,7 @@ const app = useEventGallery()
         >
           Изменить
         </button>
-        <button class="secondary-button compact-action" type="button" @click="app.closeEventPage">Home</button>
+        <button class="secondary-button compact-action" type="button" @click="app.closeEventPage">На главную</button>
       </div>
     </header>
 
@@ -142,16 +142,16 @@ const app = useEventGallery()
 
           <section v-if="app.currentView === 'preview'" class="event-page-section">
             <div class="event-page-section-head">
-              <strong>Guest List</strong>
-              <span class="event-page-section-note">Пример для preview</span>
+              <strong>Список гостей</strong>
+              <span class="event-page-section-note">Пример предпросмотра</span>
             </div>
-            <p class="event-page-section-copy">3 Going · 1 Maybe</p>
+            <p class="event-page-section-copy">3 пойдут · 1 возможно</p>
           </section>
 
           <template v-else>
             <section class="event-page-section event-text-surface">
               <div class="event-page-section-head">
-                <strong>Guest List</strong>
+                <strong>Список гостей</strong>
                 <span v-if="app.eventPageData.participantLimit" class="event-page-section-note">
                   лимит {{ app.eventPageData.participantLimit }}
                 </span>
@@ -190,7 +190,7 @@ const app = useEventGallery()
 
             <section class="event-page-section event-text-surface">
               <div class="event-page-section-head">
-                <strong>Photo Album</strong>
+                <strong>Фотоальбом</strong>
                 <span>{{ app.eventPageData.photos.length }} фото</span>
               </div>
               <div class="event-album-grid">
@@ -227,8 +227,8 @@ const app = useEventGallery()
 
             <section class="event-page-section event-text-surface">
               <div class="event-page-section-head">
-                <strong>Activity</strong>
-                <span>{{ app.eventPageData.chatMessages.length }} updates</span>
+                <strong>Активность</strong>
+                <span>{{ app.formatChatMessageCount(app.eventPageData.chatMessages.length) }}</span>
               </div>
               <div class="event-chat-feed">
                 <article v-for="message in app.eventPageData.chatMessages" :key="message.id" class="event-chat-item">

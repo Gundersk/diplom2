@@ -24,13 +24,13 @@ const app = useEventGallery()
     </div>
 
     <header class="create-topbar" aria-label="Создание события">
-      <a class="brand home-brand" href="#" aria-label="Event Gallery Create" @click.prevent="app.closeCreateEvent">
+      <a class="brand home-brand" href="#" aria-label="Создание события — Галерея событий" @click.prevent="app.closeCreateEvent">
         <span class="brand-mark">EG</span>
-        <span>Event Gallery</span>
+        <span>Галерея событий</span>
       </a>
       <div class="create-topbar-actions">
         <button class="secondary-button compact-action" type="button" @click="app.closeCreateEvent">
-          {{ app.editingEventId ? 'Назад' : 'Home' }}
+          {{ app.editingEventId ? 'Назад' : 'На главную' }}
         </button>
       </div>
     </header>
@@ -45,7 +45,7 @@ const app = useEventGallery()
             :class="app.getTitleStyleClass(app.createEventForm.titleStyle)"
             rows="1"
             :maxlength="app.EVENT_TITLE_MAX_LENGTH"
-            placeholder="Untitled Event"
+            placeholder="Событие без названия"
             required
           ></textarea>
           <div class="title-style-row">
@@ -528,7 +528,7 @@ const app = useEventGallery()
 
         <section id="create-rsvp" class="rsvp-panel">
           <div class="rsvp-panel-head">
-            <strong>RSVP Options</strong>
+            <strong>Настройки RSVP</strong>
           </div>
           <div class="rsvp-style-row">
             <button
@@ -662,7 +662,7 @@ const app = useEventGallery()
       <nav class="create-side-bar" aria-label="Быстрые действия">
         <button class="side-action-button" type="button" @click="app.scrollToCreateSection('create-assets')">
           <span>🎬</span>
-          <small>Theme</small>
+          <small>Тема</small>
         </button>
         <button class="side-action-button" type="button" @click="app.scrollToCreateSection('create-rsvp')">
           <span>{{ app.getRsvpStyleOption(app.createEventForm.rsvpStyle).emoji }}</span>
@@ -670,7 +670,7 @@ const app = useEventGallery()
         </button>
         <button class="side-action-button" type="button" @click="app.openGuestPreview">
           <span>👁</span>
-          <small>Preview</small>
+          <small>Просмотр</small>
         </button>
       </nav>
     </section>
@@ -751,14 +751,14 @@ const app = useEventGallery()
             <textarea v-model="app.medalForm.description" rows="3" placeholder="За что выдается эта медаль"></textarea>
           </label>
           <div class="field-block field-span-2 emoji-picker-field">
-            <span>Emoji</span>
+            <span>Эмодзи</span>
             <button
               class="emoji-picker-trigger"
               type="button"
               @click="app.emojiPickerOpen = !app.emojiPickerOpen"
             >
               <span class="emoji-picker-current">{{ app.medalForm.icon || '🏅' }}</span>
-              <span>Выбрать emoji</span>
+              <span>Выбрать эмодзи</span>
             </button>
             <div v-if="app.emojiPickerOpen" class="emoji-picker-popover">
               <emoji-picker class="medal-emoji-picker" @emoji-click="app.onEmojiPickerSelect"></emoji-picker>

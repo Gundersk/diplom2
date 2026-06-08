@@ -4092,9 +4092,12 @@ a {
 
 .event-achievement-empty {
   margin: 0;
-  color: var(--event-text-soft, rgba(255, 255, 255, 0.72));
+  color: rgba(245, 245, 247, 0.72);
   font-size: 14px;
-  text-shadow: var(--event-text-shadow, none);
+}
+
+.event-achievement-modal-card .event-achievement-empty {
+  color: rgba(245, 245, 247, 0.72);
 }
 
 .event-page-shell .event-achievements-panel,
@@ -4131,53 +4134,53 @@ a {
   backdrop-filter: blur(12px);
 }
 
-.event-achievement-modal.event-text-light {
-  --event-text: rgba(255, 255, 255, 0.94);
-  --event-text-muted: rgba(245, 245, 247, 0.82);
-  --event-text-soft: rgba(245, 245, 247, 0.76);
-  --event-text-faint: rgba(245, 245, 247, 0.56);
-  --event-text-shadow: 0 1px 10px rgba(0, 0, 0, 0.28);
-  --event-surface-bg: rgba(0, 0, 0, 0.1);
-  --event-surface-border: rgba(255, 255, 255, 0.14);
-}
-
-.event-achievement-modal.event-text-dark {
-  --event-text: rgba(22, 22, 22, 0.9);
-  --event-text-muted: rgba(22, 22, 22, 0.76);
-  --event-text-soft: rgba(22, 22, 22, 0.68);
-  --event-text-faint: rgba(22, 22, 22, 0.52);
-  --event-text-shadow: 0 1px 8px rgba(255, 255, 255, 0.18);
-  --event-surface-bg: rgba(255, 255, 255, 0.12);
-  --event-surface-border: rgba(22, 22, 22, 0.1);
-}
-
 .event-achievement-modal-card {
   width: min(720px, 100%);
   max-height: min(80vh, 760px);
   overflow: auto;
   padding: 22px;
-  border: 1px solid var(--event-surface-border, rgba(255, 255, 255, 0.14));
+  border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 28px;
-  background: color-mix(in srgb, var(--event-surface-bg, rgba(255, 255, 255, 0.14)) 55%, rgba(12, 12, 18, 0.9));
-  color: var(--event-text, #ffffff);
+  background: rgba(18, 20, 28, 0.96);
+  color: #f5f5f7;
   box-shadow: 0 30px 80px rgba(8, 10, 18, 0.28);
   backdrop-filter: blur(20px);
 }
 
 .event-achievement-modal-card .section-title-row h3 {
-  color: var(--event-text, #ffffff);
-  text-shadow: var(--event-text-shadow, none);
+  color: #ffffff;
 }
 
 .event-achievement-modal-card .section-title-row p {
   margin: 4px 0 0;
-  color: var(--event-text-soft, rgba(255, 255, 255, 0.72));
+  color: rgba(245, 245, 247, 0.76);
   font-size: 13px;
-  text-shadow: var(--event-text-shadow, none);
 }
 
 .event-achievement-modal-card .ghost-inline-button {
-  color: var(--event-text-muted, rgba(255, 255, 255, 0.82));
+  border-color: rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
+.event-achievement-modal-card .ghost-inline-button:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.event-achievement-modal-card .secondary-button {
+  border-color: rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
+.event-achievement-modal-card .secondary-button:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.event-achievement-modal-card .primary-button {
+  background: #ffffff;
+  color: #161616;
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.24);
 }
 
 .event-achievement-modal-list {
@@ -4193,10 +4196,10 @@ a {
   align-items: center;
   min-height: 70px;
   padding: 12px 14px;
-  border: 1px solid var(--event-surface-border, rgba(255, 255, 255, 0.12));
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 20px;
-  background: color-mix(in srgb, var(--event-surface-bg, rgba(255, 255, 255, 0.14)) 72%, transparent);
-  color: var(--event-text, #ffffff);
+  background: rgba(255, 255, 255, 0.06);
+  color: #f5f5f7;
 }
 
 .event-achievement-user-row.disabled {
@@ -4213,14 +4216,12 @@ a {
 }
 
 .event-achievement-user-copy strong {
-  color: var(--event-text, #ffffff);
-  text-shadow: var(--event-text-shadow, none);
+  color: #ffffff;
 }
 
 .event-achievement-user-copy small {
   margin-top: 3px;
-  color: var(--event-text-soft, rgba(255, 255, 255, 0.72));
-  text-shadow: var(--event-text-shadow, none);
+  color: rgba(245, 245, 247, 0.72);
 }
 
 .event-achievement-error {

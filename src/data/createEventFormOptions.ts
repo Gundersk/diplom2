@@ -19,17 +19,17 @@ export const quickInfoOptions = infoBlockTypeOptions.filter((option) =>
 )
 
 export const rsvpStyleOptions = [
-  { id: 'icons', label: 'Icons', emoji: '👍' },
-  { id: 'bloom', label: 'Bloom', emoji: '🌷' },
-  { id: 'party', label: 'Party', emoji: '🎉' },
-  { id: 'hearts', label: 'Hearts', emoji: '💖' },
+  { id: 'icons', label: 'Иконки', emoji: '👍' },
+  { id: 'bloom', label: 'Цветение', emoji: '🌷' },
+  { id: 'party', label: 'Вечеринка', emoji: '🎉' },
+  { id: 'hearts', label: 'Сердечки', emoji: '💖' },
 ]
 
 export const titleStyleOptions = [
-  { id: 'classic', label: 'Classic' },
-  { id: 'eclectic', label: 'Eclectic' },
-  { id: 'fancy', label: 'Fancy' },
-  { id: 'literary', label: 'Literary' },
+  { id: 'classic', label: 'Классика' },
+  { id: 'eclectic', label: 'Эклектика' },
+  { id: 'fancy', label: 'Изящный' },
+  { id: 'literary', label: 'Литературный' },
 ]
 
 export const eventTextThemeOptions: Array<{ id: 'light' | 'dark'; label: string }> = [

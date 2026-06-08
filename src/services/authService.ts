@@ -29,7 +29,7 @@ const EMAIL_CODE_COOLDOWN_MS = 60_000
 const PENDING_EMAIL_CODE_TTL_MS = 15 * 60_000
 const DEVELOPMENT_EMAIL_CODE = '000000'
 
-export const LOCAL_DEMO_USER_DISPLAY_NAME = 'Demo Guest'
+export const LOCAL_DEMO_USER_DISPLAY_NAME = 'Демо-гость'
 
 type StoredEmailCodes = Record<string, { code: string; requestedAt: string }>
 

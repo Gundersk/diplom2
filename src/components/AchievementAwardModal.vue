@@ -9,11 +9,6 @@ const app = useEventGallery()
   <div
     v-if="app.achievementAwardModalOpen && app.achievementAwardTarget"
     class="event-achievement-modal"
-    :class="
-      app.getEventTextThemeClassForEvent(
-        app.achievementAwardEventId ? app.getEventById(app.achievementAwardEventId) : app.activeEvent,
-      )
-    "
     @click.self="app.closeAchievementAwardModal"
   >
     <section class="event-achievement-modal-card" aria-modal="true" role="dialog" aria-labelledby="achievement-award-title">
